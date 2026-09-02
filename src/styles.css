@@ -80,6 +80,7 @@ button:focus-visible {
 
 .hud {
   position: absolute;
+  z-index: 2;
   top: 16px;
   right: 16px;
   left: 16px;
@@ -120,6 +121,7 @@ button:focus-visible {
 
 .overlay {
   position: absolute;
+  z-index: 1;
   inset: 0;
   display: grid;
   align-content: center;
