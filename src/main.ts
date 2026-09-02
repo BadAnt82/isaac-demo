@@ -10,6 +10,14 @@ type Obstacle = {
   image: HTMLImageElement;
 };
 
+type Bubble = {
+  x: number;
+  y: number;
+  radius: number;
+  speed: number;
+  drift: number;
+};
+
 function requireElement<T extends Element>(selector: string) {
   const element = document.querySelector<T>(selector);
   if (!element) {
@@ -54,20 +62,30 @@ const plane = {
   rotation: 0,
 };
 
+const enemyPlane = {
+  x: 820,
+  y: 210,
+  bob: 0,
+};
+
 let state: GameState = "ready";
 let width = 960;
 let height = 540;
 let dpr = 1;
 let lastTime = 0;
 let spawnTimer = 0;
+let bubbleTimer = 0;
 let score = 0;
 let obstacles: Obstacle[] = [];
+let bubbles: Bubble[] = [];
 
 const gravity = 1480;
 const lift = -475;
 const obstacleWidth = 96;
 const obstacleSpeed = 250;
 const spawnEvery = 1.42;
+const bubbleEvery = 1.08;
+const bubbleSpeed = 320;
 const groundHeight = 46;
 
 function resize() {
@@ -79,18 +97,24 @@ function resize() {
   canvas.height = Math.floor(height * dpr);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   plane.x = Math.max(92, Math.min(156, width * 0.18));
+  enemyPlane.x = width - Math.max(86, Math.min(138, width * 0.12));
   if (state === "ready") {
     plane.y = height * 0.48;
+    enemyPlane.y = height * 0.36;
   }
 }
 
 function reset(nextState: GameState) {
   score = 0;
   obstacles = [];
+  bubbles = [];
   spawnTimer = 0.45;
+  bubbleTimer = 1;
   plane.y = height * 0.48;
   plane.velocity = 0;
   plane.rotation = 0;
+  enemyPlane.y = height * 0.36;
+  enemyPlane.bob = 0;
   state = nextState;
   scoreEl.textContent = "0";
   restartButton.hidden = nextState !== "ended";
@@ -226,17 +250,27 @@ function drawObstacleSegment(
   ctx.restore();
 }
 
-function drawPlane() {
+function drawPlaneBody(
+  x: number,
+  y: number,
+  rotation: number,
+  bodyColor: string,
+  wingColor: string,
+  tailColor: string,
+  cockpitColor: string,
+  direction: 1 | -1,
+) {
   ctx.save();
-  ctx.translate(plane.x, plane.y);
-  ctx.rotate(plane.rotation);
+  ctx.translate(x, y);
+  ctx.scale(direction, 1);
+  ctx.rotate(rotation);
 
   ctx.fillStyle = "rgba(30, 38, 50, 0.18)";
   ctx.beginPath();
   ctx.ellipse(-2, 30, 38, 8, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  ctx.fillStyle = "#ffd232";
+  ctx.fillStyle = bodyColor;
   ctx.strokeStyle = "#7f5f00";
   ctx.lineWidth = 3;
   ctx.beginPath();
@@ -244,7 +278,7 @@ function drawPlane() {
   ctx.fill();
   ctx.stroke();
 
-  ctx.fillStyle = "#f4a51c";
+  ctx.fillStyle = tailColor;
   ctx.beginPath();
   ctx.moveTo(-17, -11);
   ctx.lineTo(-44, -30);
@@ -253,7 +287,7 @@ function drawPlane() {
   ctx.fill();
   ctx.stroke();
 
-  ctx.fillStyle = "#ffe891";
+  ctx.fillStyle = wingColor;
   ctx.beginPath();
   ctx.moveTo(-2, -8);
   ctx.lineTo(26, -34);
@@ -262,7 +296,7 @@ function drawPlane() {
   ctx.fill();
   ctx.stroke();
 
-  ctx.fillStyle = "#ffe891";
+  ctx.fillStyle = wingColor;
   ctx.beginPath();
   ctx.moveTo(-4, 9);
   ctx.lineTo(26, 31);
@@ -271,7 +305,7 @@ function drawPlane() {
   ctx.fill();
   ctx.stroke();
 
-  ctx.fillStyle = "#6fc8ff";
+  ctx.fillStyle = cockpitColor;
   ctx.beginPath();
   ctx.ellipse(14, -4, 11, 8, 0, 0, Math.PI * 2);
   ctx.fill();
@@ -301,12 +335,63 @@ function drawPlane() {
   ctx.restore();
 }
 
+function drawPlane() {
+  drawPlaneBody(plane.x, plane.y, plane.rotation, "#ffd232", "#ffe891", "#f4a51c", "#6fc8ff", 1);
+}
+
+function drawEnemyPlane(time: number) {
+  const wobble = Math.sin(time * 3.2) * 0.08;
+  drawPlaneBody(enemyPlane.x, enemyPlane.y, wobble, "#2f80ed", "#9bd4ff", "#174e9a", "#d8f7ff", -1);
+}
+
+function drawBubbles() {
+  bubbles.forEach((bubble) => {
+    const shine = bubble.radius * 0.36;
+    const gradient = ctx.createRadialGradient(
+      bubble.x - shine,
+      bubble.y - shine,
+      1,
+      bubble.x,
+      bubble.y,
+      bubble.radius,
+    );
+    gradient.addColorStop(0, "rgba(255, 255, 255, 0.95)");
+    gradient.addColorStop(0.42, "rgba(143, 225, 255, 0.55)");
+    gradient.addColorStop(1, "rgba(43, 135, 230, 0.28)");
+
+    ctx.save();
+    ctx.fillStyle = gradient;
+    ctx.strokeStyle = "rgba(28, 99, 185, 0.68)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(bubble.x, bubble.y, bubble.radius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = "rgba(255, 255, 255, 0.78)";
+    ctx.beginPath();
+    ctx.arc(bubble.x - bubble.radius * 0.34, bubble.y - bubble.radius * 0.34, bubble.radius * 0.22, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  });
+}
+
+function fireBubble() {
+  bubbles.push({
+    x: enemyPlane.x - 58,
+    y: enemyPlane.y + 4,
+    radius: 14 + Math.random() * 6,
+    speed: bubbleSpeed + Math.random() * 40,
+    drift: -35 + Math.random() * 70,
+  });
+}
+
 function collide() {
   if (plane.y - plane.radius < 0 || plane.y + plane.radius > height - groundHeight) {
     return true;
   }
 
-  return obstacles.some((obstacle) => {
+  const hitObstacle = obstacles.some((obstacle) => {
     const closestX = Math.max(obstacle.x, Math.min(plane.x, obstacle.x + obstacleWidth));
     const inTop = plane.y < obstacle.gapY;
     const inBottom = plane.y > obstacle.gapY + obstacle.gapHeight;
@@ -319,6 +404,17 @@ function collide() {
     const dx = plane.x - closestX;
     const dy = plane.y - closestY;
     return dx * dx + dy * dy < plane.radius * plane.radius * 0.78;
+  });
+
+  if (hitObstacle) {
+    return true;
+  }
+
+  return bubbles.some((bubble) => {
+    const dx = plane.x - bubble.x;
+    const dy = plane.y - bubble.y;
+    const hitRadius = plane.radius * 0.82 + bubble.radius;
+    return dx * dx + dy * dy < hitRadius * hitRadius;
   });
 }
 
@@ -340,10 +436,20 @@ function update(dt: number) {
   plane.y += plane.velocity * dt;
   plane.rotation = Math.max(-0.42, Math.min(0.72, plane.velocity / 620));
 
+  enemyPlane.bob += dt;
+  const enemyTargetY = height * 0.34 + Math.sin(enemyPlane.bob * 1.7) * Math.min(96, height * 0.16);
+  enemyPlane.y += (enemyTargetY - enemyPlane.y) * Math.min(1, dt * 3.2);
+
   spawnTimer -= dt;
   if (spawnTimer <= 0) {
     spawnObstacle();
     spawnTimer = spawnEvery;
+  }
+
+  bubbleTimer -= dt;
+  if (bubbleTimer <= 0) {
+    fireBubble();
+    bubbleTimer = bubbleEvery + Math.random() * 0.38;
   }
 
   obstacles.forEach((obstacle) => {
@@ -356,6 +462,12 @@ function update(dt: number) {
   });
   obstacles = obstacles.filter((obstacle) => obstacle.x > -obstacleWidth - 10);
 
+  bubbles.forEach((bubble) => {
+    bubble.x -= bubble.speed * dt;
+    bubble.y += bubble.drift * dt;
+  });
+  bubbles = bubbles.filter((bubble) => bubble.x > -bubble.radius * 2);
+
   if (collide()) {
     endGame();
   }
@@ -364,6 +476,8 @@ function update(dt: number) {
 function render(time: number) {
   drawBackground(time);
   obstacles.forEach(drawObstacle);
+  drawBubbles();
+  drawEnemyPlane(time);
   drawPlane();
 
   if (state === "ready") {
