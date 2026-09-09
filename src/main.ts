@@ -109,6 +109,7 @@ const compactMargin = 54;
 const compactPlaneRadius = 18;
 const compactGravity = 820;
 const compactLift = -360;
+const obstacleEdgeOverflow = 72;
 
 type FullscreenFrame = HTMLElement & {
   webkitRequestFullscreen?: () => Promise<void> | void;
@@ -208,11 +209,11 @@ function getGroundHeight() {
 }
 
 function drawViewportBackground(canvasWidth: number, canvasHeight: number) {
-  const sky = ctx.createLinearGradient(0, 0, 0, canvasHeight);
-  sky.addColorStop(0, "#76cdf4");
-  sky.addColorStop(0.62, "#e1f6ff");
-  sky.addColorStop(1, "#fff6da");
-  ctx.fillStyle = sky;
+  const wall = ctx.createLinearGradient(0, 0, 0, canvasHeight);
+  wall.addColorStop(0, "#cdbf9f");
+  wall.addColorStop(0.62, "#eee6d2");
+  wall.addColorStop(1, "#a99066");
+  ctx.fillStyle = wall;
   ctx.fillRect(0, 0, canvasWidth, canvasHeight);
 }
 
@@ -278,35 +279,46 @@ function spawnObstacle() {
 }
 
 function drawBackground(time: number) {
-  const sky = ctx.createLinearGradient(0, 0, 0, height);
-  sky.addColorStop(0, "#76cdf4");
-  sky.addColorStop(0.58, "#e1f6ff");
-  sky.addColorStop(1, "#fff6da");
-  ctx.fillStyle = sky;
+  const wall = ctx.createLinearGradient(0, 0, 0, height);
+  wall.addColorStop(0, "#cdbf9f");
+  wall.addColorStop(0.52, "#f0e7d1");
+  wall.addColorStop(1, "#d1bd91");
+  ctx.fillStyle = wall;
   ctx.fillRect(0, 0, width, height);
 
   ctx.save();
   ctx.globalAlpha = 0.38;
-  drawCloud((width - ((time * 16) % (width + 220))) - 110, 88, 1.08);
-  drawCloud((width - ((time * 10 + 270) % (width + 260))) - 130, 176, 0.78);
-  drawCloud((width - ((time * 13 + 590) % (width + 240))) - 120, 124, 0.92);
+  ctx.strokeStyle = "#b59f76";
+  ctx.lineWidth = 2;
+  for (let x = 88; x < width; x += 176) {
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, height);
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 0.26;
+  ctx.fillStyle = "#ffffff";
+  for (let x = 132 - ((time * 8) % 176); x < width + 176; x += 176) {
+    ctx.fillRect(x, 48, 54, 8);
+    ctx.beginPath();
+    ctx.moveTo(x + 6, 56);
+    ctx.lineTo(x - 18, 118);
+    ctx.moveTo(x + 48, 56);
+    ctx.lineTo(x + 72, 118);
+    ctx.strokeStyle = "#7e6a48";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }
   ctx.restore();
 
   const groundHeight = getGroundHeight();
   const groundY = height - groundHeight;
-  ctx.fillStyle = "#315c4d";
+  ctx.fillStyle = "#6b5840";
   ctx.fillRect(0, groundY, width, groundHeight);
-  ctx.fillStyle = "#9fd36b";
-  ctx.fillRect(0, groundY, width, 8);
-}
-
-function drawCloud(x: number, y: number, scale: number) {
-  ctx.fillStyle = "#ffffff";
-  ctx.beginPath();
-  ctx.ellipse(x, y, 42 * scale, 20 * scale, 0, 0, Math.PI * 2);
-  ctx.ellipse(x + 34 * scale, y - 8 * scale, 36 * scale, 24 * scale, 0, 0, Math.PI * 2);
-  ctx.ellipse(x + 76 * scale, y, 46 * scale, 22 * scale, 0, 0, Math.PI * 2);
-  ctx.fill();
+  ctx.fillStyle = "#b79d6a";
+  ctx.fillRect(0, groundY, width, 10);
+  ctx.fillStyle = "#4b3a2a";
+  ctx.fillRect(0, groundY + 10, width, groundHeight);
 }
 
 function drawRoundedRect(x: number, y: number, w: number, h: number, r: number) {
@@ -341,8 +353,22 @@ function drawObstacle(obstacle: Obstacle) {
   const bottomY = obstacle.gapY + obstacle.gapHeight;
   const bottomHeight = height - getGroundHeight() - bottomY;
 
-  drawObstacleSegment(obstacle.x, 0, width, topHeight, obstacle.image, true);
-  drawObstacleSegment(obstacle.x, bottomY, width, bottomHeight, obstacle.image, false);
+  drawObstacleSegment(
+    obstacle.x,
+    -obstacleEdgeOverflow,
+    width,
+    topHeight + obstacleEdgeOverflow,
+    obstacle.image,
+    true,
+  );
+  drawObstacleSegment(
+    obstacle.x,
+    bottomY,
+    width,
+    bottomHeight + getGroundHeight() + obstacleEdgeOverflow,
+    obstacle.image,
+    false,
+  );
 }
 
 function drawObstacleSegment(
