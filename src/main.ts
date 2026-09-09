@@ -89,7 +89,6 @@ let score = 0;
 let obstacles: Obstacle[] = [];
 let bubbles: Bubble[] = [];
 let compactPlayfield = false;
-let phonePlayfield = false;
 let rollTimer = 0;
 let localHighest = 0;
 let todayHighest = 0;
@@ -118,7 +117,6 @@ const compactPlaneRadius = 18;
 const compactGravity = 820;
 const compactLift = -360;
 const obstacleEdgeOverflow = 72;
-const phoneLandscapeHeight = 500;
 
 type FullscreenFrame = HTMLElement & {
   webkitRequestFullscreen?: () => Promise<void> | void;
@@ -137,15 +135,12 @@ function resize() {
     window.matchMedia("(hover: none) and (pointer: coarse)").matches;
   const cssWidth = Math.max(320, Math.floor(box.width));
   const cssHeight = compactPlayfield ? Math.max(1, Math.floor(box.height)) : Math.max(360, Math.floor(box.height));
-  phonePlayfield =
-    compactPlayfield &&
-    (window.matchMedia(`(max-width: ${mobileBreakpoint}px)`).matches || cssHeight <= phoneLandscapeHeight);
   dpr = Math.min(window.devicePixelRatio || 1, 2);
-  width = phonePlayfield ? cssWidth : compactPlayfield ? compactWorldWidth : cssWidth;
-  height = phonePlayfield ? cssHeight : compactPlayfield ? compactWorldHeight : cssHeight;
-  renderScale = phonePlayfield ? 1 : compactPlayfield ? Math.min(cssWidth / width, cssHeight / height) : 1;
-  renderOffsetX = phonePlayfield ? 0 : compactPlayfield ? (cssWidth - width * renderScale) / 2 : 0;
-  renderOffsetY = phonePlayfield ? 0 : compactPlayfield ? (cssHeight - height * renderScale) / 2 : 0;
+  width = compactPlayfield ? compactWorldWidth : cssWidth;
+  height = compactPlayfield ? compactWorldHeight : cssHeight;
+  renderScale = compactPlayfield ? Math.min(cssWidth / width, cssHeight / height) : 1;
+  renderOffsetX = compactPlayfield ? (cssWidth - width * renderScale) / 2 : 0;
+  renderOffsetY = compactPlayfield ? (cssHeight - height * renderScale) / 2 : 0;
   canvas.width = Math.floor(cssWidth * dpr);
   canvas.height = Math.floor(cssHeight * dpr);
   ctx.setTransform(
@@ -167,100 +162,56 @@ function resize() {
 }
 
 function getObstacleWidth() {
-  if (phonePlayfield) {
-    return Math.max(44, Math.min(64, width * 0.1));
-  }
-
   return compactPlayfield ? compactObstacleWidth : obstacleWidth;
 }
 
 function getObstacleSpeed() {
-  if (phonePlayfield) {
-    return Math.max(108, Math.min(190, width * 0.22));
-  }
-
   return compactPlayfield ? compactObstacleSpeed : obstacleSpeed;
 }
 
 function getSpawnEvery() {
-  if (phonePlayfield) {
-    return height <= phoneLandscapeHeight ? 1.35 : 1.15;
-  }
-
   return compactPlayfield ? compactSpawnEvery : spawnEvery;
 }
 
 function getPlaneScale() {
-  if (phonePlayfield) {
-    return Math.max(0.5, Math.min(0.88, (height / compactWorldHeight) * 0.72));
-  }
-
   return compactPlayfield ? 0.72 : 1;
 }
 
 function getPlaneRadius() {
-  if (phonePlayfield) {
-    return Math.max(13, Math.min(22, (height / compactWorldHeight) * compactPlaneRadius));
-  }
-
   return compactPlayfield ? compactPlaneRadius : 24;
 }
 
 function getPlayerX() {
-  if (phonePlayfield) {
-    return Math.max(58, Math.min(82, width * 0.18));
-  }
-
   return compactPlayfield ? 82 : Math.max(92, Math.min(156, width * 0.18));
 }
 
 function getEnemyX() {
-  if (phonePlayfield) {
-    return width - Math.max(58, Math.min(86, width * 0.11));
-  }
-
   return compactPlayfield
     ? width - 86
     : width - Math.max(86, Math.min(138, width * 0.12));
 }
 
 function getGravity() {
-  return compactPlayfield ? compactGravity * (height / compactWorldHeight) : 1480;
+  return compactPlayfield ? compactGravity : 1480;
 }
 
 function getLift() {
-  return compactPlayfield ? compactLift * (height / compactWorldHeight) : -475;
+  return compactPlayfield ? compactLift : -475;
 }
 
 function getBubbleEvery() {
-  if (phonePlayfield) {
-    return height <= phoneLandscapeHeight ? 1.8 : 1.55;
-  }
-
   return compactPlayfield ? 1.55 : bubbleEvery;
 }
 
 function getBubbleSpeed() {
-  if (phonePlayfield) {
-    return Math.max(100, Math.min(170, width * 0.2));
-  }
-
   return compactPlayfield ? compactBubbleSpeed : bubbleSpeed;
 }
 
 function getBubbleRadius() {
-  if (phonePlayfield) {
-    return Math.max(9, Math.min(14, height * 0.026)) + Math.random() * 2;
-  }
-
   return compactPlayfield ? 12 + Math.random() * 3 : 14 + Math.random() * 6;
 }
 
 function getGroundHeight() {
-  if (phonePlayfield) {
-    return Math.max(28, Math.min(42, height * 0.07));
-  }
-
   return compactPlayfield ? compactGroundHeight : groundHeight;
 }
 
@@ -376,16 +327,8 @@ function flap() {
 
 function spawnObstacle() {
   const playableHeight = height - getGroundHeight();
-  const gapHeight = phonePlayfield
-    ? Math.max(154, Math.min(240, height * 0.36))
-    : compactPlayfield
-      ? compactGapHeight
-      : Math.max(150, Math.min(210, height * 0.34));
-  const margin = phonePlayfield
-    ? Math.max(30, Math.min(72, height * 0.09))
-    : compactPlayfield
-      ? compactMargin
-      : 82;
+  const gapHeight = compactPlayfield ? compactGapHeight : Math.max(150, Math.min(210, height * 0.34));
+  const margin = compactPlayfield ? compactMargin : 82;
   const gapY = margin + Math.random() * (playableHeight - gapHeight - margin * 2);
   const image = artImages[Math.floor(Math.random() * artImages.length)];
   obstacles.push({
