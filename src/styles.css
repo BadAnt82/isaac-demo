@@ -91,7 +91,14 @@ button:focus-visible {
   pointer-events: none;
 }
 
-.hud > div {
+.hud-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  pointer-events: auto;
+}
+
+.score-panel {
   min-width: 92px;
   border: 1px solid rgba(255, 255, 255, 0.58);
   border-radius: 8px;
@@ -119,6 +126,25 @@ button:focus-visible {
   pointer-events: auto;
 }
 
+#fullscreen {
+  min-width: 112px;
+}
+
+.game-frame.fullscreen-fallback {
+  position: fixed;
+  z-index: 10;
+  inset: 0;
+  width: 100vw;
+  height: 100svh;
+  min-height: 100svh;
+  border: 0;
+  border-radius: 0;
+}
+
+body.fullscreen-fallback-active {
+  overflow: hidden;
+}
+
 .overlay {
   position: absolute;
   z-index: 1;
@@ -134,6 +160,7 @@ button:focus-visible {
 
 .overlay[hidden],
 #restart[hidden],
+#fullscreen[hidden],
 #start[hidden] {
   display: none;
 }
@@ -174,5 +201,19 @@ button:focus-visible {
     top: max(12px, env(safe-area-inset-top));
     right: 12px;
     left: 12px;
+  }
+
+  .score-panel {
+    min-width: 74px;
+    padding: 8px 10px;
+  }
+
+  .hud-actions {
+    gap: 8px;
+  }
+
+  #fullscreen {
+    min-width: 96px;
+    padding: 0 12px;
   }
 }

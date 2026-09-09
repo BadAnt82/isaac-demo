@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta
       name="description"
       content="A polished side-scrolling arcade game featuring a yellow prop plane."
@@ -14,11 +14,14 @@
       <section class="game-frame">
         <canvas id="game" aria-label="Game canvas"></canvas>
         <div class="hud" aria-live="polite">
-          <div>
+          <div class="score-panel">
             <span class="label">Score</span>
             <strong id="score">0</strong>
           </div>
-          <button id="restart" type="button" hidden>Restart</button>
+          <div class="hud-actions">
+            <button id="fullscreen" type="button">Full screen</button>
+            <button id="restart" type="button" hidden>Restart</button>
+          </div>
         </div>
         <div id="overlay" class="overlay">
           <h1>Isaac Demo</h1>

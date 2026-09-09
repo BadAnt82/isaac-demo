@@ -38,6 +38,8 @@ const canvas = requireElement<HTMLCanvasElement>("#game");
 const scoreEl = requireElement<HTMLElement>("#score");
 const restartButton = requireElement<HTMLButtonElement>("#restart");
 const startButton = requireElement<HTMLButtonElement>("#start");
+const fullscreenButton = requireElement<HTMLButtonElement>("#fullscreen");
+const gameFrame = requireElement<HTMLElement>(".game-frame");
 const overlay = requireElement<HTMLElement>("#overlay");
 const ctx = requireCanvasContext(canvas);
 
@@ -79,6 +81,8 @@ let score = 0;
 let obstacles: Obstacle[] = [];
 let bubbles: Bubble[] = [];
 
+const mobileBreakpoint = 700;
+const minMobileWorldWidth = 960;
 const gravity = 1480;
 const lift = -475;
 const obstacleWidth = 96;
@@ -88,14 +92,27 @@ const bubbleEvery = 1.08;
 const bubbleSpeed = 320;
 const groundHeight = 46;
 
+type FullscreenFrame = HTMLElement & {
+  webkitRequestFullscreen?: () => Promise<void> | void;
+};
+
+type FullscreenDocument = Document & {
+  webkitFullscreenElement?: Element | null;
+  webkitFullscreenEnabled?: boolean;
+  webkitExitFullscreen?: () => Promise<void> | void;
+};
+
 function resize() {
   const box = canvas.getBoundingClientRect();
+  const cssWidth = Math.max(320, Math.floor(box.width));
+  const cssHeight = Math.max(360, Math.floor(box.height));
+  const isMobileView = window.matchMedia(`(max-width: ${mobileBreakpoint}px)`).matches;
   dpr = Math.min(window.devicePixelRatio || 1, 2);
-  width = Math.max(320, Math.floor(box.width));
-  height = Math.max(360, Math.floor(box.height));
-  canvas.width = Math.floor(width * dpr);
-  canvas.height = Math.floor(height * dpr);
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  width = isMobileView ? Math.max(minMobileWorldWidth, cssWidth) : cssWidth;
+  height = cssHeight;
+  canvas.width = Math.floor(cssWidth * dpr);
+  canvas.height = Math.floor(cssHeight * dpr);
+  ctx.setTransform((cssWidth * dpr) / width, 0, 0, (cssHeight * dpr) / height, 0, 0);
   plane.x = Math.max(92, Math.min(156, width * 0.18));
   enemyPlane.x = width - Math.max(86, Math.min(138, width * 0.12));
   if (state === "ready") {
@@ -427,6 +444,51 @@ function endGame() {
   startButton.hidden = true;
 }
 
+function isFullscreen() {
+  const fullscreenDocument = document as FullscreenDocument;
+  return (
+    document.fullscreenElement === gameFrame ||
+    fullscreenDocument.webkitFullscreenElement === gameFrame ||
+    gameFrame.classList.contains("fullscreen-fallback")
+  );
+}
+
+function updateFullscreenButton() {
+  fullscreenButton.textContent = isFullscreen() ? "Exit full screen" : "Full screen";
+  fullscreenButton.setAttribute(
+    "aria-label",
+    isFullscreen() ? "Exit full screen mode" : "Enter full screen mode",
+  );
+}
+
+async function toggleFullscreen() {
+  const fullscreenFrame = gameFrame as FullscreenFrame;
+  const fullscreenDocument = document as FullscreenDocument;
+
+  if (isFullscreen()) {
+    if (document.fullscreenElement) {
+      await document.exitFullscreen();
+    } else if (fullscreenDocument.webkitFullscreenElement && fullscreenDocument.webkitExitFullscreen) {
+      await fullscreenDocument.webkitExitFullscreen();
+    } else {
+      gameFrame.classList.remove("fullscreen-fallback");
+      document.body.classList.remove("fullscreen-fallback-active");
+    }
+  } else {
+    if (document.fullscreenEnabled && gameFrame.requestFullscreen) {
+      await gameFrame.requestFullscreen();
+    } else if (fullscreenDocument.webkitFullscreenEnabled && fullscreenFrame.webkitRequestFullscreen) {
+      await fullscreenFrame.webkitRequestFullscreen();
+    } else {
+      gameFrame.classList.add("fullscreen-fallback");
+      document.body.classList.add("fullscreen-fallback-active");
+    }
+  }
+
+  updateFullscreenButton();
+  resize();
+}
+
 function update(dt: number) {
   if (state !== "running") {
     return;
@@ -510,7 +572,15 @@ restartButton.addEventListener("click", () => {
   startButton.hidden = false;
   reset("ready");
 });
+fullscreenButton.addEventListener("click", () => {
+  void toggleFullscreen();
+});
+document.addEventListener("fullscreenchange", () => {
+  updateFullscreenButton();
+  resize();
+});
 
 resize();
+updateFullscreenButton();
 reset("ready");
 requestAnimationFrame(loop);
