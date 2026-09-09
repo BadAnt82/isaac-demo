@@ -194,7 +194,7 @@ function addScore(points: number) {
 function updateRollButton() {
   const ready = state === "running" && score >= rollPointCost && rollTimer <= 0;
   rollButton.disabled = !ready;
-  rollButton.textContent = ready ? "Roll -2" : `Need ${rollPointCost}`;
+  rollButton.textContent = "Roll -2";
 }
 
 function reset(nextState: GameState) {
