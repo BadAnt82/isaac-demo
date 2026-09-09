@@ -66,7 +66,7 @@ function normalizeScores(scores) {
 
 function cleanName(name) {
   const trimmed = typeof name === "string" ? name.trim() : "";
-  return trimmed.slice(0, 24) || "Anonymous";
+  return trimmed.slice(0, 24) || "Unknown scorer";
 }
 
 function isClaimableName(name) {

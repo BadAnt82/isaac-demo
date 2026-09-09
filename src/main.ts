@@ -19,6 +19,15 @@ type Bubble = {
   scored: boolean;
 };
 
+type HighScoreResponse = {
+  todayHighest?: number;
+  todayName?: string;
+  allTimeHighest?: number;
+  allTimeName?: string;
+  todayRecord?: boolean;
+  allTimeRecord?: boolean;
+};
+
 function requireElement<T extends Element>(selector: string) {
   const element = document.querySelector<T>(selector);
   if (!element) {
@@ -273,6 +282,14 @@ async function loadServerHighScores() {
   }
 }
 
+function applyServerHighScores(scores: HighScoreResponse) {
+  todayHighest = Number(scores.todayHighest) || todayHighest;
+  todayHighName = typeof scores.todayName === "string" ? scores.todayName : todayHighName;
+  serverHighest = Number(scores.allTimeHighest) || serverHighest;
+  serverHighName = typeof scores.allTimeName === "string" ? scores.allTimeName : serverHighName;
+  renderHighScores();
+}
+
 async function submitServerHighScore(finalScore: number, name = "") {
   try {
     const response = await fetch("/api/high-scores", {
@@ -285,12 +302,9 @@ async function submitServerHighScore(finalScore: number, name = "") {
       return;
     }
 
-    const scores = await response.json();
-    todayHighest = Number(scores.todayHighest) || todayHighest;
-    todayHighName = typeof scores.todayName === "string" ? scores.todayName : todayHighName;
-    serverHighest = Number(scores.allTimeHighest) || serverHighest;
-    serverHighName = typeof scores.allTimeName === "string" ? scores.allTimeName : serverHighName;
-    renderHighScores();
+    const scores = await response.json() as HighScoreResponse;
+    applyServerHighScores(scores);
+    return scores;
   } catch {
     // Ignore score sync failures; the local score still persists.
   }
@@ -308,15 +322,24 @@ function askForRecordName(finalScore: number, recordLabels: string[]) {
 }
 
 async function syncFinalScore(finalScore: number) {
+  const result = await submitServerHighScore(finalScore);
+  if (!result) {
+    return;
+  }
+
   const recordLabels: string[] = [];
-  if (finalScore > todayHighest || (finalScore === todayHighest && !todayHighName)) {
+  if (result.todayRecord) {
     recordLabels.push("today's top score");
   }
-  if (finalScore > serverHighest || (finalScore === serverHighest && !serverHighName)) {
+  if (result.allTimeRecord) {
     recordLabels.push("the server top score");
   }
 
-  const name = recordLabels.length > 0 ? await askForRecordName(finalScore, recordLabels) : "";
+  if (recordLabels.length === 0) {
+    return;
+  }
+
+  const name = await askForRecordName(finalScore, recordLabels);
   await submitServerHighScore(finalScore, name);
 }
 
