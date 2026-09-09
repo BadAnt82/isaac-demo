@@ -32,7 +32,9 @@ function blankScores() {
   return {
     todayDate: todayKey(),
     todayHighest: 0,
+    todayName: "",
     allTimeHighest: 0,
+    allTimeName: "",
   };
 }
 
@@ -41,15 +43,23 @@ function normalizeScores(scores) {
   const current = {
     todayDate: typeof scores.todayDate === "string" ? scores.todayDate : todayDate,
     todayHighest: Number.isFinite(scores.todayHighest) ? scores.todayHighest : 0,
+    todayName: typeof scores.todayName === "string" ? scores.todayName : "",
     allTimeHighest: Number.isFinite(scores.allTimeHighest) ? scores.allTimeHighest : 0,
+    allTimeName: typeof scores.allTimeName === "string" ? scores.allTimeName : "",
   };
 
   if (current.todayDate !== todayDate) {
     current.todayDate = todayDate;
     current.todayHighest = 0;
+    current.todayName = "";
   }
 
   return current;
+}
+
+function cleanName(name) {
+  const trimmed = typeof name === "string" ? name.trim() : "";
+  return trimmed.slice(0, 24) || "Anonymous";
 }
 
 function readScores() {
@@ -108,10 +118,22 @@ async function handleApi(request, response) {
       }
 
       const scores = readScores();
-      scores.todayHighest = Math.max(scores.todayHighest, score);
-      scores.allTimeHighest = Math.max(scores.allTimeHighest, score);
+      const name = cleanName(body.name);
+      const todayRecord = score > scores.todayHighest;
+      const allTimeRecord = score > scores.allTimeHighest;
+
+      if (todayRecord) {
+        scores.todayHighest = score;
+        scores.todayName = name;
+      }
+
+      if (allTimeRecord) {
+        scores.allTimeHighest = score;
+        scores.allTimeName = name;
+      }
+
       writeScores(scores);
-      sendJson(response, 200, scores);
+      sendJson(response, 200, { ...scores, todayRecord, allTimeRecord });
     } catch {
       sendJson(response, 400, { error: "Invalid score payload." });
     }

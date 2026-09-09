@@ -39,13 +39,19 @@ const canvas = requireElement<HTMLCanvasElement>("#game");
 const scoreEl = requireElement<HTMLElement>("#score");
 const localHighEl = requireElement<HTMLElement>("#local-high");
 const todayHighEl = requireElement<HTMLElement>("#today-high");
+const todayNameEl = requireElement<HTMLElement>("#today-name");
 const serverHighEl = requireElement<HTMLElement>("#server-high");
+const serverNameEl = requireElement<HTMLElement>("#server-name");
 const restartButton = requireElement<HTMLButtonElement>("#restart");
 const startButton = requireElement<HTMLButtonElement>("#start");
 const fullscreenButton = requireElement<HTMLButtonElement>("#fullscreen");
 const rollButton = requireElement<HTMLElement>("#roll");
 const gameFrame = requireElement<HTMLElement>(".game-frame");
 const overlay = requireElement<HTMLElement>("#overlay");
+const recordDialog = requireElement<HTMLElement>("#record-dialog");
+const recordForm = requireElement<HTMLFormElement>(".record-card");
+const recordMessage = requireElement<HTMLElement>("#record-message");
+const recordNameInput = requireElement<HTMLInputElement>("#record-name");
 const ctx = requireCanvasContext(canvas);
 
 const artUrls = [
@@ -93,6 +99,9 @@ let rollTimer = 0;
 let localHighest = 0;
 let todayHighest = 0;
 let serverHighest = 0;
+let todayHighName = "";
+let serverHighName = "";
+let pendingRecordName: ((name: string) => void) | null = null;
 
 const mobileBreakpoint = 700;
 const localHighScoreKey = "isaac-demo-high-score";
@@ -241,7 +250,9 @@ function writeLocalHighest(nextScore: number) {
 function renderHighScores() {
   localHighEl.textContent = formatScore(localHighest);
   todayHighEl.textContent = formatScore(todayHighest);
+  todayNameEl.textContent = todayHighName || "No scorer yet";
   serverHighEl.textContent = formatScore(serverHighest);
+  serverNameEl.textContent = serverHighName || "No scorer yet";
 }
 
 async function loadServerHighScores() {
@@ -253,17 +264,19 @@ async function loadServerHighScores() {
 
     const scores = await response.json();
     todayHighest = Number(scores.todayHighest) || 0;
+    todayHighName = typeof scores.todayName === "string" ? scores.todayName : "";
     serverHighest = Number(scores.allTimeHighest) || 0;
+    serverHighName = typeof scores.allTimeName === "string" ? scores.allTimeName : "";
     renderHighScores();
   } catch {
     // The game should still work offline or from a static dev server.
   }
 }
 
-async function submitServerHighScore(finalScore: number) {
+async function submitServerHighScore(finalScore: number, name = "") {
   try {
     const response = await fetch("/api/high-scores", {
-      body: JSON.stringify({ score: finalScore }),
+      body: JSON.stringify({ name, score: finalScore }),
       cache: "no-store",
       headers: { "Content-Type": "application/json" },
       method: "POST",
@@ -274,11 +287,37 @@ async function submitServerHighScore(finalScore: number) {
 
     const scores = await response.json();
     todayHighest = Number(scores.todayHighest) || todayHighest;
+    todayHighName = typeof scores.todayName === "string" ? scores.todayName : todayHighName;
     serverHighest = Number(scores.allTimeHighest) || serverHighest;
+    serverHighName = typeof scores.allTimeName === "string" ? scores.allTimeName : serverHighName;
     renderHighScores();
   } catch {
     // Ignore score sync failures; the local score still persists.
   }
+}
+
+function askForRecordName(finalScore: number, recordLabels: string[]) {
+  recordMessage.textContent = `You set ${recordLabels.join(" and ")} with ${formatScore(finalScore)} points.`;
+  recordNameInput.value = localStorage.getItem("isaac-demo-player-name") || "";
+  recordDialog.hidden = false;
+  recordNameInput.focus();
+
+  return new Promise<string>((resolve) => {
+    pendingRecordName = resolve;
+  });
+}
+
+async function syncFinalScore(finalScore: number) {
+  const recordLabels: string[] = [];
+  if (finalScore > todayHighest) {
+    recordLabels.push("today's top score");
+  }
+  if (finalScore > serverHighest) {
+    recordLabels.push("the server top score");
+  }
+
+  const name = recordLabels.length > 0 ? await askForRecordName(finalScore, recordLabels) : "";
+  await submitServerHighScore(finalScore, name);
 }
 
 function addScore(points: number) {
@@ -670,10 +709,8 @@ function collide() {
 
 function endGame() {
   writeLocalHighest(score);
-  todayHighest = Math.max(todayHighest, score);
-  serverHighest = Math.max(serverHighest, score);
   renderHighScores();
-  void submitServerHighScore(score);
+  void syncFinalScore(score);
   state = "ended";
   restartButton.hidden = false;
   overlay.hidden = false;
@@ -852,6 +889,16 @@ rollButton.addEventListener("keydown", (event) => {
     event.preventDefault();
     roll();
   }
+});
+recordForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  const name = recordNameInput.value.trim();
+  if (name) {
+    localStorage.setItem("isaac-demo-player-name", name);
+  }
+  recordDialog.hidden = true;
+  pendingRecordName?.(name);
+  pendingRecordName = null;
 });
 document.addEventListener("fullscreenchange", () => {
   updateFullscreenButton();

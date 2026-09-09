@@ -35,13 +35,24 @@
             <div>
               <dt>Today's highest</dt>
               <dd id="today-high">0</dd>
+              <span id="today-name" class="score-name">No scorer yet</span>
             </div>
             <div>
               <dt>Server highest</dt>
               <dd id="server-high">0</dd>
+              <span id="server-name" class="score-name">No scorer yet</span>
             </div>
           </dl>
           <button id="start" type="button">Start Flight</button>
+        </div>
+        <div id="record-dialog" class="record-dialog" hidden role="dialog" aria-modal="true" aria-labelledby="record-title">
+          <form class="record-card">
+            <h2 id="record-title">Congratulations!</h2>
+            <p id="record-message">You set a new high score.</p>
+            <label for="record-name">Name</label>
+            <input id="record-name" name="name" maxlength="24" autocomplete="nickname" />
+            <button id="record-save" type="submit">Save score</button>
+          </form>
         </div>
       </section>
     </main>

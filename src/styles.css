@@ -291,6 +291,82 @@ body.fullscreen-fallback-active {
   line-height: 1;
 }
 
+.score-name {
+  display: block;
+  min-height: 1rem;
+  margin-top: 4px;
+  overflow: hidden;
+  color: #6b5840;
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.record-dialog {
+  position: absolute;
+  z-index: 12;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(28, 22, 14, 0.34);
+}
+
+.record-dialog[hidden] {
+  display: none;
+}
+
+.record-card {
+  display: grid;
+  width: min(100%, 360px);
+  gap: 12px;
+  border: 1px solid rgba(99, 76, 42, 0.34);
+  border-radius: 8px;
+  background: rgba(255, 250, 235, 0.94);
+  padding: 20px;
+  box-shadow: 0 18px 44px rgba(28, 22, 14, 0.26);
+}
+
+.record-card h2 {
+  margin: 0;
+  color: #172033;
+  font-size: 1.8rem;
+  line-height: 1;
+}
+
+.record-card p {
+  margin: 0;
+  color: #4c3d29;
+  font-weight: 800;
+}
+
+.record-card label {
+  color: #5f4a2f;
+  font-size: 0.75rem;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.record-card input {
+  width: 100%;
+  min-height: 46px;
+  border: 2px solid rgba(95, 74, 47, 0.28);
+  border-radius: 8px;
+  background: #fffaf0;
+  color: #172033;
+  font: inherit;
+  font-size: 1.1rem;
+  font-weight: 800;
+  padding: 0 12px;
+}
+
+.record-card input:focus {
+  border-color: #173b73;
+  outline: 0;
+}
+
 @media (max-width: 700px) {
   body {
     overflow: hidden;
@@ -383,6 +459,19 @@ body.fullscreen-fallback-active {
 
   .high-scores dd {
     font-size: 1.25rem;
+  }
+
+  .score-name {
+    font-size: 0.58rem;
+  }
+
+  .record-dialog {
+    position: fixed;
+  }
+
+  .record-card {
+    width: min(100%, 340px);
+    padding: 16px;
   }
 }
 
