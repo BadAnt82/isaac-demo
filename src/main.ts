@@ -77,7 +77,7 @@ let width = 960;
 let height = 540;
 let dpr = 1;
 let renderScale = 1;
-let viewportAspect = 16 / 9;
+let viewportHeight = 540;
 let lastTime = 0;
 let spawnTimer = 0;
 let bubbleTimer = 0;
@@ -96,6 +96,8 @@ const bubbleSpeed = 320;
 const groundHeight = 46;
 const rollDuration = 0.72;
 const rollPointCost = 2;
+const referencePlayableHeight = 810;
+const compactGroundHeight = 34;
 
 type FullscreenFrame = HTMLElement & {
   webkitRequestFullscreen?: () => Promise<void> | void;
@@ -111,7 +113,7 @@ function resize() {
   const box = canvas.getBoundingClientRect();
   const cssWidth = Math.max(320, Math.floor(box.width));
   const cssHeight = Math.max(360, Math.floor(box.height));
-  viewportAspect = cssWidth / cssHeight;
+  viewportHeight = cssHeight;
   compactPlayfield =
     window.matchMedia(`(max-width: ${mobileBreakpoint}px)`).matches ||
     window.matchMedia("(hover: none) and (pointer: coarse)").matches;
@@ -133,23 +135,23 @@ function resize() {
 }
 
 function getObstacleWidth() {
-  return compactPlayfield ? toWorld(42) : obstacleWidth;
+  return compactPlayfield ? toWorld(42 * getVerticalScale()) : obstacleWidth;
 }
 
 function getObstacleSpeed() {
-  return compactPlayfield ? toWorld(isPortrait() ? 94 : 74) : obstacleSpeed;
+  return compactPlayfield ? toWorld(94 * getVerticalScale()) : obstacleSpeed;
 }
 
 function getSpawnEvery() {
-  return compactPlayfield ? (isPortrait() ? 1.78 : 2.65) : spawnEvery;
+  return compactPlayfield ? 1.78 : spawnEvery;
 }
 
 function getPlaneScale() {
-  return compactPlayfield ? 0.58 / renderScale : 1;
+  return compactPlayfield ? (0.58 * getVerticalScale()) / renderScale : 1;
 }
 
 function getPlaneRadius() {
-  return compactPlayfield ? toWorld(14) : 24;
+  return compactPlayfield ? toWorld(14 * getVerticalScale()) : 24;
 }
 
 function getPlayerX() {
@@ -163,11 +165,11 @@ function getEnemyX() {
 }
 
 function getGravity() {
-  return compactPlayfield ? toWorld(isPortrait() ? 980 : 500) : 1480;
+  return compactPlayfield ? toWorld(980 * getVerticalScale()) : 1480;
 }
 
 function getLift() {
-  return compactPlayfield ? -toWorld(isPortrait() ? 325 : 170) : -475;
+  return compactPlayfield ? -toWorld(325 * getVerticalScale()) : -475;
 }
 
 function getBubbleEvery() {
@@ -175,23 +177,23 @@ function getBubbleEvery() {
 }
 
 function getBubbleSpeed() {
-  return compactPlayfield ? toWorld(isPortrait() ? 86 : 74) : bubbleSpeed;
+  return compactPlayfield ? toWorld(86 * getVerticalScale()) : bubbleSpeed;
 }
 
 function getBubbleRadius() {
-  return compactPlayfield ? toWorld(8 + Math.random() * 2) : 14 + Math.random() * 6;
+  return compactPlayfield ? toWorld((8 + Math.random() * 2) * getVerticalScale()) : 14 + Math.random() * 6;
 }
 
 function toWorld(screenPixels: number) {
   return screenPixels / renderScale;
 }
 
-function isPortrait() {
-  return viewportAspect < 1;
+function getVerticalScale() {
+  return compactPlayfield ? (viewportHeight - compactGroundHeight) / referencePlayableHeight : 1;
 }
 
 function getGroundHeight() {
-  return compactPlayfield ? toWorld(34) : groundHeight;
+  return compactPlayfield ? toWorld(compactGroundHeight) : groundHeight;
 }
 
 function formatScore(value: number) {
@@ -242,8 +244,9 @@ function flap() {
 
 function spawnObstacle() {
   const playableHeight = height - getGroundHeight();
-  const gapHeight = compactPlayfield ? toWorld(isPortrait() ? 246 : 292) : Math.max(150, Math.min(210, height * 0.34));
-  const margin = compactPlayfield ? toWorld(isPortrait() ? 48 : 34) : 82;
+  const verticalScale = getVerticalScale();
+  const gapHeight = compactPlayfield ? toWorld(246 * verticalScale) : Math.max(150, Math.min(210, height * 0.34));
+  const margin = compactPlayfield ? toWorld(48 * verticalScale) : 82;
   const gapY = margin + Math.random() * (playableHeight - gapHeight - margin * 2);
   const image = artImages[Math.floor(Math.random() * artImages.length)];
   obstacles.push({
@@ -505,7 +508,7 @@ function fireBubble() {
     y: enemyPlane.y + 4,
     radius: getBubbleRadius(),
     speed: getBubbleSpeed() + Math.random() * 18,
-    drift: compactPlayfield ? toWorld(-18 + Math.random() * 36) : -35 + Math.random() * 70,
+    drift: compactPlayfield ? toWorld((-18 + Math.random() * 36) * getVerticalScale()) : -35 + Math.random() * 70,
     scored: false,
   });
 }
