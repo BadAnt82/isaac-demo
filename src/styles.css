@@ -147,34 +147,36 @@ button:focus-visible {
 .roll-action {
   position: absolute;
   z-index: 9;
-  top: min(66%, calc(100% - 72px));
+  top: min(62%, calc(100% - 120px));
   left: max(16px, env(safe-area-inset-left));
   display: grid;
-  width: 112px;
-  min-height: 46px;
+  width: 224px;
+  min-height: 92px;
   margin-top: 0;
   place-items: center;
   border: 2px solid rgba(52, 37, 3, 0.32);
   border-radius: 8px;
-  background: #ffcf24;
+  background: rgba(255, 207, 36, 0.72);
   color: #342503;
   cursor: pointer;
-  font-size: 0.9rem;
+  font-size: 1.15rem;
   font-weight: 900;
   box-shadow: 0 8px 18px rgba(52, 37, 3, 0.22);
+  backdrop-filter: blur(10px);
   user-select: none;
   -webkit-user-select: none;
   touch-action: manipulation;
 }
 
 .roll-action:hover {
-  background: #ffe075;
+  background: rgba(255, 224, 117, 0.82);
 }
 
 .roll-action.is-disabled {
-  background: #ffcf24;
+  background: rgba(255, 207, 36, 0.46);
   color: #342503;
-  opacity: 0.62;
+  opacity: 0.72;
+  pointer-events: none;
 }
 
 .roll-action:focus-visible {
@@ -295,10 +297,24 @@ body.fullscreen-fallback-active {
   }
 
   .game-frame {
-    width: min(100vw, calc(100dvh * 16 / 9));
-    max-height: 100dvh;
+    width: 100vw;
+    height: 100dvh;
+    max-height: none;
+    aspect-ratio: auto;
     border: 0;
     border-radius: 0;
+  }
+
+  .game-frame:fullscreen,
+  .game-frame:-webkit-full-screen,
+  .game-frame.fullscreen-fallback {
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100dvh;
+    max-height: none;
+    aspect-ratio: auto;
+    transform: none;
   }
 
   .hud {
@@ -323,14 +339,11 @@ body.fullscreen-fallback-active {
 
   .roll-action {
     position: fixed;
-    top: min(68%, calc(100% - 66px));
-    left: max(
-      12px,
-      calc((100vw - min(100vw, calc(100dvh * 16 / 9))) / 2 + env(safe-area-inset-left) + 12px)
-    );
-    width: 96px;
-    min-height: 42px;
-    font-size: 0.82rem;
+    top: min(62dvh, calc(100dvh - 112px));
+    left: max(12px, env(safe-area-inset-left));
+    width: min(192px, calc(100vw - 24px));
+    min-height: 84px;
+    font-size: 1.05rem;
   }
 
   .overlay {
@@ -384,10 +397,36 @@ body.fullscreen-fallback-active {
 
   .roll-action {
     position: fixed;
-    top: min(68dvh, calc(100dvh - 66px));
+    top: min(58dvh, calc(100dvh - 112px));
     left: max(
       12px,
       calc((100vw - min(100vw, calc(100dvh * 16 / 9))) / 2 + env(safe-area-inset-left) + 12px)
     );
+  }
+}
+
+@media (hover: none) and (pointer: coarse) and (max-height: 500px) {
+  .game-frame,
+  .game-frame:fullscreen,
+  .game-frame:-webkit-full-screen,
+  .game-frame.fullscreen-fallback {
+    width: 100vw;
+    height: 100dvh;
+    max-height: none;
+    aspect-ratio: auto;
+    transform: none;
+  }
+
+  .game-frame.fullscreen-fallback {
+    top: 0;
+    left: 0;
+  }
+
+  .roll-action {
+    top: min(58dvh, calc(100dvh - 104px));
+    left: max(12px, env(safe-area-inset-left));
+    width: min(192px, 28vw);
+    min-width: 150px;
+    min-height: 78px;
   }
 }
