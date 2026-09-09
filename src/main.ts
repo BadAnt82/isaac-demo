@@ -40,7 +40,7 @@ const scoreEl = requireElement<HTMLElement>("#score");
 const restartButton = requireElement<HTMLButtonElement>("#restart");
 const startButton = requireElement<HTMLButtonElement>("#start");
 const fullscreenButton = requireElement<HTMLButtonElement>("#fullscreen");
-const rollButton = requireElement<HTMLButtonElement>("#roll");
+const rollButton = requireElement<HTMLElement>("#roll");
 const gameFrame = requireElement<HTMLElement>(".game-frame");
 const overlay = requireElement<HTMLElement>("#overlay");
 const ctx = requireCanvasContext(canvas);
@@ -76,6 +76,8 @@ let state: GameState = "ready";
 let width = 960;
 let height = 540;
 let dpr = 1;
+let renderScale = 1;
+let viewportHeight = 540;
 let lastTime = 0;
 let spawnTimer = 0;
 let bubbleTimer = 0;
@@ -113,15 +115,17 @@ function resize() {
   const box = canvas.getBoundingClientRect();
   const cssWidth = Math.max(320, Math.floor(box.width));
   const cssHeight = Math.max(360, Math.floor(box.height));
+  viewportHeight = cssHeight;
   compactPlayfield =
     window.matchMedia(`(max-width: ${mobileBreakpoint}px)`).matches ||
     window.matchMedia("(hover: none) and (pointer: coarse)").matches;
   dpr = Math.min(window.devicePixelRatio || 1, 2);
-  width = cssWidth;
-  height = cssHeight;
+  width = compactPlayfield ? Math.max(900, cssWidth) : cssWidth;
+  renderScale = cssWidth / width;
+  height = cssHeight / renderScale;
   canvas.width = Math.floor(cssWidth * dpr);
   canvas.height = Math.floor(cssHeight * dpr);
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.setTransform(dpr * renderScale, 0, 0, dpr * renderScale, 0, 0);
   plane.radius = getPlaneRadius();
   plane.x = getPlayerX();
   enemyPlane.x = getEnemyX();
@@ -133,53 +137,57 @@ function resize() {
 }
 
 function getObstacleWidth() {
-  return compactPlayfield ? clamp(width * 0.1, 34, 52) : obstacleWidth;
+  return compactPlayfield ? toWorld(42) : obstacleWidth;
 }
 
 function getObstacleSpeed() {
-  return compactPlayfield ? clamp(width * 0.28, 88, 150) : obstacleSpeed;
+  return compactPlayfield ? toWorld(95) : obstacleSpeed;
 }
 
 function getSpawnEvery() {
-  return compactPlayfield ? clamp(width / (getObstacleSpeed() * 4.15), 0.68, 1.05) : spawnEvery;
+  return compactPlayfield ? 1.24 : spawnEvery;
 }
 
 function getPlaneScale() {
-  return compactPlayfield ? clamp(width / 640, 0.52, 0.78) : 1;
+  return compactPlayfield ? 0.58 / renderScale : 1;
 }
 
 function getPlaneRadius() {
-  return compactPlayfield ? clamp(width * 0.04, 13, 18) : 24;
+  return compactPlayfield ? toWorld(14) : 24;
 }
 
 function getPlayerX() {
-  return compactPlayfield ? clamp(width * 0.12, 42, 64) : Math.max(92, Math.min(156, width * 0.18));
+  return compactPlayfield ? toWorld(44) : Math.max(92, Math.min(156, width * 0.18));
 }
 
 function getEnemyX() {
   return compactPlayfield
-    ? width - clamp(width * 0.1, 38, 58)
+    ? width - toWorld(34)
     : width - Math.max(86, Math.min(138, width * 0.12));
 }
 
 function getGravity() {
-  return compactPlayfield ? clamp(height * 2.65, 920, 1480) : 1480;
+  return compactPlayfield ? toWorld(1180) : 1480;
 }
 
 function getLift() {
-  return compactPlayfield ? -clamp(height * 0.72, 330, 475) : -475;
+  return compactPlayfield ? -toWorld(365) : -475;
 }
 
 function getBubbleEvery() {
-  return compactPlayfield ? clamp(width / 250, 1.3, 1.85) : bubbleEvery;
+  return compactPlayfield ? 1.55 : bubbleEvery;
 }
 
 function getBubbleSpeed() {
-  return compactPlayfield ? clamp(width * 0.28, 92, 150) : bubbleSpeed;
+  return compactPlayfield ? toWorld(90) : bubbleSpeed;
 }
 
 function getBubbleRadius() {
-  return compactPlayfield ? clamp(width * 0.023, 7, 11) + Math.random() * 2 : 14 + Math.random() * 6;
+  return compactPlayfield ? toWorld(8 + Math.random() * 2) : 14 + Math.random() * 6;
+}
+
+function toWorld(screenPixels: number) {
+  return screenPixels / renderScale;
 }
 
 function formatScore(value: number) {
@@ -193,8 +201,9 @@ function addScore(points: number) {
 
 function updateRollButton() {
   const ready = state === "running" && score >= rollPointCost && rollTimer <= 0;
-  rollButton.disabled = !ready;
-  rollButton.textContent = "Roll -2";
+  rollButton.classList.toggle("is-disabled", !ready);
+  rollButton.setAttribute("aria-disabled", `${!ready}`);
+  rollButton.textContent = "goal -2";
 }
 
 function reset(nextState: GameState) {
@@ -230,9 +239,9 @@ function flap() {
 function spawnObstacle() {
   const playableHeight = height - groundHeight;
   const gapHeight = compactPlayfield
-    ? clamp(height * 0.35, 128, 190)
+    ? toWorld(clamp(viewportHeight * 0.26, 190, 250))
     : Math.max(150, Math.min(210, height * 0.34));
-  const margin = compactPlayfield ? clamp(height * 0.13, 42, 68) : 82;
+  const margin = compactPlayfield ? toWorld(clamp(viewportHeight * 0.08, 42, 62)) : 82;
   const gapY = margin + Math.random() * (playableHeight - gapHeight - margin * 2);
   const image = artImages[Math.floor(Math.random() * artImages.length)];
   obstacles.push({
@@ -493,7 +502,7 @@ function fireBubble() {
     y: enemyPlane.y + 4,
     radius: getBubbleRadius(),
     speed: getBubbleSpeed() + Math.random() * 18,
-    drift: compactPlayfield ? -20 + Math.random() * 40 : -35 + Math.random() * 70,
+    drift: compactPlayfield ? toWorld(-18 + Math.random() * 36) : -35 + Math.random() * 70,
     scored: false,
   });
 }
@@ -706,6 +715,12 @@ fullscreenButton.addEventListener("click", () => {
   void toggleFullscreen();
 });
 rollButton.addEventListener("click", roll);
+rollButton.addEventListener("keydown", (event) => {
+  if (event.code === "Enter" || event.code === "Space") {
+    event.preventDefault();
+    roll();
+  }
+});
 document.addEventListener("fullscreenchange", () => {
   updateFullscreenButton();
   resize();

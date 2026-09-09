@@ -140,27 +140,38 @@ button:focus-visible {
   min-width: 112px;
 }
 
-#roll {
-  display: block;
+.roll-action {
+  display: grid;
   width: 100%;
   min-height: 42px;
   margin-top: 0;
+  place-items: center;
+  border: 2px solid rgba(52, 37, 3, 0.32);
   border-radius: 8px;
   background: #ffcf24;
   color: #342503;
-  padding: 0 8px;
+  cursor: pointer;
   font-size: 0.9rem;
+  font-weight: 900;
   box-shadow: 0 8px 18px rgba(52, 37, 3, 0.22);
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
 }
 
-#roll:hover {
+.roll-action:hover {
   background: #ffe075;
 }
 
-#roll:disabled {
+.roll-action.is-disabled {
   background: #ffcf24;
   color: #342503;
   opacity: 0.62;
+}
+
+.roll-action:focus-visible {
+  outline: 3px solid #173b73;
+  outline-offset: 3px;
 }
 
 .game-frame.fullscreen-fallback {
@@ -250,7 +261,7 @@ body.fullscreen-fallback-active {
     padding: 0 12px;
   }
 
-  #roll {
+  .roll-action {
     min-height: 38px;
     font-size: 0.82rem;
   }
