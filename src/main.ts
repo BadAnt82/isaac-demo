@@ -122,11 +122,11 @@ type FullscreenDocument = Document & {
 
 function resize() {
   const box = canvas.getBoundingClientRect();
-  const cssWidth = Math.max(320, Math.floor(box.width));
-  const cssHeight = Math.max(360, Math.floor(box.height));
   compactPlayfield =
     window.matchMedia(`(max-width: ${mobileBreakpoint}px)`).matches ||
     window.matchMedia("(hover: none) and (pointer: coarse)").matches;
+  const cssWidth = Math.max(320, Math.floor(box.width));
+  const cssHeight = compactPlayfield ? Math.max(1, Math.floor(box.height)) : Math.max(360, Math.floor(box.height));
   dpr = Math.min(window.devicePixelRatio || 1, 2);
   width = compactPlayfield ? compactWorldWidth : cssWidth;
   height = compactPlayfield ? compactWorldHeight : cssHeight;

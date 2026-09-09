@@ -17,12 +17,13 @@
 html,
 body {
   min-width: 320px;
-  min-height: 100%;
+  width: 100%;
+  height: 100%;
   margin: 0;
 }
 
 body {
-  min-height: 100vh;
+  min-height: 100dvh;
   overflow: hidden;
 }
 
@@ -56,7 +57,8 @@ button:focus-visible {
 
 .shell {
   display: grid;
-  min-height: 100vh;
+  width: 100vw;
+  height: 100dvh;
   padding: clamp(12px, 3vw, 28px);
   place-items: center;
   background:
@@ -66,9 +68,11 @@ button:focus-visible {
 
 .game-frame {
   position: relative;
-  width: min(100%, 1120px);
-  height: min(76vh, 660px);
-  min-height: 430px;
+  aspect-ratio: 16 / 9;
+  width: min(100%, 1120px, calc((100dvh - clamp(24px, 6vw, 56px)) * 16 / 9));
+  height: auto;
+  max-height: min(76dvh, 660px);
+  min-height: 0;
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.36);
   border-radius: 8px;
@@ -107,8 +111,8 @@ button:focus-visible {
   display: flex;
   width: 118px;
   flex-direction: column;
-  align-items: stretch;
-  gap: 6px;
+  align-items: flex-start;
+  gap: 4px;
   border: 1px solid rgba(255, 255, 255, 0.58);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.7);
@@ -141,9 +145,13 @@ button:focus-visible {
 }
 
 .roll-action {
+  position: absolute;
+  z-index: 9;
+  top: min(66%, calc(100% - 72px));
+  left: max(16px, env(safe-area-inset-left));
   display: grid;
-  width: 100%;
-  min-height: 42px;
+  width: 112px;
+  min-height: 46px;
   margin-top: 0;
   place-items: center;
   border: 2px solid rgba(52, 37, 3, 0.32);
@@ -177,10 +185,29 @@ button:focus-visible {
 .game-frame.fullscreen-fallback {
   position: fixed;
   z-index: 10;
-  inset: 0;
-  width: 100vw;
-  height: 100svh;
-  min-height: 100svh;
+  top: 50%;
+  left: 50%;
+  width: min(100vw, calc(100dvh * 16 / 9));
+  height: auto;
+  max-height: 100dvh;
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+  transform: translate(-50%, -50%);
+}
+
+.game-frame:fullscreen {
+  width: min(100vw, calc(100dvh * 16 / 9));
+  height: auto;
+  max-height: 100dvh;
+  border: 0;
+  border-radius: 0;
+}
+
+.game-frame:-webkit-full-screen {
+  width: min(100vw, calc(100dvh * 16 / 9));
+  height: auto;
+  max-height: 100dvh;
   border: 0;
   border-radius: 0;
 }
@@ -225,18 +252,18 @@ body.fullscreen-fallback-active {
 
 @media (max-width: 700px) {
   body {
-    overflow: auto;
+    overflow: hidden;
   }
 
   .shell {
-    min-height: 100svh;
     padding: 0;
+    align-items: start;
+    justify-items: center;
   }
 
   .game-frame {
-    width: 100%;
-    height: 100svh;
-    min-height: 100svh;
+    width: min(100vw, calc(100dvh * 16 / 9));
+    max-height: 100dvh;
     border: 0;
     border-radius: 0;
   }
@@ -262,26 +289,42 @@ body.fullscreen-fallback-active {
   }
 
   .roll-action {
-    min-height: 38px;
+    position: fixed;
+    top: min(68%, calc(100% - 66px));
+    left: max(
+      12px,
+      calc((100vw - min(100vw, calc(100dvh * 16 / 9))) / 2 + env(safe-area-inset-left) + 12px)
+    );
+    width: 96px;
+    min-height: 42px;
     font-size: 0.82rem;
   }
 }
 
 @media (hover: none) and (pointer: coarse) {
   body {
-    overflow: auto;
+    overflow: hidden;
   }
 
   .shell {
-    min-height: 100svh;
     padding: 0;
+    align-items: start;
+    justify-items: center;
   }
 
   .game-frame {
-    width: 100%;
-    height: 100svh;
-    min-height: 100svh;
+    width: min(100vw, calc(100dvh * 16 / 9));
+    max-height: 100dvh;
     border: 0;
     border-radius: 0;
+  }
+
+  .roll-action {
+    position: fixed;
+    top: min(68dvh, calc(100dvh - 66px));
+    left: max(
+      12px,
+      calc((100vw - min(100vw, calc(100dvh * 16 / 9))) / 2 + env(safe-area-inset-left) + 12px)
+    );
   }
 }
