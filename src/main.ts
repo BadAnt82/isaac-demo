@@ -250,9 +250,9 @@ function writeLocalHighest(nextScore: number) {
 function renderHighScores() {
   localHighEl.textContent = formatScore(localHighest);
   todayHighEl.textContent = formatScore(todayHighest);
-  todayNameEl.textContent = todayHighName || "No scorer yet";
+  todayNameEl.textContent = todayHighName || (todayHighest > 0 ? "Unknown scorer" : "No scorer yet");
   serverHighEl.textContent = formatScore(serverHighest);
-  serverNameEl.textContent = serverHighName || "No scorer yet";
+  serverNameEl.textContent = serverHighName || (serverHighest > 0 ? "Unknown scorer" : "No scorer yet");
 }
 
 async function loadServerHighScores() {
@@ -309,10 +309,10 @@ function askForRecordName(finalScore: number, recordLabels: string[]) {
 
 async function syncFinalScore(finalScore: number) {
   const recordLabels: string[] = [];
-  if (finalScore > todayHighest) {
+  if (finalScore > todayHighest || (finalScore === todayHighest && !todayHighName)) {
     recordLabels.push("today's top score");
   }
-  if (finalScore > serverHighest) {
+  if (finalScore > serverHighest || (finalScore === serverHighest && !serverHighName)) {
     recordLabels.push("the server top score");
   }
 

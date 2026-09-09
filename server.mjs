@@ -40,12 +40,19 @@ function blankScores() {
 
 function normalizeScores(scores) {
   const todayDate = todayKey();
+  const todayHighest = Number.isFinite(scores.todayHighest) ? scores.todayHighest : 0;
+  const allTimeHighest = Number.isFinite(scores.allTimeHighest) ? scores.allTimeHighest : 0;
   const current = {
     todayDate: typeof scores.todayDate === "string" ? scores.todayDate : todayDate,
-    todayHighest: Number.isFinite(scores.todayHighest) ? scores.todayHighest : 0,
-    todayName: typeof scores.todayName === "string" ? scores.todayName : "",
-    allTimeHighest: Number.isFinite(scores.allTimeHighest) ? scores.allTimeHighest : 0,
-    allTimeName: typeof scores.allTimeName === "string" ? scores.allTimeName : "",
+    todayHighest,
+    todayName: typeof scores.todayName === "string" && scores.todayName ? scores.todayName : todayHighest > 0 ? "Unknown scorer" : "",
+    allTimeHighest,
+    allTimeName:
+      typeof scores.allTimeName === "string" && scores.allTimeName
+        ? scores.allTimeName
+        : allTimeHighest > 0
+          ? "Unknown scorer"
+          : "",
   };
 
   if (current.todayDate !== todayDate) {
@@ -60,6 +67,10 @@ function normalizeScores(scores) {
 function cleanName(name) {
   const trimmed = typeof name === "string" ? name.trim() : "";
   return trimmed.slice(0, 24) || "Anonymous";
+}
+
+function isClaimableName(name) {
+  return !name || name === "Unknown scorer";
 }
 
 function readScores() {
@@ -119,8 +130,9 @@ async function handleApi(request, response) {
 
       const scores = readScores();
       const name = cleanName(body.name);
-      const todayRecord = score > scores.todayHighest;
-      const allTimeRecord = score > scores.allTimeHighest;
+      const todayRecord = score > scores.todayHighest || (score === scores.todayHighest && isClaimableName(scores.todayName));
+      const allTimeRecord =
+        score > scores.allTimeHighest || (score === scores.allTimeHighest && isClaimableName(scores.allTimeName));
 
       if (todayRecord) {
         scores.todayHighest = score;
