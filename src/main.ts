@@ -83,7 +83,8 @@ let bubbles: Bubble[] = [];
 let compactPlayfield = false;
 
 const mobileBreakpoint = 700;
-const minMobileWorldWidth = 1180;
+const minScaledWorldWidth = 1320;
+const minScaledWorldAspect = 2.45;
 const gravity = 1480;
 const lift = -475;
 const obstacleWidth = 96;
@@ -109,17 +110,19 @@ function resize() {
   const box = canvas.getBoundingClientRect();
   const cssWidth = Math.max(320, Math.floor(box.width));
   const cssHeight = Math.max(360, Math.floor(box.height));
+  const viewportAspect = cssWidth / cssHeight;
   compactPlayfield =
     window.matchMedia(`(max-width: ${mobileBreakpoint}px)`).matches ||
-    window.matchMedia("(hover: none) and (pointer: coarse)").matches;
+    window.matchMedia("(hover: none) and (pointer: coarse)").matches ||
+    viewportAspect < minScaledWorldAspect;
   dpr = Math.min(window.devicePixelRatio || 1, 2);
-  width = compactPlayfield ? Math.max(minMobileWorldWidth, cssWidth) : cssWidth;
+  width = compactPlayfield ? Math.max(minScaledWorldWidth, cssHeight * minScaledWorldAspect, cssWidth) : cssWidth;
   height = cssHeight;
   canvas.width = Math.floor(cssWidth * dpr);
   canvas.height = Math.floor(cssHeight * dpr);
   ctx.setTransform((cssWidth * dpr) / width, 0, 0, (cssHeight * dpr) / height, 0, 0);
-  plane.x = Math.max(92, Math.min(156, width * 0.18));
-  enemyPlane.x = width - Math.max(86, Math.min(138, width * 0.12));
+  plane.x = compactPlayfield ? 82 : Math.max(92, Math.min(156, width * 0.18));
+  enemyPlane.x = compactPlayfield ? width - 74 : width - Math.max(86, Math.min(138, width * 0.12));
   if (state === "ready") {
     plane.y = height * 0.48;
     enemyPlane.y = height * 0.36;
