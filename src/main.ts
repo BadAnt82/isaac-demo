@@ -16,6 +16,7 @@ type Bubble = {
   radius: number;
   speed: number;
   drift: number;
+  scored: boolean;
 };
 
 function requireElement<T extends Element>(selector: string) {
@@ -39,6 +40,7 @@ const scoreEl = requireElement<HTMLElement>("#score");
 const restartButton = requireElement<HTMLButtonElement>("#restart");
 const startButton = requireElement<HTMLButtonElement>("#start");
 const fullscreenButton = requireElement<HTMLButtonElement>("#fullscreen");
+const rollButton = requireElement<HTMLButtonElement>("#roll");
 const gameFrame = requireElement<HTMLElement>(".game-frame");
 const overlay = requireElement<HTMLElement>("#overlay");
 const ctx = requireCanvasContext(canvas);
@@ -81,20 +83,25 @@ let score = 0;
 let obstacles: Obstacle[] = [];
 let bubbles: Bubble[] = [];
 let compactPlayfield = false;
+let rollTimer = 0;
+let rollPipeCharge = 3;
 
 const mobileBreakpoint = 700;
-const minScaledWorldWidth = 1320;
-const minScaledWorldAspect = 2.45;
 const gravity = 1480;
 const lift = -475;
 const obstacleWidth = 96;
+const compactObstacleWidth = 54;
 const obstacleSpeed = 250;
+const compactObstacleSpeed = 122;
 const spawnEvery = 1.42;
+const compactSpawnEvery = 0.92;
 const bubbleEvery = 1.08;
-const mobileBubbleEvery = 1.62;
+const mobileBubbleEvery = 1.5;
 const bubbleSpeed = 320;
-const mobileBubbleSpeed = 215;
+const mobileBubbleSpeed = 135;
 const groundHeight = 46;
+const rollDuration = 0.72;
+const rollRechargePipes = 3;
 
 type FullscreenFrame = HTMLElement & {
   webkitRequestFullscreen?: () => Promise<void> | void;
@@ -110,23 +117,55 @@ function resize() {
   const box = canvas.getBoundingClientRect();
   const cssWidth = Math.max(320, Math.floor(box.width));
   const cssHeight = Math.max(360, Math.floor(box.height));
-  const viewportAspect = cssWidth / cssHeight;
   compactPlayfield =
     window.matchMedia(`(max-width: ${mobileBreakpoint}px)`).matches ||
-    window.matchMedia("(hover: none) and (pointer: coarse)").matches ||
-    viewportAspect < minScaledWorldAspect;
+    window.matchMedia("(hover: none) and (pointer: coarse)").matches;
   dpr = Math.min(window.devicePixelRatio || 1, 2);
-  width = compactPlayfield ? Math.max(minScaledWorldWidth, cssHeight * minScaledWorldAspect, cssWidth) : cssWidth;
+  width = cssWidth;
   height = cssHeight;
   canvas.width = Math.floor(cssWidth * dpr);
   canvas.height = Math.floor(cssHeight * dpr);
-  ctx.setTransform((cssWidth * dpr) / width, 0, 0, (cssHeight * dpr) / height, 0, 0);
-  plane.x = compactPlayfield ? 82 : Math.max(92, Math.min(156, width * 0.18));
-  enemyPlane.x = compactPlayfield ? width - 74 : width - Math.max(86, Math.min(138, width * 0.12));
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  plane.radius = compactPlayfield ? 18 : 24;
+  plane.x = compactPlayfield ? Math.max(42, Math.min(72, width * 0.12)) : Math.max(92, Math.min(156, width * 0.18));
+  enemyPlane.x = compactPlayfield ? width - Math.max(42, Math.min(72, width * 0.12)) : width - Math.max(86, Math.min(138, width * 0.12));
   if (state === "ready") {
     plane.y = height * 0.48;
     enemyPlane.y = height * 0.36;
   }
+  updateFullscreenButton();
+}
+
+function getObstacleWidth() {
+  return compactPlayfield ? compactObstacleWidth : obstacleWidth;
+}
+
+function getObstacleSpeed() {
+  return compactPlayfield ? compactObstacleSpeed : obstacleSpeed;
+}
+
+function getSpawnEvery() {
+  return compactPlayfield ? compactSpawnEvery : spawnEvery;
+}
+
+function getPlaneScale() {
+  return compactPlayfield ? 0.72 : 1;
+}
+
+function formatScore(value: number) {
+  return Number.isInteger(value) ? `${value}` : value.toFixed(1);
+}
+
+function addScore(points: number) {
+  score += points;
+  scoreEl.textContent = formatScore(score);
+}
+
+function updateRollButton() {
+  const ready = state === "running" && rollPipeCharge >= rollRechargePipes && rollTimer <= 0;
+  rollButton.hidden = state !== "running";
+  rollButton.disabled = !ready;
+  rollButton.textContent = ready ? "Roll" : `Roll ${Math.min(rollPipeCharge, rollRechargePipes)}/${rollRechargePipes}`;
 }
 
 function reset(nextState: GameState) {
@@ -135,15 +174,18 @@ function reset(nextState: GameState) {
   bubbles = [];
   spawnTimer = 0.45;
   bubbleTimer = compactPlayfield ? 1.45 : 1;
+  rollTimer = 0;
+  rollPipeCharge = rollRechargePipes;
   plane.y = height * 0.48;
   plane.velocity = 0;
   plane.rotation = 0;
   enemyPlane.y = height * 0.36;
   enemyPlane.bob = 0;
   state = nextState;
-  scoreEl.textContent = "0";
+  scoreEl.textContent = formatScore(score);
   restartButton.hidden = nextState !== "ended";
   overlay.hidden = nextState !== "ready";
+  updateRollButton();
 }
 
 function flap() {
@@ -159,8 +201,8 @@ function flap() {
 
 function spawnObstacle() {
   const playableHeight = height - groundHeight;
-  const gapHeight = Math.max(150, Math.min(210, height * 0.34));
-  const margin = 82;
+  const gapHeight = compactPlayfield ? Math.max(132, Math.min(188, height * 0.38)) : Math.max(150, Math.min(210, height * 0.34));
+  const margin = compactPlayfield ? 58 : 82;
   const gapY = margin + Math.random() * (playableHeight - gapHeight - margin * 2);
   const image = artImages[Math.floor(Math.random() * artImages.length)];
   obstacles.push({
@@ -230,12 +272,13 @@ function drawImageCover(image: HTMLImageElement, x: number, y: number, w: number
 }
 
 function drawObstacle(obstacle: Obstacle) {
+  const width = getObstacleWidth();
   const topHeight = obstacle.gapY;
   const bottomY = obstacle.gapY + obstacle.gapHeight;
   const bottomHeight = height - groundHeight - bottomY;
 
-  drawObstacleSegment(obstacle.x, 0, obstacleWidth, topHeight, obstacle.image, true);
-  drawObstacleSegment(obstacle.x, bottomY, obstacleWidth, bottomHeight, obstacle.image, false);
+  drawObstacleSegment(obstacle.x, 0, width, topHeight, obstacle.image, true);
+  drawObstacleSegment(obstacle.x, bottomY, width, bottomHeight, obstacle.image, false);
 }
 
 function drawObstacleSegment(
@@ -284,10 +327,11 @@ function drawPlaneBody(
   tailColor: string,
   cockpitColor: string,
   direction: 1 | -1,
+  scale = 1,
 ) {
   ctx.save();
   ctx.translate(x, y);
-  ctx.scale(direction, 1);
+  ctx.scale(direction * scale, scale);
   ctx.rotate(rotation);
 
   ctx.fillStyle = "rgba(30, 38, 50, 0.18)";
@@ -361,12 +405,24 @@ function drawPlaneBody(
 }
 
 function drawPlane() {
-  drawPlaneBody(plane.x, plane.y, plane.rotation, "#ffd232", "#ffe891", "#f4a51c", "#6fc8ff", 1);
+  const rollProgress = rollTimer > 0 ? 1 - rollTimer / rollDuration : 0;
+  const rollRotation = rollTimer > 0 ? Math.PI * 2 * rollProgress : 0;
+  drawPlaneBody(
+    plane.x,
+    plane.y,
+    plane.rotation + rollRotation,
+    "#ffd232",
+    "#ffe891",
+    "#f4a51c",
+    "#6fc8ff",
+    1,
+    getPlaneScale(),
+  );
 }
 
 function drawEnemyPlane(time: number) {
   const wobble = Math.sin(time * 3.2) * 0.08;
-  drawPlaneBody(enemyPlane.x, enemyPlane.y, wobble, "#2f80ed", "#9bd4ff", "#174e9a", "#d8f7ff", -1);
+  drawPlaneBody(enemyPlane.x, enemyPlane.y, wobble, "#2f80ed", "#9bd4ff", "#174e9a", "#d8f7ff", -1, getPlaneScale());
 }
 
 function drawBubbles() {
@@ -411,7 +467,23 @@ function fireBubble() {
     radius,
     speed: baseSpeed + Math.random() * 28,
     drift: -35 + Math.random() * 70,
+    scored: false,
   });
+}
+
+function roll() {
+  if (state === "ready") {
+    reset("running");
+    overlay.hidden = true;
+  }
+
+  if (state !== "running" || rollPipeCharge < rollRechargePipes || rollTimer > 0) {
+    return;
+  }
+
+  rollTimer = rollDuration;
+  rollPipeCharge = 0;
+  updateRollButton();
 }
 
 function collide() {
@@ -420,7 +492,8 @@ function collide() {
   }
 
   const hitObstacle = obstacles.some((obstacle) => {
-    const closestX = Math.max(obstacle.x, Math.min(plane.x, obstacle.x + obstacleWidth));
+    const width = getObstacleWidth();
+    const closestX = Math.max(obstacle.x, Math.min(plane.x, obstacle.x + width));
     const inTop = plane.y < obstacle.gapY;
     const inBottom = plane.y > obstacle.gapY + obstacle.gapHeight;
     if (!inTop && !inBottom) {
@@ -436,6 +509,10 @@ function collide() {
 
   if (hitObstacle) {
     return true;
+  }
+
+  if (rollTimer > 0) {
+    return false;
   }
 
   return bubbles.some((bubble) => {
@@ -465,7 +542,14 @@ function isFullscreen() {
 }
 
 function updateFullscreenButton() {
-  fullscreenButton.textContent = isFullscreen() ? "Exit full screen" : "Full screen";
+  const label = compactPlayfield
+    ? isFullscreen()
+      ? "Exit"
+      : "Full"
+    : isFullscreen()
+      ? "Exit full screen"
+      : "Full screen";
+  fullscreenButton.textContent = label;
   fullscreenButton.setAttribute(
     "aria-label",
     isFullscreen() ? "Exit full screen mode" : "Enter full screen mode",
@@ -505,6 +589,8 @@ function update(dt: number) {
     return;
   }
 
+  rollTimer = Math.max(0, rollTimer - dt);
+
   plane.velocity += gravity * dt;
   plane.y += plane.velocity * dt;
   plane.rotation = Math.max(-0.42, Math.min(0.72, plane.velocity / 620));
@@ -516,7 +602,7 @@ function update(dt: number) {
   spawnTimer -= dt;
   if (spawnTimer <= 0) {
     spawnObstacle();
-    spawnTimer = spawnEvery;
+    spawnTimer = getSpawnEvery();
   }
 
   bubbleTimer -= dt;
@@ -526,24 +612,32 @@ function update(dt: number) {
   }
 
   obstacles.forEach((obstacle) => {
-    obstacle.x -= obstacleSpeed * dt;
-    if (!obstacle.scored && obstacle.x + obstacleWidth < plane.x) {
+    const width = getObstacleWidth();
+    obstacle.x -= getObstacleSpeed() * dt;
+    if (!obstacle.scored && obstacle.x + width < plane.x) {
       obstacle.scored = true;
-      score += 1;
-      scoreEl.textContent = `${score}`;
+      rollPipeCharge = Math.min(rollRechargePipes, rollPipeCharge + 1);
+      addScore(1);
+      updateRollButton();
     }
   });
-  obstacles = obstacles.filter((obstacle) => obstacle.x > -obstacleWidth - 10);
+  obstacles = obstacles.filter((obstacle) => obstacle.x > -getObstacleWidth() - 10);
 
   bubbles.forEach((bubble) => {
     bubble.x -= bubble.speed * dt;
     bubble.y += bubble.drift * dt;
+    if (!bubble.scored && bubble.x + bubble.radius < plane.x) {
+      bubble.scored = true;
+      addScore(0.5);
+    }
   });
   bubbles = bubbles.filter((bubble) => bubble.x > -bubble.radius * 2);
 
   if (collide()) {
     endGame();
   }
+
+  updateRollButton();
 }
 
 function render(time: number) {
@@ -574,6 +668,10 @@ window.addEventListener("keydown", (event) => {
     event.preventDefault();
     flap();
   }
+  if (event.code === "KeyR" || event.code === "ShiftLeft" || event.code === "ShiftRight") {
+    event.preventDefault();
+    roll();
+  }
 });
 canvas.addEventListener("pointerdown", flap);
 startButton.addEventListener("click", flap);
@@ -586,6 +684,7 @@ restartButton.addEventListener("click", () => {
 fullscreenButton.addEventListener("click", () => {
   void toggleFullscreen();
 });
+rollButton.addEventListener("click", roll);
 document.addEventListener("fullscreenchange", () => {
   updateFullscreenButton();
   resize();

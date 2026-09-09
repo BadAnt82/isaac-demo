@@ -44,6 +44,11 @@ button:hover {
   background: #ffe075;
 }
 
+button:disabled {
+  cursor: default;
+  opacity: 0.58;
+}
+
 button:focus-visible {
   outline: 3px solid #173b73;
   outline-offset: 3px;
@@ -130,6 +135,21 @@ button:focus-visible {
   min-width: 112px;
 }
 
+#roll {
+  min-width: 88px;
+  background: #38d58f;
+  color: #063820;
+}
+
+#roll:hover {
+  background: #75ebb5;
+}
+
+#roll:disabled {
+  background: rgba(255, 255, 255, 0.74);
+  color: #38506b;
+}
+
 .game-frame.fullscreen-fallback {
   position: fixed;
   z-index: 10;
@@ -161,6 +181,7 @@ body.fullscreen-fallback-active {
 .overlay[hidden],
 #restart[hidden],
 #fullscreen[hidden],
+#roll[hidden],
 #start[hidden] {
   display: none;
 }
@@ -214,6 +235,11 @@ body.fullscreen-fallback-active {
 
   #fullscreen {
     min-width: 96px;
+    padding: 0 12px;
+  }
+
+  #roll {
+    min-width: 76px;
     padding: 0 12px;
   }
 }
