@@ -77,6 +77,7 @@ let width = 960;
 let height = 540;
 let dpr = 1;
 let renderScale = 1;
+let viewportAspect = 16 / 9;
 let lastTime = 0;
 let spawnTimer = 0;
 let bubbleTimer = 0;
@@ -110,6 +111,7 @@ function resize() {
   const box = canvas.getBoundingClientRect();
   const cssWidth = Math.max(320, Math.floor(box.width));
   const cssHeight = Math.max(360, Math.floor(box.height));
+  viewportAspect = cssWidth / cssHeight;
   compactPlayfield =
     window.matchMedia(`(max-width: ${mobileBreakpoint}px)`).matches ||
     window.matchMedia("(hover: none) and (pointer: coarse)").matches;
@@ -135,11 +137,11 @@ function getObstacleWidth() {
 }
 
 function getObstacleSpeed() {
-  return compactPlayfield ? toWorld(90) : obstacleSpeed;
+  return compactPlayfield ? toWorld(isPortrait() ? 94 : 74) : obstacleSpeed;
 }
 
 function getSpawnEvery() {
-  return compactPlayfield ? 2.05 : spawnEvery;
+  return compactPlayfield ? (isPortrait() ? 1.78 : 2.65) : spawnEvery;
 }
 
 function getPlaneScale() {
@@ -161,11 +163,11 @@ function getEnemyX() {
 }
 
 function getGravity() {
-  return compactPlayfield ? toWorld(930) : 1480;
+  return compactPlayfield ? toWorld(isPortrait() ? 980 : 500) : 1480;
 }
 
 function getLift() {
-  return compactPlayfield ? -toWorld(305) : -475;
+  return compactPlayfield ? -toWorld(isPortrait() ? 325 : 170) : -475;
 }
 
 function getBubbleEvery() {
@@ -173,7 +175,7 @@ function getBubbleEvery() {
 }
 
 function getBubbleSpeed() {
-  return compactPlayfield ? toWorld(82) : bubbleSpeed;
+  return compactPlayfield ? toWorld(isPortrait() ? 86 : 74) : bubbleSpeed;
 }
 
 function getBubbleRadius() {
@@ -182,6 +184,10 @@ function getBubbleRadius() {
 
 function toWorld(screenPixels: number) {
   return screenPixels / renderScale;
+}
+
+function isPortrait() {
+  return viewportAspect < 1;
 }
 
 function getGroundHeight() {
@@ -236,8 +242,8 @@ function flap() {
 
 function spawnObstacle() {
   const playableHeight = height - getGroundHeight();
-  const gapHeight = compactPlayfield ? toWorld(285) : Math.max(150, Math.min(210, height * 0.34));
-  const margin = compactPlayfield ? toWorld(36) : 82;
+  const gapHeight = compactPlayfield ? toWorld(isPortrait() ? 246 : 292) : Math.max(150, Math.min(210, height * 0.34));
+  const margin = compactPlayfield ? toWorld(isPortrait() ? 48 : 34) : 82;
   const gapY = margin + Math.random() * (playableHeight - gapHeight - margin * 2);
   const image = artImages[Math.floor(Math.random() * artImages.length)];
   obstacles.push({
