@@ -76,8 +76,9 @@ let state: GameState = "ready";
 let width = 960;
 let height = 540;
 let dpr = 1;
-let renderScaleX = 1;
-let renderScaleY = 1;
+let renderScale = 1;
+let renderOffsetX = 0;
+let renderOffsetY = 0;
 let lastTime = 0;
 let spawnTimer = 0;
 let bubbleTimer = 0;
@@ -129,11 +130,19 @@ function resize() {
   dpr = Math.min(window.devicePixelRatio || 1, 2);
   width = compactPlayfield ? compactWorldWidth : cssWidth;
   height = compactPlayfield ? compactWorldHeight : cssHeight;
-  renderScaleX = cssWidth / width;
-  renderScaleY = cssHeight / height;
+  renderScale = compactPlayfield ? Math.min(cssWidth / width, cssHeight / height) : 1;
+  renderOffsetX = compactPlayfield ? (cssWidth - width * renderScale) / 2 : 0;
+  renderOffsetY = compactPlayfield ? (cssHeight - height * renderScale) / 2 : 0;
   canvas.width = Math.floor(cssWidth * dpr);
   canvas.height = Math.floor(cssHeight * dpr);
-  ctx.setTransform(dpr * renderScaleX, 0, 0, dpr * renderScaleY, 0, 0);
+  ctx.setTransform(
+    dpr * renderScale,
+    0,
+    0,
+    dpr * renderScale,
+    dpr * renderOffsetX,
+    dpr * renderOffsetY,
+  );
   plane.radius = getPlaneRadius();
   plane.x = getPlayerX();
   enemyPlane.x = getEnemyX();
@@ -196,6 +205,15 @@ function getBubbleRadius() {
 
 function getGroundHeight() {
   return compactPlayfield ? compactGroundHeight : groundHeight;
+}
+
+function drawViewportBackground(canvasWidth: number, canvasHeight: number) {
+  const sky = ctx.createLinearGradient(0, 0, 0, canvasHeight);
+  sky.addColorStop(0, "#76cdf4");
+  sky.addColorStop(0.62, "#e1f6ff");
+  sky.addColorStop(1, "#fff6da");
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, canvasWidth, canvasHeight);
 }
 
 function formatScore(value: number) {
@@ -680,6 +698,18 @@ function update(dt: number) {
 }
 
 function render(time: number) {
+  const canvasWidth = canvas.width / dpr;
+  const canvasHeight = canvas.height / dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  drawViewportBackground(canvasWidth, canvasHeight);
+  ctx.setTransform(
+    dpr * renderScale,
+    0,
+    0,
+    dpr * renderScale,
+    dpr * renderOffsetX,
+    dpr * renderOffsetY,
+  );
   drawBackground(time);
   obstacles.forEach(drawObstacle);
   drawBubbles();
