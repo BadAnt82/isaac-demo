@@ -77,7 +77,6 @@ let width = 960;
 let height = 540;
 let dpr = 1;
 let renderScale = 1;
-let viewportHeight = 540;
 let lastTime = 0;
 let spawnTimer = 0;
 let bubbleTimer = 0;
@@ -97,10 +96,6 @@ const groundHeight = 46;
 const rollDuration = 0.72;
 const rollPointCost = 2;
 
-function clamp(value: number, min: number, max: number) {
-  return Math.max(min, Math.min(max, value));
-}
-
 type FullscreenFrame = HTMLElement & {
   webkitRequestFullscreen?: () => Promise<void> | void;
 };
@@ -115,7 +110,6 @@ function resize() {
   const box = canvas.getBoundingClientRect();
   const cssWidth = Math.max(320, Math.floor(box.width));
   const cssHeight = Math.max(360, Math.floor(box.height));
-  viewportHeight = cssHeight;
   compactPlayfield =
     window.matchMedia(`(max-width: ${mobileBreakpoint}px)`).matches ||
     window.matchMedia("(hover: none) and (pointer: coarse)").matches;
@@ -141,11 +135,11 @@ function getObstacleWidth() {
 }
 
 function getObstacleSpeed() {
-  return compactPlayfield ? toWorld(95) : obstacleSpeed;
+  return compactPlayfield ? toWorld(90) : obstacleSpeed;
 }
 
 function getSpawnEvery() {
-  return compactPlayfield ? 1.24 : spawnEvery;
+  return compactPlayfield ? 2.05 : spawnEvery;
 }
 
 function getPlaneScale() {
@@ -167,11 +161,11 @@ function getEnemyX() {
 }
 
 function getGravity() {
-  return compactPlayfield ? toWorld(1180) : 1480;
+  return compactPlayfield ? toWorld(930) : 1480;
 }
 
 function getLift() {
-  return compactPlayfield ? -toWorld(365) : -475;
+  return compactPlayfield ? -toWorld(305) : -475;
 }
 
 function getBubbleEvery() {
@@ -179,7 +173,7 @@ function getBubbleEvery() {
 }
 
 function getBubbleSpeed() {
-  return compactPlayfield ? toWorld(90) : bubbleSpeed;
+  return compactPlayfield ? toWorld(82) : bubbleSpeed;
 }
 
 function getBubbleRadius() {
@@ -188,6 +182,10 @@ function getBubbleRadius() {
 
 function toWorld(screenPixels: number) {
   return screenPixels / renderScale;
+}
+
+function getGroundHeight() {
+  return compactPlayfield ? toWorld(34) : groundHeight;
 }
 
 function formatScore(value: number) {
@@ -203,7 +201,7 @@ function updateRollButton() {
   const ready = state === "running" && score >= rollPointCost && rollTimer <= 0;
   rollButton.classList.toggle("is-disabled", !ready);
   rollButton.setAttribute("aria-disabled", `${!ready}`);
-  rollButton.textContent = "goal -2";
+  rollButton.textContent = "roll -2";
 }
 
 function reset(nextState: GameState) {
@@ -237,11 +235,9 @@ function flap() {
 }
 
 function spawnObstacle() {
-  const playableHeight = height - groundHeight;
-  const gapHeight = compactPlayfield
-    ? toWorld(clamp(viewportHeight * 0.26, 190, 250))
-    : Math.max(150, Math.min(210, height * 0.34));
-  const margin = compactPlayfield ? toWorld(clamp(viewportHeight * 0.08, 42, 62)) : 82;
+  const playableHeight = height - getGroundHeight();
+  const gapHeight = compactPlayfield ? toWorld(285) : Math.max(150, Math.min(210, height * 0.34));
+  const margin = compactPlayfield ? toWorld(36) : 82;
   const gapY = margin + Math.random() * (playableHeight - gapHeight - margin * 2);
   const image = artImages[Math.floor(Math.random() * artImages.length)];
   obstacles.push({
@@ -268,6 +264,7 @@ function drawBackground(time: number) {
   drawCloud((width - ((time * 13 + 590) % (width + 240))) - 120, 124, 0.92);
   ctx.restore();
 
+  const groundHeight = getGroundHeight();
   const groundY = height - groundHeight;
   ctx.fillStyle = "#315c4d";
   ctx.fillRect(0, groundY, width, groundHeight);
@@ -314,7 +311,7 @@ function drawObstacle(obstacle: Obstacle) {
   const width = getObstacleWidth();
   const topHeight = obstacle.gapY;
   const bottomY = obstacle.gapY + obstacle.gapHeight;
-  const bottomHeight = height - groundHeight - bottomY;
+  const bottomHeight = height - getGroundHeight() - bottomY;
 
   drawObstacleSegment(obstacle.x, 0, width, topHeight, obstacle.image, true);
   drawObstacleSegment(obstacle.x, bottomY, width, bottomHeight, obstacle.image, false);
@@ -518,6 +515,7 @@ function roll() {
 }
 
 function collide() {
+  const groundHeight = getGroundHeight();
   if (plane.y - plane.radius < 0 || plane.y + plane.radius > height - groundHeight) {
     return true;
   }
