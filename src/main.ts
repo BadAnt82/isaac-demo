@@ -647,7 +647,7 @@ function update(dt: number) {
   bubbles.forEach((bubble) => {
     bubble.x -= bubble.speed * dt;
     bubble.y += bubble.drift * dt;
-    if (!bubble.scored && bubble.x + bubble.radius < plane.x) {
+    if (!bubble.scored && bubble.x < plane.x) {
       bubble.scored = true;
       addScore(0.5);
     }

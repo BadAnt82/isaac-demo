@@ -85,7 +85,7 @@ button:focus-visible {
 
 .hud {
   position: absolute;
-  z-index: 2;
+  z-index: 8;
   top: 16px;
   right: 16px;
   left: 16px;
@@ -104,7 +104,11 @@ button:focus-visible {
 }
 
 .score-panel {
-  min-width: 92px;
+  display: flex;
+  width: 118px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
   border: 1px solid rgba(255, 255, 255, 0.58);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.7);
@@ -139,23 +143,24 @@ button:focus-visible {
 #roll {
   display: block;
   width: 100%;
-  min-height: 36px;
-  margin-top: 8px;
+  min-height: 42px;
+  margin-top: 0;
   border-radius: 8px;
-  background: #38d58f;
-  color: #063820;
-  padding: 0 10px;
-  font-size: 0.82rem;
-  box-shadow: 0 12px 28px rgba(2, 32, 18, 0.28);
+  background: #ffcf24;
+  color: #342503;
+  padding: 0 8px;
+  font-size: 0.9rem;
+  box-shadow: 0 8px 18px rgba(52, 37, 3, 0.22);
 }
 
 #roll:hover {
-  background: #75ebb5;
+  background: #ffe075;
 }
 
 #roll:disabled {
-  background: rgba(255, 255, 255, 0.74);
-  color: #38506b;
+  background: #ffcf24;
+  color: #342503;
+  opacity: 0.62;
 }
 
 .game-frame.fullscreen-fallback {
@@ -232,7 +237,7 @@ body.fullscreen-fallback-active {
   }
 
   .score-panel {
-    min-width: 74px;
+    width: 96px;
     padding: 8px 10px;
   }
 
@@ -246,10 +251,8 @@ body.fullscreen-fallback-active {
   }
 
   #roll {
-    min-height: 34px;
-    margin-top: 6px;
-    padding: 0 8px;
-    font-size: 0.76rem;
+    min-height: 38px;
+    font-size: 0.82rem;
   }
 }
 
