@@ -87,21 +87,18 @@ let rollTimer = 0;
 let rollPipeCharge = 3;
 
 const mobileBreakpoint = 700;
-const gravity = 1480;
-const lift = -475;
 const obstacleWidth = 96;
-const compactObstacleWidth = 54;
 const obstacleSpeed = 250;
-const compactObstacleSpeed = 122;
 const spawnEvery = 1.42;
-const compactSpawnEvery = 0.92;
 const bubbleEvery = 1.08;
-const mobileBubbleEvery = 1.5;
 const bubbleSpeed = 320;
-const mobileBubbleSpeed = 135;
 const groundHeight = 46;
 const rollDuration = 0.72;
 const rollRechargePipes = 3;
+
+function clamp(value: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, value));
+}
 
 type FullscreenFrame = HTMLElement & {
   webkitRequestFullscreen?: () => Promise<void> | void;
@@ -126,9 +123,9 @@ function resize() {
   canvas.width = Math.floor(cssWidth * dpr);
   canvas.height = Math.floor(cssHeight * dpr);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  plane.radius = compactPlayfield ? 18 : 24;
-  plane.x = compactPlayfield ? Math.max(42, Math.min(72, width * 0.12)) : Math.max(92, Math.min(156, width * 0.18));
-  enemyPlane.x = compactPlayfield ? width - Math.max(42, Math.min(72, width * 0.12)) : width - Math.max(86, Math.min(138, width * 0.12));
+  plane.radius = getPlaneRadius();
+  plane.x = getPlayerX();
+  enemyPlane.x = getEnemyX();
   if (state === "ready") {
     plane.y = height * 0.48;
     enemyPlane.y = height * 0.36;
@@ -137,19 +134,53 @@ function resize() {
 }
 
 function getObstacleWidth() {
-  return compactPlayfield ? compactObstacleWidth : obstacleWidth;
+  return compactPlayfield ? clamp(width * 0.1, 34, 52) : obstacleWidth;
 }
 
 function getObstacleSpeed() {
-  return compactPlayfield ? compactObstacleSpeed : obstacleSpeed;
+  return compactPlayfield ? clamp(width * 0.28, 88, 150) : obstacleSpeed;
 }
 
 function getSpawnEvery() {
-  return compactPlayfield ? compactSpawnEvery : spawnEvery;
+  return compactPlayfield ? clamp(width / (getObstacleSpeed() * 4.15), 0.68, 1.05) : spawnEvery;
 }
 
 function getPlaneScale() {
-  return compactPlayfield ? 0.72 : 1;
+  return compactPlayfield ? clamp(width / 640, 0.52, 0.78) : 1;
+}
+
+function getPlaneRadius() {
+  return compactPlayfield ? clamp(width * 0.04, 13, 18) : 24;
+}
+
+function getPlayerX() {
+  return compactPlayfield ? clamp(width * 0.12, 42, 64) : Math.max(92, Math.min(156, width * 0.18));
+}
+
+function getEnemyX() {
+  return compactPlayfield
+    ? width - clamp(width * 0.1, 38, 58)
+    : width - Math.max(86, Math.min(138, width * 0.12));
+}
+
+function getGravity() {
+  return compactPlayfield ? clamp(height * 2.65, 920, 1480) : 1480;
+}
+
+function getLift() {
+  return compactPlayfield ? -clamp(height * 0.72, 330, 475) : -475;
+}
+
+function getBubbleEvery() {
+  return compactPlayfield ? clamp(width / 250, 1.3, 1.85) : bubbleEvery;
+}
+
+function getBubbleSpeed() {
+  return compactPlayfield ? clamp(width * 0.28, 92, 150) : bubbleSpeed;
+}
+
+function getBubbleRadius() {
+  return compactPlayfield ? clamp(width * 0.023, 7, 11) + Math.random() * 2 : 14 + Math.random() * 6;
 }
 
 function formatScore(value: number) {
@@ -162,10 +193,9 @@ function addScore(points: number) {
 }
 
 function updateRollButton() {
-  const ready = state === "running" && rollPipeCharge >= rollRechargePipes && rollTimer <= 0;
-  rollButton.hidden = state !== "running";
+  const ready = state !== "ended" && rollPipeCharge >= rollRechargePipes && rollTimer <= 0;
   rollButton.disabled = !ready;
-  rollButton.textContent = ready ? "Roll" : `Roll ${Math.min(rollPipeCharge, rollRechargePipes)}/${rollRechargePipes}`;
+  rollButton.textContent = ready ? "Roll" : `${Math.min(rollPipeCharge, rollRechargePipes)}/${rollRechargePipes}`;
 }
 
 function reset(nextState: GameState) {
@@ -195,14 +225,16 @@ function flap() {
   }
 
   if (state === "running") {
-    plane.velocity = lift;
+    plane.velocity = getLift();
   }
 }
 
 function spawnObstacle() {
   const playableHeight = height - groundHeight;
-  const gapHeight = compactPlayfield ? Math.max(132, Math.min(188, height * 0.38)) : Math.max(150, Math.min(210, height * 0.34));
-  const margin = compactPlayfield ? 58 : 82;
+  const gapHeight = compactPlayfield
+    ? clamp(height * 0.35, 128, 190)
+    : Math.max(150, Math.min(210, height * 0.34));
+  const margin = compactPlayfield ? clamp(height * 0.13, 42, 68) : 82;
   const gapY = margin + Math.random() * (playableHeight - gapHeight - margin * 2);
   const image = artImages[Math.floor(Math.random() * artImages.length)];
   obstacles.push({
@@ -458,15 +490,12 @@ function drawBubbles() {
 }
 
 function fireBubble() {
-  const baseSpeed = compactPlayfield ? mobileBubbleSpeed : bubbleSpeed;
-  const radius = compactPlayfield ? 10 + Math.random() * 4 : 14 + Math.random() * 6;
-
   bubbles.push({
-    x: enemyPlane.x - 58,
+    x: enemyPlane.x - 58 * getPlaneScale(),
     y: enemyPlane.y + 4,
-    radius,
-    speed: baseSpeed + Math.random() * 28,
-    drift: -35 + Math.random() * 70,
+    radius: getBubbleRadius(),
+    speed: getBubbleSpeed() + Math.random() * 18,
+    drift: compactPlayfield ? -20 + Math.random() * 40 : -35 + Math.random() * 70,
     scored: false,
   });
 }
@@ -591,7 +620,7 @@ function update(dt: number) {
 
   rollTimer = Math.max(0, rollTimer - dt);
 
-  plane.velocity += gravity * dt;
+  plane.velocity += getGravity() * dt;
   plane.y += plane.velocity * dt;
   plane.rotation = Math.max(-0.42, Math.min(0.72, plane.velocity / 620));
 
@@ -608,7 +637,7 @@ function update(dt: number) {
   bubbleTimer -= dt;
   if (bubbleTimer <= 0) {
     fireBubble();
-    bubbleTimer = (compactPlayfield ? mobileBubbleEvery : bubbleEvery) + Math.random() * 0.38;
+    bubbleTimer = getBubbleEvery() + Math.random() * 0.38;
   }
 
   obstacles.forEach((obstacle) => {

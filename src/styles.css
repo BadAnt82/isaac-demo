@@ -103,6 +103,14 @@ button:focus-visible {
   pointer-events: auto;
 }
 
+.gameplay-controls {
+  position: absolute;
+  z-index: 3;
+  right: max(16px, env(safe-area-inset-right));
+  bottom: max(18px, env(safe-area-inset-bottom));
+  pointer-events: auto;
+}
+
 .score-panel {
   min-width: 92px;
   border: 1px solid rgba(255, 255, 255, 0.58);
@@ -136,9 +144,14 @@ button:focus-visible {
 }
 
 #roll {
-  min-width: 88px;
+  width: 82px;
+  height: 82px;
+  min-height: 82px;
+  border-radius: 50%;
   background: #38d58f;
   color: #063820;
+  padding: 0;
+  box-shadow: 0 12px 28px rgba(2, 32, 18, 0.28);
 }
 
 #roll:hover {
@@ -181,7 +194,6 @@ body.fullscreen-fallback-active {
 .overlay[hidden],
 #restart[hidden],
 #fullscreen[hidden],
-#roll[hidden],
 #start[hidden] {
   display: none;
 }
@@ -238,9 +250,16 @@ body.fullscreen-fallback-active {
     padding: 0 12px;
   }
 
+  .gameplay-controls {
+    right: max(12px, env(safe-area-inset-right));
+    bottom: max(12px, env(safe-area-inset-bottom));
+  }
+
   #roll {
-    min-width: 76px;
-    padding: 0 12px;
+    width: 68px;
+    height: 68px;
+    min-height: 68px;
+    font-size: 0.95rem;
   }
 }
 
