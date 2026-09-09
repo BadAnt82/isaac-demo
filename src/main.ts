@@ -84,7 +84,6 @@ let obstacles: Obstacle[] = [];
 let bubbles: Bubble[] = [];
 let compactPlayfield = false;
 let rollTimer = 0;
-let rollPipeCharge = 3;
 
 const mobileBreakpoint = 700;
 const obstacleWidth = 96;
@@ -94,7 +93,7 @@ const bubbleEvery = 1.08;
 const bubbleSpeed = 320;
 const groundHeight = 46;
 const rollDuration = 0.72;
-const rollRechargePipes = 3;
+const rollPointCost = 2;
 
 function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
@@ -193,9 +192,9 @@ function addScore(points: number) {
 }
 
 function updateRollButton() {
-  const ready = state !== "ended" && rollPipeCharge >= rollRechargePipes && rollTimer <= 0;
+  const ready = state === "running" && score >= rollPointCost && rollTimer <= 0;
   rollButton.disabled = !ready;
-  rollButton.textContent = ready ? "Roll" : `${Math.min(rollPipeCharge, rollRechargePipes)}/${rollRechargePipes}`;
+  rollButton.textContent = ready ? "Roll -2" : `Need ${rollPointCost}`;
 }
 
 function reset(nextState: GameState) {
@@ -205,7 +204,6 @@ function reset(nextState: GameState) {
   spawnTimer = 0.45;
   bubbleTimer = compactPlayfield ? 1.45 : 1;
   rollTimer = 0;
-  rollPipeCharge = rollRechargePipes;
   plane.y = height * 0.48;
   plane.velocity = 0;
   plane.rotation = 0;
@@ -501,17 +499,12 @@ function fireBubble() {
 }
 
 function roll() {
-  if (state === "ready") {
-    reset("running");
-    overlay.hidden = true;
-  }
-
-  if (state !== "running" || rollPipeCharge < rollRechargePipes || rollTimer > 0) {
+  if (state !== "running" || score < rollPointCost || rollTimer > 0) {
     return;
   }
 
   rollTimer = rollDuration;
-  rollPipeCharge = 0;
+  addScore(-rollPointCost);
   updateRollButton();
 }
 
@@ -645,7 +638,6 @@ function update(dt: number) {
     obstacle.x -= getObstacleSpeed() * dt;
     if (!obstacle.scored && obstacle.x + width < plane.x) {
       obstacle.scored = true;
-      rollPipeCharge = Math.min(rollRechargePipes, rollPipeCharge + 1);
       addScore(1);
       updateRollButton();
     }
