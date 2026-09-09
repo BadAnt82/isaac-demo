@@ -80,16 +80,19 @@ let bubbleTimer = 0;
 let score = 0;
 let obstacles: Obstacle[] = [];
 let bubbles: Bubble[] = [];
+let compactPlayfield = false;
 
 const mobileBreakpoint = 700;
-const minMobileWorldWidth = 960;
+const minMobileWorldWidth = 1180;
 const gravity = 1480;
 const lift = -475;
 const obstacleWidth = 96;
 const obstacleSpeed = 250;
 const spawnEvery = 1.42;
 const bubbleEvery = 1.08;
+const mobileBubbleEvery = 1.62;
 const bubbleSpeed = 320;
+const mobileBubbleSpeed = 215;
 const groundHeight = 46;
 
 type FullscreenFrame = HTMLElement & {
@@ -106,9 +109,11 @@ function resize() {
   const box = canvas.getBoundingClientRect();
   const cssWidth = Math.max(320, Math.floor(box.width));
   const cssHeight = Math.max(360, Math.floor(box.height));
-  const isMobileView = window.matchMedia(`(max-width: ${mobileBreakpoint}px)`).matches;
+  compactPlayfield =
+    window.matchMedia(`(max-width: ${mobileBreakpoint}px)`).matches ||
+    window.matchMedia("(hover: none) and (pointer: coarse)").matches;
   dpr = Math.min(window.devicePixelRatio || 1, 2);
-  width = isMobileView ? Math.max(minMobileWorldWidth, cssWidth) : cssWidth;
+  width = compactPlayfield ? Math.max(minMobileWorldWidth, cssWidth) : cssWidth;
   height = cssHeight;
   canvas.width = Math.floor(cssWidth * dpr);
   canvas.height = Math.floor(cssHeight * dpr);
@@ -126,7 +131,7 @@ function reset(nextState: GameState) {
   obstacles = [];
   bubbles = [];
   spawnTimer = 0.45;
-  bubbleTimer = 1;
+  bubbleTimer = compactPlayfield ? 1.45 : 1;
   plane.y = height * 0.48;
   plane.velocity = 0;
   plane.rotation = 0;
@@ -394,11 +399,14 @@ function drawBubbles() {
 }
 
 function fireBubble() {
+  const baseSpeed = compactPlayfield ? mobileBubbleSpeed : bubbleSpeed;
+  const radius = compactPlayfield ? 10 + Math.random() * 4 : 14 + Math.random() * 6;
+
   bubbles.push({
     x: enemyPlane.x - 58,
     y: enemyPlane.y + 4,
-    radius: 14 + Math.random() * 6,
-    speed: bubbleSpeed + Math.random() * 40,
+    radius,
+    speed: baseSpeed + Math.random() * 28,
     drift: -35 + Math.random() * 70,
   });
 }
@@ -511,7 +519,7 @@ function update(dt: number) {
   bubbleTimer -= dt;
   if (bubbleTimer <= 0) {
     fireBubble();
-    bubbleTimer = bubbleEvery + Math.random() * 0.38;
+    bubbleTimer = (compactPlayfield ? mobileBubbleEvery : bubbleEvery) + Math.random() * 0.38;
   }
 
   obstacles.forEach((obstacle) => {
