@@ -933,6 +933,17 @@ function startBubbleCrash(hitBubble: Bubble) {
   plane.velocity = Math.min(plane.velocity, -125);
 }
 
+function startImpactCrash() {
+  state = "bubble-crash";
+  crashTimer = 0;
+  smokeTimer = 0;
+  crashEndTimer = 0;
+  crashExploded = false;
+  rollTimer = 0;
+  plane.velocity = 0;
+  explodePlane();
+}
+
 function updateEffects(dt: number) {
   bubblePops.forEach((pop) => {
     pop.age += dt;
@@ -1165,8 +1176,10 @@ function update(dt: number) {
   bubbles = bubbles.filter((bubble) => bubble.x > -bubble.radius * 2);
 
   const collision = collide();
-  if (collision === "world" || collision === "obstacle") {
+  if (collision === "world") {
     endGame();
+  } else if (collision === "obstacle") {
+    startImpactCrash();
   }
 
   updateRollButton();
