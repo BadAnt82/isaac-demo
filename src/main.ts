@@ -61,7 +61,7 @@ type PlaneDebris = {
   duration: number;
 };
 
-type CollisionResult = "none" | "world" | "obstacle" | "bubble";
+type CollisionResult = "none" | "ceiling" | "floor" | "obstacle" | "bubble";
 
 type HighScoreResponse = {
   todayHighest?: number;
@@ -187,6 +187,7 @@ const compactPlaneRadius = 18;
 const compactGravity = 820;
 const compactLift = -360;
 const obstacleEdgeOverflow = 72;
+const ceilingSpikeDepth = 26;
 
 type FullscreenFrame = HTMLElement & {
   webkitRequestFullscreen?: () => Promise<void> | void;
@@ -503,6 +504,27 @@ function drawBackground(time: number) {
   ctx.fillRect(0, groundY, width, 10);
   ctx.fillStyle = "#4b3a2a";
   ctx.fillRect(0, groundY + 10, width, groundHeight);
+}
+
+function drawCeilingSpikes() {
+  const spikeWidth = compactPlayfield ? 34 : 42;
+  const spikeDepth = compactPlayfield ? 20 : ceilingSpikeDepth;
+
+  ctx.save();
+  ctx.fillStyle = "#6f6758";
+  ctx.strokeStyle = "rgba(44, 37, 28, 0.48)";
+  ctx.lineWidth = 2;
+  ctx.fillRect(0, 0, width, 8);
+  for (let x = -spikeWidth; x < width + spikeWidth; x += spikeWidth) {
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x + spikeWidth * 0.5, spikeDepth);
+    ctx.lineTo(x + spikeWidth, 0);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+  }
+  ctx.restore();
 }
 
 function drawRoundedRect(x: number, y: number, w: number, h: number, r: number) {
@@ -858,8 +880,12 @@ function roll() {
 
 function collide(): CollisionResult {
   const groundHeight = getGroundHeight();
-  if (plane.y - plane.radius < 0 || plane.y + plane.radius > height - groundHeight) {
-    return "world";
+  const spikeDepth = compactPlayfield ? 20 : ceilingSpikeDepth;
+  if (plane.y - plane.radius < spikeDepth) {
+    return "ceiling";
+  }
+  if (plane.y + plane.radius > height - groundHeight) {
+    return "floor";
   }
 
   const hitObstacle = obstacles.some((obstacle) => {
@@ -942,6 +968,17 @@ function startImpactCrash() {
   rollTimer = 0;
   plane.velocity = 0;
   explodePlane();
+}
+
+function startCeilingCrash() {
+  state = "bubble-crash";
+  crashTimer = 0;
+  smokeTimer = 0;
+  crashEndTimer = 0;
+  crashExploded = false;
+  rollTimer = 0;
+  plane.velocity = Math.max(plane.velocity, 120);
+  plane.rotation = Math.max(plane.rotation, 0.55);
 }
 
 function updateEffects(dt: number) {
@@ -1031,21 +1068,21 @@ function explodePlane() {
 
   const scale = getPlaneScale();
   const colors = ["#ffd232", "#ffe891", "#f4a51c", "#6fc8ff", "#3a2b16", "#fff1b3"];
-  for (let index = 0; index < 22; index += 1) {
-    const angle = -Math.PI + (Math.PI * 2 * index) / 22 + (Math.random() - 0.5) * 0.4;
-    const speed = (120 + Math.random() * 230) * scale;
+  for (let index = 0; index < 34; index += 1) {
+    const angle = -Math.PI + (Math.PI * 2 * index) / 34 + (Math.random() - 0.5) * 0.4;
+    const speed = (135 + Math.random() * 260) * scale;
     planeDebris.push({
       x: plane.x + (Math.random() - 0.5) * 28 * scale,
       y: plane.y + (Math.random() - 0.5) * 20 * scale,
       vx: Math.cos(angle) * speed + 40 * scale,
       vy: Math.sin(angle) * speed - 100 * scale,
-      width: (5 + Math.random() * 12) * scale,
-      height: (4 + Math.random() * 9) * scale,
+      width: (8 + Math.random() * 16) * scale,
+      height: (6 + Math.random() * 12) * scale,
       rotation: Math.random() * Math.PI,
       spin: (Math.random() - 0.5) * 15,
       color: colors[index % colors.length],
       age: 0,
-      duration: 0.82 + Math.random() * 0.45,
+      duration: 1.08 + Math.random() * 0.52,
     });
   }
 
@@ -1176,8 +1213,10 @@ function update(dt: number) {
   bubbles = bubbles.filter((bubble) => bubble.x > -bubble.radius * 2);
 
   const collision = collide();
-  if (collision === "world") {
-    endGame();
+  if (collision === "ceiling") {
+    startCeilingCrash();
+  } else if (collision === "floor") {
+    startImpactCrash();
   } else if (collision === "obstacle") {
     startImpactCrash();
   }
@@ -1199,6 +1238,7 @@ function render(time: number) {
     dpr * renderOffsetY,
   );
   drawBackground(time);
+  drawCeilingSpikes();
   obstacles.forEach(drawObstacle);
   drawBubblePops();
   drawBubbles();
