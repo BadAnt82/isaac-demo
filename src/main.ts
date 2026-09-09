@@ -37,6 +37,9 @@ function requireCanvasContext(element: HTMLCanvasElement) {
 
 const canvas = requireElement<HTMLCanvasElement>("#game");
 const scoreEl = requireElement<HTMLElement>("#score");
+const localHighEl = requireElement<HTMLElement>("#local-high");
+const todayHighEl = requireElement<HTMLElement>("#today-high");
+const serverHighEl = requireElement<HTMLElement>("#server-high");
 const restartButton = requireElement<HTMLButtonElement>("#restart");
 const startButton = requireElement<HTMLButtonElement>("#start");
 const fullscreenButton = requireElement<HTMLButtonElement>("#fullscreen");
@@ -87,8 +90,12 @@ let obstacles: Obstacle[] = [];
 let bubbles: Bubble[] = [];
 let compactPlayfield = false;
 let rollTimer = 0;
+let localHighest = 0;
+let todayHighest = 0;
+let serverHighest = 0;
 
 const mobileBreakpoint = 700;
+const localHighScoreKey = "isaac-demo-high-score";
 const obstacleWidth = 96;
 const obstacleSpeed = 250;
 const spawnEvery = 1.42;
@@ -221,6 +228,59 @@ function formatScore(value: number) {
   return Number.isInteger(value) ? `${value}` : value.toFixed(1);
 }
 
+function readLocalHighest() {
+  const storedScore = Number(localStorage.getItem(localHighScoreKey) || 0);
+  localHighest = Number.isFinite(storedScore) ? storedScore : 0;
+}
+
+function writeLocalHighest(nextScore: number) {
+  localHighest = Math.max(localHighest, nextScore);
+  localStorage.setItem(localHighScoreKey, `${localHighest}`);
+}
+
+function renderHighScores() {
+  localHighEl.textContent = formatScore(localHighest);
+  todayHighEl.textContent = formatScore(todayHighest);
+  serverHighEl.textContent = formatScore(serverHighest);
+}
+
+async function loadServerHighScores() {
+  try {
+    const response = await fetch("/api/high-scores", { cache: "no-store" });
+    if (!response.ok) {
+      return;
+    }
+
+    const scores = await response.json();
+    todayHighest = Number(scores.todayHighest) || 0;
+    serverHighest = Number(scores.allTimeHighest) || 0;
+    renderHighScores();
+  } catch {
+    // The game should still work offline or from a static dev server.
+  }
+}
+
+async function submitServerHighScore(finalScore: number) {
+  try {
+    const response = await fetch("/api/high-scores", {
+      body: JSON.stringify({ score: finalScore }),
+      cache: "no-store",
+      headers: { "Content-Type": "application/json" },
+      method: "POST",
+    });
+    if (!response.ok) {
+      return;
+    }
+
+    const scores = await response.json();
+    todayHighest = Number(scores.todayHighest) || todayHighest;
+    serverHighest = Number(scores.allTimeHighest) || serverHighest;
+    renderHighScores();
+  } catch {
+    // Ignore score sync failures; the local score still persists.
+  }
+}
+
 function addScore(points: number) {
   score += points;
   scoreEl.textContent = formatScore(score);
@@ -234,6 +294,8 @@ function updateRollButton() {
 }
 
 function reset(nextState: GameState) {
+  readLocalHighest();
+  renderHighScores();
   score = 0;
   obstacles = [];
   bubbles = [];
@@ -607,6 +669,11 @@ function collide() {
 }
 
 function endGame() {
+  writeLocalHighest(score);
+  todayHighest = Math.max(todayHighest, score);
+  serverHighest = Math.max(serverHighest, score);
+  renderHighScores();
+  void submitServerHighScore(score);
   state = "ended";
   restartButton.hidden = false;
   overlay.hidden = false;
@@ -791,6 +858,9 @@ document.addEventListener("fullscreenchange", () => {
   resize();
 });
 
+readLocalHighest();
+renderHighScores();
+void loadServerHighScores();
 resize();
 updateFullscreenButton();
 reset("ready");
