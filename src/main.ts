@@ -76,8 +76,8 @@ let state: GameState = "ready";
 let width = 960;
 let height = 540;
 let dpr = 1;
-let renderScale = 1;
-let viewportHeight = 540;
+let renderScaleX = 1;
+let renderScaleY = 1;
 let lastTime = 0;
 let spawnTimer = 0;
 let bubbleTimer = 0;
@@ -96,8 +96,18 @@ const bubbleSpeed = 320;
 const groundHeight = 46;
 const rollDuration = 0.72;
 const rollPointCost = 2;
-const referencePlayableHeight = 810;
 const compactGroundHeight = 34;
+const compactWorldWidth = 960;
+const compactWorldHeight = 540;
+const compactObstacleWidth = 58;
+const compactObstacleSpeed = 168;
+const compactSpawnEvery = 1.62;
+const compactBubbleSpeed = 168;
+const compactGapHeight = 190;
+const compactMargin = 54;
+const compactPlaneRadius = 18;
+const compactGravity = 820;
+const compactLift = -360;
 
 type FullscreenFrame = HTMLElement & {
   webkitRequestFullscreen?: () => Promise<void> | void;
@@ -113,17 +123,17 @@ function resize() {
   const box = canvas.getBoundingClientRect();
   const cssWidth = Math.max(320, Math.floor(box.width));
   const cssHeight = Math.max(360, Math.floor(box.height));
-  viewportHeight = cssHeight;
   compactPlayfield =
     window.matchMedia(`(max-width: ${mobileBreakpoint}px)`).matches ||
     window.matchMedia("(hover: none) and (pointer: coarse)").matches;
   dpr = Math.min(window.devicePixelRatio || 1, 2);
-  width = compactPlayfield ? Math.max(900, cssWidth) : cssWidth;
-  renderScale = cssWidth / width;
-  height = cssHeight / renderScale;
+  width = compactPlayfield ? compactWorldWidth : cssWidth;
+  height = compactPlayfield ? compactWorldHeight : cssHeight;
+  renderScaleX = cssWidth / width;
+  renderScaleY = cssHeight / height;
   canvas.width = Math.floor(cssWidth * dpr);
   canvas.height = Math.floor(cssHeight * dpr);
-  ctx.setTransform(dpr * renderScale, 0, 0, dpr * renderScale, 0, 0);
+  ctx.setTransform(dpr * renderScaleX, 0, 0, dpr * renderScaleY, 0, 0);
   plane.radius = getPlaneRadius();
   plane.x = getPlayerX();
   enemyPlane.x = getEnemyX();
@@ -135,41 +145,41 @@ function resize() {
 }
 
 function getObstacleWidth() {
-  return compactPlayfield ? toWorld(42 * getVerticalScale()) : obstacleWidth;
+  return compactPlayfield ? compactObstacleWidth : obstacleWidth;
 }
 
 function getObstacleSpeed() {
-  return compactPlayfield ? toWorld(94 * getVerticalScale()) : obstacleSpeed;
+  return compactPlayfield ? compactObstacleSpeed : obstacleSpeed;
 }
 
 function getSpawnEvery() {
-  return compactPlayfield ? 1.78 : spawnEvery;
+  return compactPlayfield ? compactSpawnEvery : spawnEvery;
 }
 
 function getPlaneScale() {
-  return compactPlayfield ? (0.58 * getVerticalScale()) / renderScale : 1;
+  return compactPlayfield ? 0.72 : 1;
 }
 
 function getPlaneRadius() {
-  return compactPlayfield ? toWorld(14 * getVerticalScale()) : 24;
+  return compactPlayfield ? compactPlaneRadius : 24;
 }
 
 function getPlayerX() {
-  return compactPlayfield ? toWorld(44) : Math.max(92, Math.min(156, width * 0.18));
+  return compactPlayfield ? 82 : Math.max(92, Math.min(156, width * 0.18));
 }
 
 function getEnemyX() {
   return compactPlayfield
-    ? width - toWorld(34)
+    ? width - 86
     : width - Math.max(86, Math.min(138, width * 0.12));
 }
 
 function getGravity() {
-  return compactPlayfield ? toWorld(980 * getVerticalScale()) : 1480;
+  return compactPlayfield ? compactGravity : 1480;
 }
 
 function getLift() {
-  return compactPlayfield ? -toWorld(325 * getVerticalScale()) : -475;
+  return compactPlayfield ? compactLift : -475;
 }
 
 function getBubbleEvery() {
@@ -177,23 +187,15 @@ function getBubbleEvery() {
 }
 
 function getBubbleSpeed() {
-  return compactPlayfield ? toWorld(86 * getVerticalScale()) : bubbleSpeed;
+  return compactPlayfield ? compactBubbleSpeed : bubbleSpeed;
 }
 
 function getBubbleRadius() {
-  return compactPlayfield ? toWorld((8 + Math.random() * 2) * getVerticalScale()) : 14 + Math.random() * 6;
-}
-
-function toWorld(screenPixels: number) {
-  return screenPixels / renderScale;
-}
-
-function getVerticalScale() {
-  return compactPlayfield ? (viewportHeight - compactGroundHeight) / referencePlayableHeight : 1;
+  return compactPlayfield ? 12 + Math.random() * 3 : 14 + Math.random() * 6;
 }
 
 function getGroundHeight() {
-  return compactPlayfield ? toWorld(compactGroundHeight) : groundHeight;
+  return compactPlayfield ? compactGroundHeight : groundHeight;
 }
 
 function formatScore(value: number) {
@@ -244,9 +246,8 @@ function flap() {
 
 function spawnObstacle() {
   const playableHeight = height - getGroundHeight();
-  const verticalScale = getVerticalScale();
-  const gapHeight = compactPlayfield ? toWorld(246 * verticalScale) : Math.max(150, Math.min(210, height * 0.34));
-  const margin = compactPlayfield ? toWorld(48 * verticalScale) : 82;
+  const gapHeight = compactPlayfield ? compactGapHeight : Math.max(150, Math.min(210, height * 0.34));
+  const margin = compactPlayfield ? compactMargin : 82;
   const gapY = margin + Math.random() * (playableHeight - gapHeight - margin * 2);
   const image = artImages[Math.floor(Math.random() * artImages.length)];
   obstacles.push({
@@ -508,7 +509,7 @@ function fireBubble() {
     y: enemyPlane.y + 4,
     radius: getBubbleRadius(),
     speed: getBubbleSpeed() + Math.random() * 18,
-    drift: compactPlayfield ? toWorld((-18 + Math.random() * 36) * getVerticalScale()) : -35 + Math.random() * 70,
+    drift: compactPlayfield ? -24 + Math.random() * 48 : -35 + Math.random() * 70,
     scored: false,
   });
 }
@@ -666,6 +667,7 @@ function update(dt: number) {
     if (!bubble.scored && bubble.x < plane.x) {
       bubble.scored = true;
       addScore(0.5);
+      updateRollButton();
     }
   });
   bubbles = bubbles.filter((bubble) => bubble.x > -bubble.radius * 2);
