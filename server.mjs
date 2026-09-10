@@ -182,5 +182,5 @@ createServer(async (request, response) => {
 
   serveStatic(request, response);
 }).listen(port, "0.0.0.0", () => {
-  console.log(`Isaac Demo listening on ${port}`);
+  console.log(`Jumpy Plane listening on ${port}`);
 });
