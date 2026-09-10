@@ -418,7 +418,6 @@ let bridgeWheelSpinSequence = 0;
 let bridgeFallTimer = 0;
 let bridgeJackpot = 20;
 let bridgeWheelJackpotValue = 20;
-let bridgeJackpotOdds = 20;
 let bridgeHintWheelLabel = "Hint";
 let bridgeHintWheelTimer = 0;
 let bridgeHintWheelSpinTimer = 0;
@@ -1517,7 +1516,6 @@ async function spinBridgeWheel() {
   }
 
   bridgeJackpot = Math.max(0, Number(jackpotSpin.jackpot) || bridgeJackpot);
-  bridgeJackpotOdds = Math.max(1, Number(jackpotSpin.odds) || bridgeJackpotOdds);
   const award = Math.max(0, Math.floor(Number(jackpotSpin.award) || 0));
   const hitJackpot = jackpotSpin.hit === true && award > 0;
   bridgeWheelJackpotValue = hitJackpot ? award : bridgeJackpot;
@@ -2048,9 +2046,18 @@ function drawBridgeWheelFace<T extends { color?: string; label: string; weight: 
     ctx.textBaseline = "middle";
     ctx.fillStyle = index === bridgeJackpotSegmentIndex && isPointWheel ? "#ffffff" : "#10253d";
     ctx.font = `900 ${Math.max(7, radius * (isPointWheel ? 0.11 : 0.1))}px Inter, sans-serif`;
+    if (index === bridgeJackpotSegmentIndex && isPointWheel) {
+      ctx.font = `900 ${Math.max(7, radius * 0.1)}px Inter, sans-serif`;
+      ctx.strokeStyle = "rgba(58, 4, 16, 0.78)";
+      ctx.lineWidth = 3;
+    }
     lines.forEach((line, lineIndex) => {
       const offset = (lineIndex - (lines.length - 1) / 2) * Math.max(9, radius * 0.12);
-      ctx.fillText(line, radius * 0.66, offset);
+      const textX = index === bridgeJackpotSegmentIndex && isPointWheel ? radius * 0.52 : radius * 0.66;
+      if (index === bridgeJackpotSegmentIndex && isPointWheel) {
+        ctx.strokeText(line, textX, offset);
+      }
+      ctx.fillText(line, textX, offset);
     });
     ctx.restore();
   });
@@ -2081,7 +2088,7 @@ function drawBridgeWheelPanel(canvasHeight: number, areas: BridgeAreas) {
   const hintWheelY = Math.max(pointWheelY + radius * 2 + 54, canvasHeight * 0.5);
 
   drawBridgeWheelFace(bridgeWheelSegments, bridgeWheelAngle, centerX, pointWheelY, radius, true, (outcome, index) =>
-    index === bridgeJackpotSegmentIndex ? ["JP", formatScore(bridgeWheelJackpotValue)] : [outcome.label],
+    index === bridgeJackpotSegmentIndex ? ["Jackpot", formatScore(bridgeWheelJackpotValue)] : [outcome.label],
   );
   drawBridgeWheelFace(bridgeHintWheelSegments, bridgeHintWheelAngle, centerX, hintWheelY, radius, false, (outcome) => [
     outcome.label,
@@ -2107,9 +2114,9 @@ function drawBridgeWheelPanel(canvasHeight: number, areas: BridgeAreas) {
     centerX,
     hintWheelY + radius + 24,
   );
-  ctx.fillStyle = "#afefff";
-  ctx.font = "800 11px Inter, sans-serif";
-  ctx.fillText(`Jackpot odds 1 in ${formatScore(bridgeJackpotOdds)}`, centerX, pointWheelY + radius + 42);
+  ctx.fillStyle = "#ffd85a";
+  ctx.font = "900 12px Inter, sans-serif";
+  ctx.fillText(`Jackpot ${formatScore(bridgeJackpot)}`, centerX, pointWheelY + radius + 42);
 
   const puzzle = bridgePuzzles[bridgeStep];
   const activeHint = bridgeHint?.pathIndex === bridgeStep ? bridgeHint : null;
@@ -2612,7 +2619,6 @@ async function loadServerBridgeHighScores() {
 
 function applyBridgeJackpot(response: BridgeJackpotResponse) {
   bridgeJackpot = Math.max(0, Number(response.jackpot) || bridgeJackpot);
-  bridgeJackpotOdds = Math.max(1, Number(response.odds) || bridgeJackpotOdds);
   if (bridgeWheelSpinTimer <= 0 && !bridgeWheelRequesting) {
     bridgeWheelJackpotValue = bridgeJackpot;
   }
