@@ -295,6 +295,7 @@ const snakeFallbackBoard = {
   width: 2880,
 };
 const fallbackSnakeShotBank = 5;
+const snakeCameraZoom = 1 / 1.2;
 
 type FullscreenFrame = HTMLElement & {
   webkitRequestFullscreen?: () => Promise<void> | void;
@@ -800,9 +801,11 @@ function snakeCamera(viewWidth: number, viewHeight: number) {
   const board = getSnakeBoard();
   const self = getLocalSnake();
   const head = self?.segments[0] ?? { x: board.width * 0.5, y: board.height * 0.5 };
+  const maxX = Math.max(0, board.width - viewWidth);
+  const maxY = Math.max(0, board.height - viewHeight);
   return {
-    x: Math.max(0, Math.min(board.width - viewWidth, head.x - viewWidth * 0.5)),
-    y: Math.max(0, Math.min(board.height - viewHeight, head.y - viewHeight * 0.5)),
+    x: Math.max(0, Math.min(maxX, head.x - viewWidth * 0.5)),
+    y: Math.max(0, Math.min(maxY, head.y - viewHeight * 0.5)),
   };
 }
 
@@ -902,9 +905,11 @@ function drawSnakeProjectile(projectile: SnakeProjectile, camera: SnakePoint) {
 }
 
 function drawSnakeGame(time: number) {
-  const viewWidth = canvas.width / dpr;
-  const viewHeight = canvas.height / dpr;
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const cssWidth = canvas.width / dpr;
+  const cssHeight = canvas.height / dpr;
+  const viewWidth = cssWidth / snakeCameraZoom;
+  const viewHeight = cssHeight / snakeCameraZoom;
+  ctx.setTransform(dpr * snakeCameraZoom, 0, 0, dpr * snakeCameraZoom, 0, 0);
   const camera = snakeCamera(viewWidth, viewHeight);
   drawSnakeBackground(camera, viewWidth, viewHeight, time);
 
