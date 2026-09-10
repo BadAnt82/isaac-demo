@@ -319,6 +319,67 @@ body.fullscreen-fallback-active {
   overflow: hidden;
 }
 
+.snake-info-bar {
+  position: absolute;
+  z-index: 7;
+  top: 0;
+  right: 0;
+  left: 0;
+  display: grid;
+  min-height: var(--snake-info-height, 58px);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: center;
+  gap: 1px;
+  border-bottom: 1px solid rgba(137, 255, 206, 0.26);
+  background: rgba(6, 18, 31, 0.9);
+  color: #eefef8;
+  backdrop-filter: blur(14px);
+  box-shadow: 0 10px 28px rgba(0, 16, 28, 0.24);
+}
+
+.snake-info-bar[hidden] {
+  display: none;
+}
+
+.snake-info-bar div {
+  display: flex;
+  min-width: 0;
+  height: 100%;
+  flex-direction: column;
+  justify-content: center;
+  padding: 7px 12px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.snake-info-bar span {
+  overflow: hidden;
+  color: rgba(238, 254, 248, 0.68);
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.snake-info-bar strong {
+  overflow: hidden;
+  font-size: 1.4rem;
+  line-height: 1.08;
+  text-overflow: ellipsis;
+  text-shadow: 0 0 12px rgba(137, 255, 206, 0.42);
+  white-space: nowrap;
+}
+
+.game-frame.snake-layout #game {
+  height: calc(100% - var(--snake-info-height, 58px));
+  margin-top: var(--snake-info-height, 58px);
+}
+
+.game-frame.snake-layout .hud {
+  top: calc(var(--snake-info-height, 58px) + 10px);
+}
+
 .overlay {
   position: absolute;
   z-index: 1;
@@ -346,7 +407,8 @@ body.fullscreen-fallback-active {
 #restart[hidden],
 #fullscreen[hidden],
 #start[hidden],
-.score-panel[hidden] {
+.score-panel[hidden],
+.snake-info-bar[hidden] {
   display: none;
 }
 
@@ -734,6 +796,7 @@ body.fullscreen-fallback-active {
   }
 
   .game-frame {
+    --snake-info-height: 50px;
     width: min(100vw, calc(100dvh * 16 / 9));
     height: auto;
     max-height: 100dvh;
@@ -763,6 +826,18 @@ body.fullscreen-fallback-active {
   .score-panel {
     width: 96px;
     padding: 8px 10px;
+  }
+
+  .snake-info-bar div {
+    padding: 6px 8px;
+  }
+
+  .snake-info-bar span {
+    font-size: 0.54rem;
+  }
+
+  .snake-info-bar strong {
+    font-size: 1.12rem;
   }
 
   .hud-actions {
@@ -796,8 +871,8 @@ body.fullscreen-fallback-active {
   }
 
   .snake-joystick {
-    width: 118px;
-    height: 118px;
+    width: 132px;
+    height: 132px;
   }
 
   .snake-joystick-ring {

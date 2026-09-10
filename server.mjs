@@ -525,6 +525,7 @@ function updateSnakeProjectiles() {
 function snakeSnapshot() {
   return {
     board: snakeBoard,
+    maxShotBank: maxSnakeShotBank,
     orbs: snakeOrbs,
     players: allSnakes().map((player) => ({
       alive: player.alive,

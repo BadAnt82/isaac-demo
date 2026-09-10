@@ -110,6 +110,7 @@ type SnakeSnapshot = {
     height: number;
     width: number;
   };
+  maxShotBank?: number;
   orbs: SnakeOrb[];
   players: SnakePlayer[];
   projectiles: SnakeProjectile[];
@@ -164,6 +165,10 @@ const snakeJoystick = requireElement<HTMLElement>("#snake-joystick");
 const snakeStartButton = requireElement<HTMLButtonElement>("#snake-start");
 const snakeRestartButton = requireElement<HTMLButtonElement>("#snake-restart");
 const snakeShootButton = requireElement<HTMLButtonElement>("#snake-shoot");
+const snakeInfoBar = requireElement<HTMLElement>("#snake-info-bar");
+const snakeInfoLongest = requireElement<HTMLElement>("#snake-info-longest");
+const snakeInfoLength = requireElement<HTMLElement>("#snake-info-length");
+const snakeInfoPlayers = requireElement<HTMLElement>("#snake-info-players");
 const gameFrame = requireElement<HTMLElement>(".game-frame");
 const overlay = requireElement<HTMLElement>("#overlay");
 const platformPanel = requireElement<HTMLElement>("#platform-panel");
@@ -289,7 +294,7 @@ const snakeFallbackBoard = {
   height: 1920,
   width: 2880,
 };
-const maxSnakeShotBank = 5;
+const fallbackSnakeShotBank = 5;
 
 type FullscreenFrame = HTMLElement & {
   webkitRequestFullscreen?: () => Promise<void> | void;
@@ -572,6 +577,12 @@ function getLocalSnake() {
   return snakeSnapshot?.players.find((player) => player.id === snakeClientId);
 }
 
+function setSnakeLayout(active: boolean) {
+  gameFrame.classList.toggle("snake-layout", active);
+  snakeInfoBar.hidden = !active;
+  resize();
+}
+
 function startSnakeGame(restart = false) {
   unlockAudio();
   snakeBestThisRun = 3;
@@ -586,11 +597,12 @@ function startSnakeGame(restart = false) {
   crashPanel.hidden = true;
   snakeMenuPanel.hidden = true;
   snakeDeadPanel.hidden = true;
-  scorePanel.hidden = false;
+  scorePanel.hidden = true;
   homeButton.hidden = false;
   startButton.hidden = true;
   restartButton.hidden = true;
   snakeControls.hidden = false;
+  setSnakeLayout(true);
   updateRollButton();
   connectSnakeSocket();
   if (snakeSocket?.readyState === WebSocket.OPEN) {
@@ -603,6 +615,7 @@ function startSnakeGame(restart = false) {
 
 function showSnakeMenu() {
   leaveSnakeRoom();
+  setSnakeLayout(false);
   resetSnakeJoystick();
   readSnakeLocalLongest();
   renderSnakeHighScores();
@@ -625,6 +638,7 @@ function showSnakeMenu() {
 function showSnakeDead() {
   state = "snake-dead";
   snakeSpawnedThisRun = false;
+  setSnakeLayout(false);
   resetSnakeJoystick();
   scoreLabel.textContent = "Longest";
   overlay.hidden = false;
@@ -645,6 +659,7 @@ function showSnakeDead() {
   scoreEl.textContent = formatScore(finalLength);
   snakeMessage.textContent = `Longest ${formatScore(finalLength)}.`;
   updateSnakeShootButton();
+  updateSnakeInfoBar();
   updateRollButton();
 }
 
@@ -657,14 +672,33 @@ function updateSnakeScore() {
   const length = Math.max(3, self?.segments.length ?? snakeBestThisRun);
   scoreEl.textContent = formatScore(state === "snake-dead" ? Math.max(length, snakeBestThisRun) : length);
   updateSnakeShootButton();
+  updateSnakeInfoBar();
 }
 
 function updateSnakeShootButton() {
   const self = getLocalSnake();
-  const shotBank = Math.max(0, Math.min(maxSnakeShotBank, self?.shotBank ?? 0));
+  const maxShotBank = Math.max(fallbackSnakeShotBank, snakeSnapshot?.maxShotBank ?? fallbackSnakeShotBank);
+  const shotBank = Math.max(0, Math.min(maxShotBank, self?.shotBank ?? 0));
   const canShoot = state === "snake-running" && Boolean(self?.alive) && shotBank > 0 && (self?.segments.length ?? 0) > 2;
-  snakeShootButton.textContent = `Shoot (${shotBank}/${maxSnakeShotBank})`;
+  snakeShootButton.textContent = `Shoot (${shotBank}/${maxShotBank})`;
   snakeShootButton.disabled = !canShoot;
+}
+
+function updateSnakeInfoBar() {
+  if (state !== "snake-running") {
+    return;
+  }
+
+  const self = getLocalSnake();
+  const alivePlayers = snakeSnapshot?.players.filter((player) => player.alive) ?? [];
+  const longestLength = Math.max(
+    3,
+    ...alivePlayers.map((player) => Math.max(player.segments.length, player.bestLength || 3)),
+  );
+  const myLength = Math.max(3, self?.segments.length ?? snakeBestThisRun);
+  snakeInfoLongest.textContent = formatScore(longestLength);
+  snakeInfoLength.textContent = formatScore(myLength);
+  snakeInfoPlayers.textContent = `${alivePlayers.length}`;
 }
 
 function directionFromJoystick(dx: number, dy: number, deadZone: number) {
@@ -712,14 +746,14 @@ function updateSnakeJoystickFromPointer(event: PointerEvent) {
   const rect = snakeJoystick.getBoundingClientRect();
   const centerX = rect.left + rect.width * 0.5;
   const centerY = rect.top + rect.height * 0.5;
-  const maxDistance = rect.width * 0.34;
+  const maxDistance = rect.width * 0.42;
   const dx = event.clientX - centerX;
   const dy = event.clientY - centerY;
   const distance = Math.min(maxDistance, Math.hypot(dx, dy));
   const angle = Math.atan2(dy, dx);
   const stickX = Math.cos(angle) * distance;
   const stickY = Math.sin(angle) * distance;
-  const direction = directionFromJoystick(dx, dy, rect.width * 0.14);
+  const direction = directionFromJoystick(dx, dy, rect.width * 0.08);
 
   setSnakeJoystickOffset(stickX, stickY, true);
   if (direction) {
@@ -1195,6 +1229,7 @@ function reset(nextState: GameState) {
   enemyPlane.y = height * 0.36;
   enemyPlane.bob = 0;
   state = nextState;
+  setSnakeLayout(false);
   scoreLabel.textContent = "Score";
   scoreEl.textContent = formatScore(score);
   scorePanel.hidden = nextState !== "running";
