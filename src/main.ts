@@ -584,6 +584,8 @@ const pixelMaxPlayers = 9;
 const pixelBaseFireInterval = 1;
 const pixelShieldMaxHealth = 100;
 const pixelShieldDamage = 10;
+const pixelShieldRadius = 19;
+const pixelCannonLength = 24;
 const pixelOwnerColors: Partial<Record<PixelOwner, string>> & { neutral: string; player: string } = {
   neutral: "#606773",
   player: "#35d7ff",
@@ -1112,8 +1114,8 @@ function pixelShotStart(turret: PixelTurret, layout: PixelBoardLayout) {
   const dx = Math.cos(turret.angle);
   const dy = Math.sin(turret.angle);
   return {
-    x: clampNumber(turret.x + dx * 2, layout.x + 0.5, layout.x + layout.boardW - 0.5),
-    y: clampNumber(turret.y + dy * 2, layout.y + 0.5, layout.y + layout.boardH - 0.5),
+    x: clampNumber(turret.x + dx * pixelCannonLength, layout.x + 0.5, layout.x + layout.boardW - 0.5),
+    y: clampNumber(turret.y + dy * pixelCannonLength, layout.y + 0.5, layout.y + layout.boardH - 0.5),
   };
 }
 
@@ -2413,7 +2415,7 @@ function pixelShotShieldHit(shot: PixelShot) {
 
     const dx = shot.x - turret.x;
     const dy = shot.y - turret.y;
-    if (dx * dx + dy * dy <= 24 * 24) {
+    if (dx * dx + dy * dy <= pixelShieldRadius * pixelShieldRadius) {
       turret.shieldHealth = Math.max(0, turret.shieldHealth - pixelShieldDamage);
       return true;
     }
@@ -2529,36 +2531,24 @@ function drawPixelTileGrid(layout: PixelBoardLayout) {
 }
 
 function drawPixelTurret(turret: PixelTurret) {
-  const radius = turret.isPlayer ? 13 : 11;
-  const shieldRatio = turret.shieldHealth / pixelShieldMaxHealth;
+  const radius = turret.isPlayer ? 10 : 8;
   ctx.save();
   ctx.translate(turret.x, turret.y);
   ctx.strokeStyle = turret.shieldHealth > 0 ? "rgba(206, 244, 255, 0.72)" : "rgba(255, 255, 255, 0.16)";
-  ctx.lineWidth = 3;
-  ctx.setLineDash([5, 4]);
+  ctx.lineWidth = 2;
+  ctx.setLineDash([4, 4]);
   ctx.beginPath();
-  ctx.arc(0, 0, 24, 0, Math.PI * 2);
+  ctx.arc(0, 0, pixelShieldRadius, 0, Math.PI * 2);
   ctx.stroke();
-  ctx.setLineDash([]);
-  ctx.fillStyle = "rgba(3, 7, 16, 0.78)";
-  ctx.fillRect(-21, -36, 42, 7);
-  ctx.fillStyle = turret.shieldHealth > 35 ? "#78ffca" : "#ff6f6f";
-  ctx.fillRect(-20, -35, 40 * shieldRatio, 5);
-  ctx.fillStyle = "rgba(255, 255, 255, 0.86)";
-  ctx.font = "800 8px Inter, sans-serif";
-  ctx.textAlign = "center";
-  ctx.fillText(`${Math.round(turret.shieldHealth)}`, 0, -40);
   ctx.restore();
 
   ctx.save();
   ctx.translate(turret.x, turret.y);
   ctx.rotate(turret.angle);
-  ctx.fillStyle = "rgba(8, 12, 22, 0.9)";
+  ctx.fillStyle = "#05070d";
   ctx.beginPath();
-  roundedRectPath(0, -5, 28, 10, 5);
+  roundedRectPath(0, -3.5, pixelCannonLength, 7, 4);
   ctx.fill();
-  ctx.fillStyle = turret.color;
-  ctx.fillRect(16, -3, 18, 6);
   ctx.restore();
 
   ctx.save();
@@ -2576,6 +2566,35 @@ function drawPixelTurret(turret: PixelTurret) {
   ctx.beginPath();
   ctx.arc(0, 0, radius * 0.42, 0, Math.PI * 2);
   ctx.fill();
+  ctx.restore();
+}
+
+function drawPixelHealthPanel(layout: PixelBoardLayout) {
+  const x = layout.panelX + 22;
+  const rowHeight = clampNumber((layout.canvasH - 144) / Math.max(1, pixelTurrets.length), 20, 34);
+  let y = 128;
+  const barWidth = Math.max(92, Math.min(150, layout.canvasW - x - 24));
+  ctx.save();
+  ctx.font = `900 ${rowHeight < 26 ? 10 : 12}px Inter, sans-serif`;
+  ctx.textAlign = "left";
+  pixelTurrets.forEach((turret) => {
+    const shieldRatio = turret.shieldHealth / pixelShieldMaxHealth;
+    ctx.fillStyle = "rgba(255, 255, 255, 0.72)";
+    ctx.fillText(turret.isPlayer ? "You" : turret.id.replace("-", " "), x + 18, y + 8);
+    ctx.fillStyle = turret.color;
+    ctx.beginPath();
+    ctx.arc(x + 6, y + 4, 5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "rgba(3, 7, 16, 0.78)";
+    ctx.fillRect(x, y + 16, barWidth, 7);
+    ctx.fillStyle = turret.shieldHealth > 35 ? "#78ffca" : "#ff6f6f";
+    ctx.fillRect(x, y + 16, barWidth * shieldRatio, 7);
+    ctx.fillStyle = "rgba(255, 255, 255, 0.82)";
+    ctx.textAlign = "right";
+    ctx.fillText(`${Math.round(turret.shieldHealth)}`, x + barWidth, y + 8);
+    ctx.textAlign = "left";
+    y += rowHeight;
+  });
   ctx.restore();
 }
 
@@ -2617,6 +2636,7 @@ function drawPixelWars(time: number) {
   ctx.fillStyle = "rgba(255, 255, 255, 0.66)";
   ctx.fillText(`Turrets ${pixelTurrets.length}`, layout.panelX + 22, 66);
   ctx.fillText(`Claim ${formatScore(pixelTerritory)}%`, layout.panelX + 22, 90);
+  drawPixelHealthPanel(layout);
 
   ctx.save();
   ctx.shadowBlur = 24;
