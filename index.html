@@ -25,41 +25,77 @@
         </div>
         <div id="roll" class="roll-action" role="button" tabindex="0" aria-disabled="true">roll (free)</div>
         <div id="overlay" class="overlay">
-          <div id="home-panel" class="overlay-panel home-panel">
-            <h1>Games</h1>
-            <button id="start" class="game-tile" type="button" aria-label="Start Jumpy Plane">
-              <span class="tile-plane" aria-hidden="true">
-                <span class="tile-plane-tail"></span>
-                <span class="tile-plane-wing top"></span>
-                <span class="tile-plane-body"></span>
-                <span class="tile-plane-cockpit"></span>
-                <span class="tile-plane-wing bottom"></span>
-                <span class="tile-plane-prop"></span>
-              </span>
-              <span class="tile-details">
-                <strong>Jumpy Plane</strong>
-                <dl class="tile-scores" aria-label="Jumpy Plane high scores">
-                  <div>
-                    <dt>Your highest</dt>
-                    <dd id="local-high">0</dd>
-                  </div>
-                  <div>
-                    <dt>Today's highest</dt>
-                    <dd id="today-high">0</dd>
-                    <em id="today-name" class="score-name">No scorer yet</em>
-                  </div>
-                  <div>
-                    <dt>Server highest</dt>
-                    <dd id="server-high">0</dd>
-                    <em id="server-name" class="score-name">No scorer yet</em>
-                  </div>
-                </dl>
-              </span>
-            </button>
+          <div id="platform-panel" class="overlay-panel platform-panel">
+            <h1>Game Select</h1>
+            <div class="game-grid" aria-label="Available games">
+              <button id="select-plane" class="game-tile" type="button" aria-label="Open Jumpy Plane">
+                <span class="tile-plane" aria-hidden="true">
+                  <span class="tile-plane-tail"></span>
+                  <span class="tile-plane-wing top"></span>
+                  <span class="tile-plane-body"></span>
+                  <span class="tile-plane-cockpit"></span>
+                  <span class="tile-plane-wing bottom"></span>
+                  <span class="tile-plane-prop"></span>
+                </span>
+                <span class="tile-details">
+                  <strong>Jumpy Plane</strong>
+                  <dl class="tile-scores" aria-label="Jumpy Plane high scores">
+                    <div>
+                      <dt>Your highest</dt>
+                      <dd data-score="local">0</dd>
+                    </div>
+                    <div>
+                      <dt>Today's highest</dt>
+                      <dd data-score="today">0</dd>
+                    </div>
+                    <div>
+                      <dt>Server highest</dt>
+                      <dd data-score="server">0</dd>
+                    </div>
+                  </dl>
+                </span>
+              </button>
+            </div>
+          </div>
+          <div id="game-menu-panel" class="overlay-panel game-menu-panel" hidden>
+            <h1>Jumpy Plane</h1>
+            <dl class="high-scores" aria-label="Jumpy Plane high scores">
+              <div>
+                <dt>Your highest</dt>
+                <dd data-score="local">0</dd>
+              </div>
+              <div>
+                <dt>Today's highest</dt>
+                <dd data-score="today">0</dd>
+                <span data-score-name="today" class="score-name">No scorer yet</span>
+              </div>
+              <div>
+                <dt>Server highest</dt>
+                <dd data-score="server">0</dd>
+                <span data-score-name="server" class="score-name">No scorer yet</span>
+              </div>
+            </dl>
+            <button id="start" type="button">Start</button>
           </div>
           <div id="crash-panel" class="overlay-panel crash-panel" hidden>
             <h1>You Crashed</h1>
             <p id="crash-message">Score 0.</p>
+            <dl class="high-scores" aria-label="Jumpy Plane high scores">
+              <div>
+                <dt>Your highest</dt>
+                <dd data-score="local">0</dd>
+              </div>
+              <div>
+                <dt>Today's highest</dt>
+                <dd data-score="today">0</dd>
+                <span data-score-name="today" class="score-name">No scorer yet</span>
+              </div>
+              <div>
+                <dt>Server highest</dt>
+                <dd data-score="server">0</dd>
+                <span data-score-name="server" class="score-name">No scorer yet</span>
+              </div>
+            </dl>
             <button id="restart" type="button" hidden>Restart</button>
           </div>
         </div>

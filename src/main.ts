@@ -1,6 +1,6 @@
 import "./styles.css";
 
-type GameState = "ready" | "running" | "bubble-crash" | "ended";
+type GameState = "platform" | "ready" | "running" | "bubble-crash" | "ended";
 
 type Obstacle = {
   x: number;
@@ -92,20 +92,22 @@ function requireCanvasContext(element: HTMLCanvasElement) {
 
 const canvas = requireElement<HTMLCanvasElement>("#game");
 const scoreEl = requireElement<HTMLElement>("#score");
-const localHighEl = requireElement<HTMLElement>("#local-high");
-const todayHighEl = requireElement<HTMLElement>("#today-high");
-const todayNameEl = requireElement<HTMLElement>("#today-name");
-const serverHighEl = requireElement<HTMLElement>("#server-high");
-const serverNameEl = requireElement<HTMLElement>("#server-name");
+const localHighEls = Array.from(document.querySelectorAll<HTMLElement>('[data-score="local"]'));
+const todayHighEls = Array.from(document.querySelectorAll<HTMLElement>('[data-score="today"]'));
+const serverHighEls = Array.from(document.querySelectorAll<HTMLElement>('[data-score="server"]'));
+const todayNameEls = Array.from(document.querySelectorAll<HTMLElement>('[data-score-name="today"]'));
+const serverNameEls = Array.from(document.querySelectorAll<HTMLElement>('[data-score-name="server"]'));
 const scorePanel = requireElement<HTMLElement>(".score-panel");
 const restartButton = requireElement<HTMLButtonElement>("#restart");
 const startButton = requireElement<HTMLButtonElement>("#start");
+const selectPlaneButton = requireElement<HTMLButtonElement>("#select-plane");
 const homeButton = requireElement<HTMLButtonElement>("#home");
 const fullscreenButton = requireElement<HTMLButtonElement>("#fullscreen");
 const rollButton = requireElement<HTMLElement>("#roll");
 const gameFrame = requireElement<HTMLElement>(".game-frame");
 const overlay = requireElement<HTMLElement>("#overlay");
-const homePanel = requireElement<HTMLElement>("#home-panel");
+const platformPanel = requireElement<HTMLElement>("#platform-panel");
+const gameMenuPanel = requireElement<HTMLElement>("#game-menu-panel");
 const crashPanel = requireElement<HTMLElement>("#crash-panel");
 const crashMessage = requireElement<HTMLElement>("#crash-message");
 const recordDialog = requireElement<HTMLElement>("#record-dialog");
@@ -238,7 +240,7 @@ function resize() {
   plane.radius = getPlaneRadius();
   plane.x = getPlayerX();
   enemyPlane.x = getEnemyX();
-  if (state === "ready") {
+  if (state === "platform" || state === "ready") {
     plane.y = height * 0.48;
     enemyPlane.y = height * 0.36;
   }
@@ -466,12 +468,18 @@ function writeLocalHighest(nextScore: number) {
   localStorage.setItem(localHighScoreKey, `${localHighest}`);
 }
 
+function setText(elements: HTMLElement[], text: string) {
+  elements.forEach((element) => {
+    element.textContent = text;
+  });
+}
+
 function renderHighScores() {
-  localHighEl.textContent = formatScore(localHighest);
-  todayHighEl.textContent = formatScore(todayHighest);
-  todayNameEl.textContent = todayHighName || (todayHighest > 0 ? "Unknown scorer" : "No scorer yet");
-  serverHighEl.textContent = formatScore(serverHighest);
-  serverNameEl.textContent = serverHighName || (serverHighest > 0 ? "Unknown scorer" : "No scorer yet");
+  setText(localHighEls, formatScore(localHighest));
+  setText(todayHighEls, formatScore(todayHighest));
+  setText(serverHighEls, formatScore(serverHighest));
+  setText(todayNameEls, todayHighName || (todayHighest > 0 ? "Unknown scorer" : "No scorer yet"));
+  setText(serverNameEls, serverHighName || (serverHighest > 0 ? "Unknown scorer" : "No scorer yet"));
 }
 
 async function loadServerHighScores() {
@@ -620,12 +628,14 @@ function reset(nextState: GameState) {
   enemyPlane.bob = 0;
   state = nextState;
   scoreEl.textContent = formatScore(score);
-  scorePanel.hidden = nextState === "ready";
-  homeButton.hidden = nextState === "ready";
+  scorePanel.hidden = nextState !== "running";
+  homeButton.hidden = nextState === "platform";
   restartButton.hidden = true;
   startButton.hidden = nextState !== "ready";
-  overlay.hidden = nextState !== "ready";
-  homePanel.hidden = nextState !== "ready";
+  overlay.hidden = nextState === "running";
+  overlay.classList.toggle("is-platform", nextState === "platform");
+  platformPanel.hidden = nextState !== "platform";
+  gameMenuPanel.hidden = nextState !== "ready";
   crashPanel.hidden = true;
   if (nextState === "running") {
     startPropellerSound();
@@ -1337,10 +1347,13 @@ function endGame() {
   renderHighScores();
   void syncFinalScore(score);
   state = "ended";
+  scorePanel.hidden = false;
   homeButton.hidden = false;
   restartButton.hidden = false;
   overlay.hidden = false;
-  homePanel.hidden = true;
+  overlay.classList.remove("is-platform");
+  platformPanel.hidden = true;
+  gameMenuPanel.hidden = true;
   crashPanel.hidden = false;
   crashPanel.querySelector("h1")!.textContent = "You Crashed";
   crashMessage.textContent = `Score ${formatScore(score)}.`;
@@ -1495,7 +1508,7 @@ function render(time: number) {
   drawPlane();
   drawPlaneDebris();
 
-  if (state === "ready") {
+  if (state === "platform" || state === "ready") {
     ctx.fillStyle = "rgba(255, 255, 255, 0.5)";
     ctx.fillRect(0, 0, width, height);
   }
@@ -1528,6 +1541,9 @@ restartButton.addEventListener("click", () => {
   reset("running");
 });
 homeButton.addEventListener("click", () => {
+  reset("platform");
+});
+selectPlaneButton.addEventListener("click", () => {
   reset("ready");
 });
 fullscreenButton.addEventListener("click", () => {
@@ -1567,5 +1583,5 @@ renderHighScores();
 void loadServerHighScores();
 resize();
 updateFullscreenButton();
-reset("ready");
+reset("platform");
 requestAnimationFrame(loop);
