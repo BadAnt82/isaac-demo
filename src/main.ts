@@ -367,10 +367,12 @@ let bridgeTiles = 0;
 let bridgePoints = 0;
 let bridgeBrokenSide: BridgeSide | null = null;
 let bridgePlayerSide: BridgeSide | null = null;
+let bridgeStandingSide: BridgeSide | null = null;
 let bridgePuzzles: BridgePuzzle[] = [];
 let bridgePendingSide: BridgeSide | null = null;
 let bridgeJumpTimer = 0;
 let bridgeSuccessTimer = 0;
+let bridgeScrollTimer = 0;
 let bridgeWheelLabel = "Ready";
 let bridgeWheelTimer = 0;
 let bridgeWheelSpinTimer = 0;
@@ -429,6 +431,7 @@ const bridgeWheelCost = 1;
 const bridgeFallDuration = 0.95;
 const bridgeJumpDuration = 0.34;
 const bridgeSuccessDuration = 0.52;
+const bridgeScrollDuration = 0.34;
 const bridgeWheelSpinDuration = 1.25;
 const bridgeWheelOutcomes: BridgeWheelOutcome[] = [
   { label: "+1", apply: (points) => points + 1 },
@@ -1169,9 +1172,11 @@ function resetBridgeRun() {
   bridgePoints = 0;
   bridgeBrokenSide = null;
   bridgePlayerSide = null;
+  bridgeStandingSide = null;
   bridgePendingSide = null;
   bridgeJumpTimer = 0;
   bridgeSuccessTimer = 0;
+  bridgeScrollTimer = 0;
   bridgeWheelLabel = "Ready";
   bridgeWheelTimer = 0;
   bridgeWheelSpinTimer = 0;
@@ -1184,7 +1189,12 @@ function resetBridgeRun() {
 }
 
 function updateBridgeControls() {
-  const bridgeBusy = bridgeFallTimer > 0 || bridgeJumpTimer > 0 || bridgeSuccessTimer > 0 || bridgeWheelSpinTimer > 0;
+  const bridgeBusy =
+    bridgeFallTimer > 0 ||
+    bridgeJumpTimer > 0 ||
+    bridgeSuccessTimer > 0 ||
+    bridgeScrollTimer > 0 ||
+    bridgeWheelSpinTimer > 0;
   bridgeSpinButton.disabled = state !== "bridge-running" || bridgeBusy || bridgePoints < bridgeWheelCost;
   bridgeSpinButton.textContent = bridgePoints >= bridgeWheelCost ? "Spin wheel (-1)" : "Need 1 point";
 }
@@ -1258,7 +1268,14 @@ function startBridgeGame() {
 }
 
 function chooseBridgeSide(side: BridgeSide) {
-  if (state !== "bridge-running" || bridgeFallTimer > 0 || bridgeJumpTimer > 0 || bridgeSuccessTimer > 0) {
+  if (
+    state !== "bridge-running" ||
+    bridgeFallTimer > 0 ||
+    bridgeJumpTimer > 0 ||
+    bridgeSuccessTimer > 0 ||
+    bridgeScrollTimer > 0 ||
+    bridgeWheelSpinTimer > 0
+  ) {
     return;
   }
 
@@ -1305,6 +1322,7 @@ function spinBridgeWheel() {
     bridgeFallTimer > 0 ||
     bridgeJumpTimer > 0 ||
     bridgeSuccessTimer > 0 ||
+    bridgeScrollTimer > 0 ||
     bridgeWheelSpinTimer > 0 ||
     bridgePoints < bridgeWheelCost
   ) {
@@ -1355,9 +1373,16 @@ function updateBridge(dt: number) {
   if (bridgeSuccessTimer > 0) {
     bridgeSuccessTimer = Math.max(0, bridgeSuccessTimer - dt);
     if (bridgeSuccessTimer <= 0) {
+      bridgeStandingSide = bridgePlayerSide;
       bridgeStep += 1;
-      bridgePlayerSide = null;
+      bridgeScrollTimer = bridgeScrollDuration;
       ensureBridgeRows(bridgeStep + bridgeVisibleRows + 3);
+      updateBridgeScore();
+    }
+  }
+  if (bridgeScrollTimer > 0) {
+    bridgeScrollTimer = Math.max(0, bridgeScrollTimer - dt);
+    if (bridgeScrollTimer <= 0) {
       updateBridgeScore();
     }
   }
@@ -1664,21 +1689,26 @@ function bridgeAreas(canvasWidth: number): BridgeAreas {
 function bridgePanelRects(canvasWidth: number, canvasHeight: number) {
   const areas = bridgeAreas(canvasWidth);
   const panelWidth = Math.min(170, areas.boardWidth * 0.32);
-  const visibleRows = canvasHeight < 320 ? 5 : bridgeVisibleRows;
+  const visibleAheadRows = canvasHeight < 320 ? 4 : 6;
+  const firstRow = bridgeStep > 0 ? -1 : 0;
+  const lastRow = visibleAheadRows - 1;
+  const rowCount = lastRow - firstRow + 1;
   const topMargin = Math.max(50, canvasHeight * 0.14);
   const bottomClearance = Math.max(62, canvasHeight * 0.2);
   const bottomY = canvasHeight - bottomClearance;
-  const rowPitch = Math.max(22, (bottomY - topMargin) / Math.max(1, visibleRows - 1));
-  const panelHeight = Math.min(68, canvasHeight * 0.12, rowPitch * 0.72);
+  const basePanelHeight = Math.min(68, Math.max(26, canvasHeight * 0.12));
+  const rowPitch = Math.max(20, (bottomY - topMargin - basePanelHeight) / Math.max(1, rowCount - 1));
+  const panelHeight = Math.min(basePanelHeight, Math.max(18, rowPitch * 0.76));
+  const scrollOffset = bridgeScrollTimer > 0 ? -rowPitch * (bridgeScrollTimer / bridgeScrollDuration) : 0;
   const gap = Math.min(38, areas.boardWidth * 0.06);
   const centerX = areas.boardWidth / 2;
   const leftX = centerX - panelWidth - gap / 2;
   const rightX = centerX + gap / 2;
   const rects: BridgePanelRect[] = [];
 
-  for (let row = 0; row < visibleRows; row += 1) {
+  for (let row = firstRow; row <= lastRow; row += 1) {
     const pathIndex = bridgeStep + row;
-    const y = bottomY - panelHeight - row * rowPitch;
+    const y = bottomY - panelHeight - (row - firstRow) * rowPitch + scrollOffset;
     const scale = Math.max(0.72, 1 - row * 0.045);
     const offsetX = (1 - scale) * panelWidth * 0.5;
     (["left", "right"] as BridgeSide[]).forEach((side) => {
@@ -1792,6 +1822,7 @@ function drawBridgeGame(time: number) {
   const canvasWidth = canvas.width / dpr;
   const canvasHeight = canvas.height / dpr;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ensureBridgeRows(bridgeStep + bridgeVisibleRows + 2);
 
   const background = ctx.createLinearGradient(0, 0, 0, canvasHeight);
   background.addColorStop(0, "#10253d");
@@ -1832,13 +1863,12 @@ function drawBridgeGame(time: number) {
     panelBounds.bottom - panelBounds.top + 84,
   );
 
-  ensureBridgeRows(bridgeStep + bridgeVisibleRows + 2);
-
   for (const panel of panels.sort((a, b) => b.row - a.row)) {
     const puzzle = bridgePuzzles[panel.pathIndex];
     const isBroken = panel.pathIndex === bridgeStep && bridgeBrokenSide === panel.side;
     const isLanded = panel.pathIndex === bridgeStep && bridgeSuccessTimer > 0 && bridgePlayerSide === panel.side;
     const isJumpTarget = panel.pathIndex === bridgeStep && bridgeJumpTimer > 0 && bridgePlayerSide === panel.side;
+    const isTraversed = panel.row === -1 && panel.pathIndex === bridgeStep - 1 && bridgeStandingSide === panel.side;
     const isCurrent = panel.row === 0;
     const tint = "rgba(196, 242, 255, 0.34)";
     const x = panel.x;
@@ -1850,17 +1880,25 @@ function drawBridgeGame(time: number) {
     glass.addColorStop(0, "rgba(255, 255, 255, 0.78)");
     glass.addColorStop(0.45, tint);
     glass.addColorStop(1, "rgba(44, 179, 211, 0.28)");
-    ctx.fillStyle = isBroken ? "rgba(255, 95, 118, 0.22)" : isLanded ? "rgba(85, 255, 150, 0.58)" : glass;
+    ctx.fillStyle = isBroken
+      ? "rgba(255, 95, 118, 0.22)"
+      : isLanded
+        ? "rgba(85, 255, 150, 0.58)"
+        : isTraversed
+          ? "rgba(85, 255, 150, 0.36)"
+          : glass;
     ctx.strokeStyle = isBroken
       ? "rgba(255, 95, 118, 0.95)"
       : isLanded
         ? "rgba(85, 255, 150, 0.98)"
-        : isJumpTarget
-          ? "rgba(255, 220, 102, 0.95)"
-          : isCurrent
-            ? "rgba(255, 220, 102, 0.9)"
-            : "rgba(205, 249, 255, 0.54)";
-    ctx.lineWidth = isCurrent || isJumpTarget || isLanded ? 3 : 2;
+        : isTraversed
+          ? "rgba(85, 255, 150, 0.76)"
+          : isJumpTarget
+            ? "rgba(255, 220, 102, 0.95)"
+            : isCurrent
+              ? "rgba(255, 220, 102, 0.9)"
+              : "rgba(205, 249, 255, 0.54)";
+    ctx.lineWidth = isCurrent || isJumpTarget || isLanded || isTraversed ? 3 : 2;
     ctx.beginPath();
     roundedRectPath(x, y, w, h, 8);
     ctx.fill();
@@ -1901,27 +1939,32 @@ function drawBridgeGame(time: number) {
     }
   }
 
-  const currentPanel = panels.find((panel) => panel.row === 0 && panel.side === (bridgeBrokenSide || bridgePlayerSide));
+  const targetPanel = panels.find((panel) => panel.row === 0 && panel.side === (bridgeBrokenSide || bridgePlayerSide));
+  const previousPanel = panels.find((panel) => panel.row === -1 && panel.side === bridgeStandingSide);
   const fallbackPanel = panels.find((panel) => panel.row === 0);
-  const playerPanel = currentPanel || fallbackPanel;
   const fallProgress = bridgeFallTimer > 0 ? 1 - bridgeFallTimer / bridgeFallDuration : 0;
   const jumpProgress = bridgeJumpTimer > 0 ? 1 - bridgeJumpTimer / bridgeJumpDuration : 0;
-  const idleX = centerX;
-  const idleY = (fallbackPanel?.y ?? canvasHeight * 0.7) + (fallbackPanel?.h ?? 60) + 38;
-  const targetX = playerPanel ? playerPanel.x + playerPanel.w / 2 : centerX;
-  const targetY = playerPanel ? playerPanel.y + playerPanel.h * 0.48 : idleY;
-  let playerX = idleX;
-  let playerY = idleY + Math.sin(time * 5) * 3;
+  const startX = previousPanel ? previousPanel.x + previousPanel.w / 2 : centerX;
+  const startY = previousPanel
+    ? previousPanel.y + previousPanel.h * 0.48
+    : (fallbackPanel?.y ?? canvasHeight * 0.7) + (fallbackPanel?.h ?? 60) + 38;
+  const targetX = targetPanel ? targetPanel.x + targetPanel.w / 2 : startX;
+  const targetY = targetPanel ? targetPanel.y + targetPanel.h * 0.48 : startY;
+  let playerX = startX;
+  let playerY = startY + Math.sin(time * 5) * 3;
 
   if (bridgeJumpTimer > 0) {
-    playerX = idleX + (targetX - idleX) * jumpProgress;
-    playerY = idleY + (targetY - idleY) * jumpProgress - Math.sin(jumpProgress * Math.PI) * 42;
-  } else if (bridgeFallTimer > 0) {
+    playerX = startX + (targetX - startX) * jumpProgress;
+    playerY = startY + (targetY - startY) * jumpProgress - Math.sin(jumpProgress * Math.PI) * 42;
+  } else if (bridgeFallTimer > 0 && targetPanel) {
     playerX = targetX;
     playerY = targetY + fallProgress * canvasHeight * 0.42;
-  } else if (bridgeSuccessTimer > 0 && playerPanel) {
+  } else if (bridgeSuccessTimer > 0 && targetPanel) {
     playerX = targetX;
     playerY = targetY + Math.sin(time * 12) * 2;
+  } else if (previousPanel) {
+    playerX = startX;
+    playerY = startY + Math.sin(time * 5) * 2;
   }
   ctx.save();
   ctx.translate(playerX, playerY);
