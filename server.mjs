@@ -8,7 +8,11 @@ const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const distDir = resolve(__dirname, "dist");
 const storePath = process.env.SCORE_STORE_PATH || resolve(__dirname, "data", "high-scores.json");
 const snakeStorePath = process.env.SNAKE_SCORE_STORE_PATH || resolve(__dirname, "data", "snake-high-scores.json");
+const bridgeTileStorePath = process.env.BRIDGE_TILE_SCORE_STORE_PATH || resolve(__dirname, "data", "glass-bridge-tile-scores.json");
+const bridgePointStorePath =
+  process.env.BRIDGE_POINT_SCORE_STORE_PATH || resolve(__dirname, "data", "glass-bridge-point-scores.json");
 const issueStorePaths = {
+  "glass-bridge": process.env.GLASS_BRIDGE_ISSUE_STORE_PATH || resolve(__dirname, "data", "glass-bridge-issues.json"),
   "jumpy-plane": process.env.JUMPY_PLANE_ISSUE_STORE_PATH || resolve(__dirname, "data", "jumpy-plane-issues.json"),
   "shooting-snakes": process.env.SHOOTING_SNAKES_ISSUE_STORE_PATH || resolve(__dirname, "data", "shooting-snakes-issues.json"),
 };
@@ -793,6 +797,16 @@ async function handleApi(request, response) {
     return true;
   }
 
+  if (request.url === "/api/glass-bridge-tile-scores" && request.method === "GET") {
+    sendJson(response, 200, readScores(bridgeTileStorePath));
+    return true;
+  }
+
+  if (request.url === "/api/glass-bridge-point-scores" && request.method === "GET") {
+    sendJson(response, 200, readScores(bridgePointStorePath));
+    return true;
+  }
+
   if (request.url === "/api/high-scores" && request.method === "POST") {
     await handleScorePost(request, response, storePath);
     return true;
@@ -800,6 +814,16 @@ async function handleApi(request, response) {
 
   if (request.url === "/api/snake-high-scores" && request.method === "POST") {
     await handleScorePost(request, response, snakeStorePath);
+    return true;
+  }
+
+  if (request.url === "/api/glass-bridge-tile-scores" && request.method === "POST") {
+    await handleScorePost(request, response, bridgeTileStorePath);
+    return true;
+  }
+
+  if (request.url === "/api/glass-bridge-point-scores" && request.method === "POST") {
+    await handleScorePost(request, response, bridgePointStorePath);
     return true;
   }
 

@@ -94,6 +94,33 @@
                   </dl>
                 </span>
               </button>
+              <button id="select-bridge" class="game-tile bridge-tile" type="button" aria-label="Open Glass Bridge">
+                <span class="tile-bridge" aria-hidden="true">
+                  <span></span>
+                  <span></span>
+                  <span></span>
+                  <span></span>
+                  <span></span>
+                  <span></span>
+                </span>
+                <span class="tile-details">
+                  <strong>Glass Bridge</strong>
+                  <dl class="tile-scores" aria-label="Glass Bridge records">
+                    <div>
+                      <dt>Your tiles</dt>
+                      <dd data-bridge-tile-score="local">0</dd>
+                    </div>
+                    <div>
+                      <dt>Today's points</dt>
+                      <dd data-bridge-point-score="today">0</dd>
+                    </div>
+                    <div>
+                      <dt>Server points</dt>
+                      <dd data-bridge-point-score="server">0</dd>
+                    </div>
+                  </dl>
+                </span>
+              </button>
             </div>
           </div>
           <div id="game-menu-panel" class="overlay-panel game-menu-panel" hidden>
@@ -177,6 +204,54 @@
             <button id="snake-report-issue" type="button">Report issue</button>
             <button id="snake-options-back" type="button">Back</button>
           </div>
+          <div id="bridge-menu-panel" class="overlay-panel bridge-menu-panel" hidden>
+            <h1>Glass Bridge</h1>
+            <div class="bridge-score-groups">
+              <dl class="high-scores" aria-label="Glass Bridge tile records">
+                <div>
+                  <dt>Your tiles</dt>
+                  <dd data-bridge-tile-score="local">0</dd>
+                </div>
+                <div>
+                  <dt>Today's tiles</dt>
+                  <dd data-bridge-tile-score="today">0</dd>
+                  <span data-bridge-tile-score-name="today" class="score-name">No scorer yet</span>
+                </div>
+                <div>
+                  <dt>Server tiles</dt>
+                  <dd data-bridge-tile-score="server">0</dd>
+                  <span data-bridge-tile-score-name="server" class="score-name">No scorer yet</span>
+                </div>
+              </dl>
+              <dl class="high-scores" aria-label="Glass Bridge point records">
+                <div>
+                  <dt>Your points</dt>
+                  <dd data-bridge-point-score="local">0</dd>
+                </div>
+                <div>
+                  <dt>Today's points</dt>
+                  <dd data-bridge-point-score="today">0</dd>
+                  <span data-bridge-point-score-name="today" class="score-name">No scorer yet</span>
+                </div>
+                <div>
+                  <dt>Server points</dt>
+                  <dd data-bridge-point-score="server">0</dd>
+                  <span data-bridge-point-score-name="server" class="score-name">No scorer yet</span>
+                </div>
+              </dl>
+            </div>
+            <div class="menu-actions">
+              <button id="bridge-start" type="button">Start</button>
+              <button id="bridge-options" type="button">Options</button>
+              <button id="bridge-menu-back" type="button">Back to games</button>
+            </div>
+          </div>
+          <div id="bridge-options-panel" class="overlay-panel options-panel" hidden>
+            <h1>Glass Bridge Options</h1>
+            <button id="bridge-sound-toggle" type="button">Sound on</button>
+            <button id="bridge-report-issue" type="button">Report issue</button>
+            <button id="bridge-options-back" type="button">Back</button>
+          </div>
           <div id="report-panel" class="overlay-panel options-panel report-panel" hidden>
             <h1>Report Issue</h1>
             <form id="issue-form" class="issue-form">
@@ -210,6 +285,45 @@
             </dl>
             <button id="snake-restart" type="button">Restart</button>
           </div>
+          <div id="bridge-dead-panel" class="overlay-panel bridge-dead-panel" hidden>
+            <h1>Glass Broke</h1>
+            <p id="bridge-message">Tiles 0. Points 0.</p>
+            <div class="bridge-score-groups">
+              <dl class="high-scores" aria-label="Glass Bridge tile records">
+                <div>
+                  <dt>Your tiles</dt>
+                  <dd data-bridge-tile-score="local">0</dd>
+                </div>
+                <div>
+                  <dt>Today's tiles</dt>
+                  <dd data-bridge-tile-score="today">0</dd>
+                  <span data-bridge-tile-score-name="today" class="score-name">No scorer yet</span>
+                </div>
+                <div>
+                  <dt>Server tiles</dt>
+                  <dd data-bridge-tile-score="server">0</dd>
+                  <span data-bridge-tile-score-name="server" class="score-name">No scorer yet</span>
+                </div>
+              </dl>
+              <dl class="high-scores" aria-label="Glass Bridge point records">
+                <div>
+                  <dt>Your points</dt>
+                  <dd data-bridge-point-score="local">0</dd>
+                </div>
+                <div>
+                  <dt>Today's points</dt>
+                  <dd data-bridge-point-score="today">0</dd>
+                  <span data-bridge-point-score-name="today" class="score-name">No scorer yet</span>
+                </div>
+                <div>
+                  <dt>Server points</dt>
+                  <dd data-bridge-point-score="server">0</dd>
+                  <span data-bridge-point-score-name="server" class="score-name">No scorer yet</span>
+                </div>
+              </dl>
+            </div>
+            <button id="bridge-restart" type="button">Restart</button>
+          </div>
         </div>
         <div id="snake-controls" class="snake-controls" hidden>
           <div id="snake-joystick" class="snake-joystick" role="application" aria-label="Snake movement joystick">
@@ -217,6 +331,11 @@
             <div id="snake-joystick-thumb" class="snake-joystick-thumb" aria-hidden="true"></div>
           </div>
           <button id="snake-shoot" class="snake-shoot" type="button">Shoot (0/5)</button>
+        </div>
+        <div id="bridge-controls" class="bridge-controls" hidden>
+          <button id="bridge-left" type="button">Left</button>
+          <button id="bridge-spin" type="button">Spin wheel (-1)</button>
+          <button id="bridge-right" type="button">Right</button>
         </div>
         <div id="record-dialog" class="record-dialog" hidden role="dialog" aria-modal="true" aria-labelledby="record-title">
           <form class="record-card">

@@ -11,7 +11,11 @@ type GameState =
   | "snake-menu"
   | "snake-options"
   | "snake-running"
-  | "snake-dead";
+  | "snake-dead"
+  | "bridge-menu"
+  | "bridge-options"
+  | "bridge-running"
+  | "bridge-dead";
 
 type Obstacle = {
   x: number;
@@ -134,6 +138,13 @@ type SnakeWelcome = {
   type: "snake-welcome";
 };
 
+type BridgeSide = "left" | "right";
+
+type BridgeWheelOutcome = {
+  label: string;
+  apply: (points: number) => number;
+};
+
 function requireElement<T extends Element>(selector: string) {
   const element = document.querySelector<T>(selector);
   if (!element) {
@@ -163,6 +174,16 @@ const snakeTodayHighEls = Array.from(document.querySelectorAll<HTMLElement>('[da
 const snakeServerHighEls = Array.from(document.querySelectorAll<HTMLElement>('[data-snake-score="server"]'));
 const snakeTodayNameEls = Array.from(document.querySelectorAll<HTMLElement>('[data-snake-score-name="today"]'));
 const snakeServerNameEls = Array.from(document.querySelectorAll<HTMLElement>('[data-snake-score-name="server"]'));
+const bridgeLocalTileEls = Array.from(document.querySelectorAll<HTMLElement>('[data-bridge-tile-score="local"]'));
+const bridgeTodayTileEls = Array.from(document.querySelectorAll<HTMLElement>('[data-bridge-tile-score="today"]'));
+const bridgeServerTileEls = Array.from(document.querySelectorAll<HTMLElement>('[data-bridge-tile-score="server"]'));
+const bridgeTodayTileNameEls = Array.from(document.querySelectorAll<HTMLElement>('[data-bridge-tile-score-name="today"]'));
+const bridgeServerTileNameEls = Array.from(document.querySelectorAll<HTMLElement>('[data-bridge-tile-score-name="server"]'));
+const bridgeLocalPointEls = Array.from(document.querySelectorAll<HTMLElement>('[data-bridge-point-score="local"]'));
+const bridgeTodayPointEls = Array.from(document.querySelectorAll<HTMLElement>('[data-bridge-point-score="today"]'));
+const bridgeServerPointEls = Array.from(document.querySelectorAll<HTMLElement>('[data-bridge-point-score="server"]'));
+const bridgeTodayPointNameEls = Array.from(document.querySelectorAll<HTMLElement>('[data-bridge-point-score-name="today"]'));
+const bridgeServerPointNameEls = Array.from(document.querySelectorAll<HTMLElement>('[data-bridge-point-score-name="server"]'));
 const scorePanel = requireElement<HTMLElement>(".score-panel");
 const restartButton = requireElement<HTMLButtonElement>("#restart");
 const startButton = requireElement<HTMLButtonElement>("#start");
@@ -173,6 +194,7 @@ const planeSoundToggle = requireElement<HTMLButtonElement>("#plane-sound-toggle"
 const planeReportIssueButton = requireElement<HTMLButtonElement>("#plane-report-issue");
 const selectPlaneButton = requireElement<HTMLButtonElement>("#select-plane");
 const selectSnakeButton = requireElement<HTMLButtonElement>("#select-snake");
+const selectBridgeButton = requireElement<HTMLButtonElement>("#select-bridge");
 const homeButton = requireElement<HTMLButtonElement>("#home");
 const fullscreenButton = requireElement<HTMLButtonElement>("#fullscreen");
 const rollButton = requireElement<HTMLElement>("#roll");
@@ -199,12 +221,27 @@ const snakeMenuBackButton = requireElement<HTMLButtonElement>("#snake-menu-back"
 const snakeOptionsBackButton = requireElement<HTMLButtonElement>("#snake-options-back");
 const snakeSoundToggle = requireElement<HTMLButtonElement>("#snake-sound-toggle");
 const snakeReportIssueButton = requireElement<HTMLButtonElement>("#snake-report-issue");
+const bridgeMenuPanel = requireElement<HTMLElement>("#bridge-menu-panel");
+const bridgeOptionsPanel = requireElement<HTMLElement>("#bridge-options-panel");
+const bridgeDeadPanel = requireElement<HTMLElement>("#bridge-dead-panel");
+const bridgeStartButton = requireElement<HTMLButtonElement>("#bridge-start");
+const bridgeRestartButton = requireElement<HTMLButtonElement>("#bridge-restart");
+const bridgeOptionsButton = requireElement<HTMLButtonElement>("#bridge-options");
+const bridgeMenuBackButton = requireElement<HTMLButtonElement>("#bridge-menu-back");
+const bridgeOptionsBackButton = requireElement<HTMLButtonElement>("#bridge-options-back");
+const bridgeSoundToggle = requireElement<HTMLButtonElement>("#bridge-sound-toggle");
+const bridgeReportIssueButton = requireElement<HTMLButtonElement>("#bridge-report-issue");
+const bridgeControls = requireElement<HTMLElement>("#bridge-controls");
+const bridgeLeftButton = requireElement<HTMLButtonElement>("#bridge-left");
+const bridgeRightButton = requireElement<HTMLButtonElement>("#bridge-right");
+const bridgeSpinButton = requireElement<HTMLButtonElement>("#bridge-spin");
 const reportPanel = requireElement<HTMLElement>("#report-panel");
 const issueForm = requireElement<HTMLFormElement>("#issue-form");
 const issueText = requireElement<HTMLTextAreaElement>("#issue-text");
 const issueCancelButton = requireElement<HTMLButtonElement>("#issue-cancel");
 const issueStatus = requireElement<HTMLElement>("#issue-status");
 const snakeMessage = requireElement<HTMLElement>("#snake-message");
+const bridgeMessage = requireElement<HTMLElement>("#bridge-message");
 const crashMessage = requireElement<HTMLElement>("#crash-message");
 const recordDialog = requireElement<HTMLElement>("#record-dialog");
 const recordForm = requireElement<HTMLFormElement>(".record-card");
@@ -286,14 +323,32 @@ let snakeLastShotBank = 0;
 let snakeJoystickPointerId: number | null = null;
 let snakeJoystickPulseTimer = 0;
 let lastSnakeShootTime = 0;
-let reportGame: "jumpy-plane" | "shooting-snakes" = "jumpy-plane";
-let reportReturnState: "plane-options" | "snake-options" = "plane-options";
+let reportGame: "jumpy-plane" | "shooting-snakes" | "glass-bridge" = "jumpy-plane";
+let reportReturnState: "plane-options" | "snake-options" | "bridge-options" = "plane-options";
 let snakeLocalLongest = 3;
 let snakeTodayLongest = 0;
 let snakeServerLongest = 0;
 let snakeTodayLongName = "";
 let snakeServerLongName = "";
 let snakeBestThisRun = 3;
+let bridgeLocalTiles = 0;
+let bridgeTodayTiles = 0;
+let bridgeServerTiles = 0;
+let bridgeTodayTileName = "";
+let bridgeServerTileName = "";
+let bridgeLocalPoints = 0;
+let bridgeTodayPoints = 0;
+let bridgeServerPoints = 0;
+let bridgeTodayPointName = "";
+let bridgeServerPointName = "";
+let bridgeSafePath: BridgeSide[] = [];
+let bridgeStep = 0;
+let bridgeTiles = 0;
+let bridgePoints = 0;
+let bridgeBrokenSide: BridgeSide | null = null;
+let bridgeWheelLabel = "Ready";
+let bridgeWheelTimer = 0;
+let bridgeFallTimer = 0;
 
 const localHighScoreKey = "badant-games-jumpy-plane-high-score";
 const oldLocalHighScoreKeys = ["isaac-demo-high-score"];
@@ -303,8 +358,13 @@ const oldSnakeLocalLongestKey = "badant-games-glow-snake-longest";
 const oldSnakePendingScoreKey = "badant-games-glow-snake-pending-longest";
 const snakeLocalLongestKey = "badant-games-shooting-snakes-longest";
 const snakePendingScoreKey = "badant-games-shooting-snakes-pending-longest";
+const bridgeLocalTilesKey = "badant-games-glass-bridge-tiles";
+const bridgeLocalPointsKey = "badant-games-glass-bridge-points";
+const bridgePendingTilesKey = "badant-games-glass-bridge-pending-tiles";
+const bridgePendingPointsKey = "badant-games-glass-bridge-pending-points";
 const planeSoundKey = "badant-games-jumpy-plane-sound";
 const snakeSoundKey = "badant-games-shooting-snakes-sound";
+const bridgeSoundKey = "badant-games-glass-bridge-sound";
 const obstacleWidth = 96;
 const obstacleSpeed = 250;
 const spawnEvery = 1.42;
@@ -334,8 +394,19 @@ const snakeFallbackBoard = {
 };
 const fallbackSnakeShotBank = 5;
 const snakeCameraZoom = 1 / 1.2;
+const bridgeVisibleRows = 7;
+const bridgeWheelCost = 1;
+const bridgeWheelOutcomes: BridgeWheelOutcome[] = [
+  { label: "+1", apply: (points) => points + 1 },
+  { label: "+3", apply: (points) => points + 3 },
+  { label: "-1", apply: (points) => points - 1 },
+  { label: "-2", apply: (points) => points - 2 },
+  { label: "x2", apply: (points) => points * 2 },
+  { label: "/2", apply: (points) => Math.floor(points / 2) },
+];
 let planeSoundEnabled = localStorage.getItem(planeSoundKey) !== "off";
 let snakeSoundEnabled = localStorage.getItem(snakeSoundKey) !== "off";
+let bridgeSoundEnabled = localStorage.getItem(bridgeSoundKey) !== "off";
 
 type FullscreenFrame = HTMLElement & {
   webkitRequestFullscreen?: () => Promise<void> | void;
@@ -596,6 +667,31 @@ function playSnakeShootSound() {
   playTone(180, 0.08, "square", 0.032, 0, 680);
 }
 
+function playBridgeStepSound() {
+  if (!bridgeSoundEnabled) {
+    return;
+  }
+  playTone(620, 0.08, "sine", 0.03, 0, 980);
+  playTone(1240, 0.05, "triangle", 0.018, 0.04, 880);
+}
+
+function playBridgeBreakSound() {
+  if (!bridgeSoundEnabled) {
+    return;
+  }
+  playNoiseBurst(0.22, 0.07);
+  playTone(340, 0.12, "sawtooth", 0.04, 0, 72);
+  playTone(1100, 0.05, "square", 0.018, 0.03, 260);
+}
+
+function playBridgeWheelSound() {
+  if (!bridgeSoundEnabled) {
+    return;
+  }
+  playTone(420, 0.07, "triangle", 0.026, 0, 840);
+  playTone(840, 0.07, "sine", 0.022, 0.06, 360);
+}
+
 function getSnakeSocketUrl() {
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
   return `${protocol}//${window.location.host}/snake`;
@@ -710,6 +806,9 @@ function showPlaneOptions() {
   crashPanel.hidden = true;
   snakeMenuPanel.hidden = true;
   snakeOptionsPanel.hidden = true;
+  bridgeMenuPanel.hidden = true;
+  bridgeOptionsPanel.hidden = true;
+  bridgeDeadPanel.hidden = true;
   reportPanel.hidden = true;
   snakeDeadPanel.hidden = true;
   scorePanel.hidden = true;
@@ -717,6 +816,7 @@ function showPlaneOptions() {
   startButton.hidden = true;
   restartButton.hidden = true;
   snakeControls.hidden = true;
+  bridgeControls.hidden = true;
   issueStatus.textContent = "";
   updateSoundButtons();
   updateRollButton();
@@ -744,6 +844,9 @@ function startSnakeGame(restart = false) {
   crashPanel.hidden = true;
   snakeMenuPanel.hidden = true;
   snakeOptionsPanel.hidden = true;
+  bridgeMenuPanel.hidden = true;
+  bridgeOptionsPanel.hidden = true;
+  bridgeDeadPanel.hidden = true;
   reportPanel.hidden = true;
   snakeDeadPanel.hidden = true;
   scorePanel.hidden = true;
@@ -751,6 +854,7 @@ function startSnakeGame(restart = false) {
   startButton.hidden = true;
   restartButton.hidden = true;
   snakeControls.hidden = false;
+  bridgeControls.hidden = true;
   setSnakeLayout(true);
   updateRollButton();
   connectSnakeSocket();
@@ -782,11 +886,17 @@ function showSnakeMenu() {
   crashPanel.hidden = true;
   snakeMenuPanel.hidden = false;
   snakeOptionsPanel.hidden = true;
+  bridgeMenuPanel.hidden = true;
+  bridgeOptionsPanel.hidden = true;
+  bridgeDeadPanel.hidden = true;
   reportPanel.hidden = true;
   snakeDeadPanel.hidden = true;
   scorePanel.hidden = true;
   homeButton.hidden = false;
+  startButton.hidden = true;
+  restartButton.hidden = true;
   snakeControls.hidden = true;
+  bridgeControls.hidden = true;
   updateRollButton();
 }
 
@@ -803,17 +913,85 @@ function showSnakeOptions() {
   crashPanel.hidden = true;
   snakeMenuPanel.hidden = true;
   snakeOptionsPanel.hidden = false;
+  bridgeMenuPanel.hidden = true;
+  bridgeOptionsPanel.hidden = true;
+  bridgeDeadPanel.hidden = true;
   reportPanel.hidden = true;
   snakeDeadPanel.hidden = true;
   scorePanel.hidden = true;
   homeButton.hidden = false;
+  startButton.hidden = true;
+  restartButton.hidden = true;
   snakeControls.hidden = true;
+  bridgeControls.hidden = true;
   issueStatus.textContent = "";
   updateSoundButtons();
   updateRollButton();
 }
 
-function showReportIssue(game: "jumpy-plane" | "shooting-snakes", returnState: "plane-options" | "snake-options") {
+function showBridgeMenu() {
+  leaveSnakeRoom();
+  setSnakeLayout(false);
+  resetSnakeJoystick();
+  readBridgeLocalScores();
+  renderBridgeHighScores();
+  void loadServerBridgeHighScores();
+  state = "bridge-menu";
+  scoreEl.textContent = "0";
+  overlay.hidden = false;
+  overlay.classList.remove("is-platform");
+  platformPanel.hidden = true;
+  gameMenuPanel.hidden = true;
+  planeOptionsPanel.hidden = true;
+  crashPanel.hidden = true;
+  snakeMenuPanel.hidden = true;
+  snakeOptionsPanel.hidden = true;
+  bridgeMenuPanel.hidden = false;
+  bridgeOptionsPanel.hidden = true;
+  bridgeDeadPanel.hidden = true;
+  reportPanel.hidden = true;
+  snakeDeadPanel.hidden = true;
+  scorePanel.hidden = true;
+  homeButton.hidden = false;
+  startButton.hidden = true;
+  restartButton.hidden = true;
+  snakeControls.hidden = true;
+  bridgeControls.hidden = true;
+  updateBridgeControls();
+  updateRollButton();
+}
+
+function showBridgeOptions() {
+  leaveSnakeRoom();
+  setSnakeLayout(false);
+  resetSnakeJoystick();
+  state = "bridge-options";
+  overlay.hidden = false;
+  overlay.classList.remove("is-platform");
+  platformPanel.hidden = true;
+  gameMenuPanel.hidden = true;
+  planeOptionsPanel.hidden = true;
+  crashPanel.hidden = true;
+  snakeMenuPanel.hidden = true;
+  snakeOptionsPanel.hidden = true;
+  bridgeMenuPanel.hidden = true;
+  bridgeOptionsPanel.hidden = false;
+  bridgeDeadPanel.hidden = true;
+  reportPanel.hidden = true;
+  snakeDeadPanel.hidden = true;
+  scorePanel.hidden = true;
+  homeButton.hidden = false;
+  snakeControls.hidden = true;
+  bridgeControls.hidden = true;
+  issueStatus.textContent = "";
+  updateSoundButtons();
+  updateRollButton();
+}
+
+function showReportIssue(
+  game: "jumpy-plane" | "shooting-snakes" | "glass-bridge",
+  returnState: "plane-options" | "snake-options" | "bridge-options",
+) {
   reportGame = game;
   reportReturnState = returnState;
   leaveSnakeRoom();
@@ -828,11 +1006,15 @@ function showReportIssue(game: "jumpy-plane" | "shooting-snakes", returnState: "
   crashPanel.hidden = true;
   snakeMenuPanel.hidden = true;
   snakeOptionsPanel.hidden = true;
+  bridgeMenuPanel.hidden = true;
+  bridgeOptionsPanel.hidden = true;
+  bridgeDeadPanel.hidden = true;
   reportPanel.hidden = false;
   snakeDeadPanel.hidden = true;
   scorePanel.hidden = true;
   homeButton.hidden = false;
   snakeControls.hidden = true;
+  bridgeControls.hidden = true;
   issueText.value = "";
   issueStatus.textContent = "";
   issueText.focus();
@@ -840,7 +1022,9 @@ function showReportIssue(game: "jumpy-plane" | "shooting-snakes", returnState: "
 }
 
 function returnFromReportIssue() {
-  if (reportReturnState === "snake-options") {
+  if (reportReturnState === "bridge-options") {
+    showBridgeOptions();
+  } else if (reportReturnState === "snake-options") {
     showSnakeOptions();
   } else {
     showPlaneOptions();
@@ -861,11 +1045,17 @@ function showSnakeDead() {
   crashPanel.hidden = true;
   snakeMenuPanel.hidden = true;
   snakeOptionsPanel.hidden = true;
+  bridgeMenuPanel.hidden = true;
+  bridgeOptionsPanel.hidden = true;
+  bridgeDeadPanel.hidden = true;
   reportPanel.hidden = true;
   snakeDeadPanel.hidden = false;
   scorePanel.hidden = false;
   homeButton.hidden = false;
+  startButton.hidden = true;
+  restartButton.hidden = true;
   snakeControls.hidden = true;
+  bridgeControls.hidden = true;
   const self = getLocalSnake();
   const finalLength = Math.max(3, snakeBestThisRun, self?.bestLength ?? 0, self?.segments.length ?? 0);
   writeSnakeLocalLongest(finalLength);
@@ -876,6 +1066,155 @@ function showSnakeDead() {
   updateSnakeShootButton();
   updateSnakeInfoBar();
   updateRollButton();
+}
+
+function ensureBridgeRows(count: number) {
+  while (bridgeSafePath.length < count) {
+    bridgeSafePath.push(Math.random() < 0.5 ? "left" : "right");
+  }
+}
+
+function resetBridgeRun() {
+  bridgeSafePath = [];
+  bridgeStep = 0;
+  bridgeTiles = 0;
+  bridgePoints = 0;
+  bridgeBrokenSide = null;
+  bridgeWheelLabel = "Ready";
+  bridgeWheelTimer = 0;
+  bridgeFallTimer = 0;
+  ensureBridgeRows(bridgeVisibleRows + 3);
+}
+
+function updateBridgeControls() {
+  bridgeLeftButton.disabled = state !== "bridge-running" || bridgeFallTimer > 0;
+  bridgeRightButton.disabled = state !== "bridge-running" || bridgeFallTimer > 0;
+  bridgeSpinButton.disabled = state !== "bridge-running" || bridgeFallTimer > 0 || bridgePoints < bridgeWheelCost;
+  bridgeSpinButton.textContent = bridgePoints >= bridgeWheelCost ? "Spin wheel (-1)" : "Need 1 point";
+}
+
+function updateBridgeScore() {
+  if (state !== "bridge-running" && state !== "bridge-dead") {
+    return;
+  }
+  scoreLabel.textContent = "Points";
+  scoreEl.textContent = formatScore(bridgePoints);
+  updateBridgeControls();
+}
+
+function showBridgeDead() {
+  state = "bridge-dead";
+  scoreLabel.textContent = "Points";
+  overlay.hidden = false;
+  overlay.classList.remove("is-platform");
+  platformPanel.hidden = true;
+  gameMenuPanel.hidden = true;
+  planeOptionsPanel.hidden = true;
+  crashPanel.hidden = true;
+  snakeMenuPanel.hidden = true;
+  snakeOptionsPanel.hidden = true;
+  bridgeMenuPanel.hidden = true;
+  bridgeOptionsPanel.hidden = true;
+  bridgeDeadPanel.hidden = false;
+  reportPanel.hidden = true;
+  snakeDeadPanel.hidden = true;
+  scorePanel.hidden = false;
+  homeButton.hidden = false;
+  snakeControls.hidden = true;
+  bridgeControls.hidden = true;
+  writeBridgeLocalScores(bridgeTiles, bridgePoints);
+  renderBridgeHighScores();
+  void syncFinalBridgeScores(bridgeTiles, bridgePoints);
+  bridgeMessage.textContent = `Tiles ${formatScore(bridgeTiles)}. Points ${formatScore(bridgePoints)}.`;
+  updateBridgeScore();
+  updateRollButton();
+}
+
+function startBridgeGame() {
+  unlockAudio();
+  leaveSnakeRoom();
+  setSnakeLayout(false);
+  resetSnakeJoystick();
+  resetBridgeRun();
+  scoreLabel.textContent = "Points";
+  state = "bridge-running";
+  overlay.hidden = true;
+  overlay.classList.remove("is-platform");
+  platformPanel.hidden = true;
+  gameMenuPanel.hidden = true;
+  planeOptionsPanel.hidden = true;
+  crashPanel.hidden = true;
+  snakeMenuPanel.hidden = true;
+  snakeOptionsPanel.hidden = true;
+  bridgeMenuPanel.hidden = true;
+  bridgeOptionsPanel.hidden = true;
+  bridgeDeadPanel.hidden = true;
+  reportPanel.hidden = true;
+  snakeDeadPanel.hidden = true;
+  scorePanel.hidden = false;
+  homeButton.hidden = false;
+  startButton.hidden = true;
+  restartButton.hidden = true;
+  snakeControls.hidden = true;
+  bridgeControls.hidden = false;
+  updateBridgeScore();
+  updateRollButton();
+}
+
+function chooseBridgeSide(side: BridgeSide) {
+  if (state !== "bridge-running" || bridgeFallTimer > 0) {
+    return;
+  }
+
+  unlockAudio();
+  ensureBridgeRows(bridgeStep + bridgeVisibleRows + 3);
+  const safeSide = bridgeSafePath[bridgeStep];
+  if (side === safeSide) {
+    bridgeStep += 1;
+    bridgeTiles += 1;
+    bridgePoints += 1;
+    bridgeBrokenSide = null;
+    bridgeWheelLabel = "+1";
+    bridgeWheelTimer = 0.75;
+    ensureBridgeRows(bridgeStep + bridgeVisibleRows + 3);
+    playBridgeStepSound();
+    updateBridgeScore();
+    return;
+  }
+
+  bridgeBrokenSide = side;
+  bridgeFallTimer = 0.95;
+  playBridgeBreakSound();
+  updateBridgeControls();
+}
+
+function spinBridgeWheel() {
+  if (state !== "bridge-running" || bridgeFallTimer > 0 || bridgePoints < bridgeWheelCost) {
+    return;
+  }
+
+  unlockAudio();
+  bridgePoints -= bridgeWheelCost;
+  const outcome = bridgeWheelOutcomes[Math.floor(Math.random() * bridgeWheelOutcomes.length)];
+  bridgePoints = Math.max(0, outcome.apply(bridgePoints));
+  bridgeWheelLabel = outcome.label;
+  bridgeWheelTimer = 1.2;
+  playBridgeWheelSound();
+  updateBridgeScore();
+}
+
+function updateBridge(dt: number) {
+  if (state !== "bridge-running") {
+    return;
+  }
+
+  bridgeWheelTimer = Math.max(0, bridgeWheelTimer - dt);
+  if (bridgeFallTimer > 0) {
+    bridgeFallTimer = Math.max(0, bridgeFallTimer - dt);
+    if (bridgeFallTimer <= 0) {
+      showBridgeDead();
+    }
+  }
 }
 
 function updateSnakeScore() {
@@ -1148,6 +1487,130 @@ function drawSnakeGame(time: number) {
   }
 }
 
+function roundedRectPath(x: number, y: number, rectWidth: number, rectHeight: number, radius: number) {
+  const r = Math.min(radius, rectWidth / 2, rectHeight / 2);
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + rectWidth - r, y);
+  ctx.quadraticCurveTo(x + rectWidth, y, x + rectWidth, y + r);
+  ctx.lineTo(x + rectWidth, y + rectHeight - r);
+  ctx.quadraticCurveTo(x + rectWidth, y + rectHeight, x + rectWidth - r, y + rectHeight);
+  ctx.lineTo(x + r, y + rectHeight);
+  ctx.quadraticCurveTo(x, y + rectHeight, x, y + rectHeight - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+}
+
+function drawBridgeGame(time: number) {
+  const canvasWidth = canvas.width / dpr;
+  const canvasHeight = canvas.height / dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  const background = ctx.createLinearGradient(0, 0, 0, canvasHeight);
+  background.addColorStop(0, "#10253d");
+  background.addColorStop(0.48, "#243b63");
+  background.addColorStop(1, "#080d18");
+  ctx.fillStyle = background;
+  ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+
+  ctx.fillStyle = "rgba(255, 255, 255, 0.08)";
+  for (let index = 0; index < 28; index += 1) {
+    const x = (index * 97 + time * 18) % (canvasWidth + 120) - 60;
+    const y = (index * 53 + Math.sin(time + index) * 12) % canvasHeight;
+    ctx.beginPath();
+    ctx.arc(x, y, 1.5 + (index % 3), 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  const panelWidth = Math.min(150, canvasWidth * 0.23);
+  const panelHeight = Math.min(62, canvasHeight * 0.11);
+  const gap = Math.min(34, canvasWidth * 0.045);
+  const rowGap = Math.min(18, canvasHeight * 0.032);
+  const centerX = canvasWidth / 2;
+  const startY = canvasHeight * 0.22;
+  const leftX = centerX - panelWidth - gap / 2;
+  const rightX = centerX + gap / 2;
+
+  ctx.fillStyle = "rgba(3, 7, 15, 0.48)";
+  ctx.fillRect(centerX - panelWidth - gap - 32, startY - 28, panelWidth * 2 + gap + 64, panelHeight * bridgeVisibleRows + rowGap * (bridgeVisibleRows - 1) + 76);
+
+  ensureBridgeRows(bridgeStep + bridgeVisibleRows + 2);
+
+  for (let row = 0; row < bridgeVisibleRows; row += 1) {
+    const pathIndex = bridgeStep + row;
+    const y = startY + row * (panelHeight + rowGap);
+    const scale = 1 - row * 0.045;
+    const offsetX = (1 - scale) * panelWidth * 0.5;
+    const safeSide = bridgeSafePath[pathIndex];
+
+    (["left", "right"] as BridgeSide[]).forEach((side) => {
+      const x = (side === "left" ? leftX : rightX) + offsetX;
+      const w = panelWidth * scale;
+      const h = panelHeight * scale;
+      const isBroken = pathIndex === bridgeStep && bridgeBrokenSide === side;
+      const isCurrent = row === 0;
+      const tint = side === safeSide ? "rgba(152, 236, 255, 0.42)" : "rgba(215, 245, 255, 0.3)";
+      const glass = ctx.createLinearGradient(x, y, x + w, y + h);
+      glass.addColorStop(0, "rgba(255, 255, 255, 0.78)");
+      glass.addColorStop(0.45, tint);
+      glass.addColorStop(1, "rgba(44, 179, 211, 0.28)");
+      ctx.fillStyle = isBroken ? "rgba(255, 255, 255, 0.16)" : glass;
+      ctx.strokeStyle = isCurrent ? "rgba(255, 220, 102, 0.9)" : "rgba(205, 249, 255, 0.54)";
+      ctx.lineWidth = isCurrent ? 3 : 2;
+      ctx.beginPath();
+      roundedRectPath(x, y, w, h, 8);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.strokeStyle = "rgba(255, 255, 255, 0.42)";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(x + 12 * scale, y + h * 0.28);
+      ctx.lineTo(x + w - 18 * scale, y + h * 0.12);
+      ctx.stroke();
+
+      if (isBroken) {
+        ctx.strokeStyle = "#f7fbff";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(x + w * 0.18, y + h * 0.18);
+        ctx.lineTo(x + w * 0.52, y + h * 0.48);
+        ctx.lineTo(x + w * 0.36, y + h * 0.82);
+        ctx.moveTo(x + w * 0.52, y + h * 0.48);
+        ctx.lineTo(x + w * 0.86, y + h * 0.24);
+        ctx.moveTo(x + w * 0.52, y + h * 0.48);
+        ctx.lineTo(x + w * 0.82, y + h * 0.78);
+        ctx.stroke();
+      }
+    });
+  }
+
+  const playerY = startY - 40 + Math.sin(time * 5) * 3 + bridgeFallTimer * 90;
+  ctx.save();
+  ctx.translate(centerX, playerY);
+  ctx.rotate(bridgeFallTimer > 0 ? bridgeFallTimer * 5 : 0);
+  ctx.fillStyle = "#ffd85a";
+  ctx.strokeStyle = "#342503";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.arc(0, -10, 11, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = "#ff6e7f";
+  ctx.beginPath();
+  roundedRectPath(-12, 4, 24, 30, 8);
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+
+  ctx.fillStyle = "rgba(255, 255, 255, 0.92)";
+  ctx.font = "900 18px Inter, sans-serif";
+  ctx.fillText(`Tiles ${formatScore(bridgeTiles)}`, 18, 34);
+  ctx.fillText(`Points ${formatScore(bridgePoints)}`, 18, 60);
+  ctx.textAlign = "right";
+  ctx.fillText(`Wheel ${bridgeWheelTimer > 0 ? bridgeWheelLabel : "costs 1"}`, canvasWidth - 18, 34);
+  ctx.textAlign = "left";
+}
+
 function drawViewportBackground(canvasWidth: number, canvasHeight: number) {
   const wall = ctx.createLinearGradient(0, 0, 0, canvasHeight);
   wall.addColorStop(0, "#cdbf9f");
@@ -1212,6 +1675,8 @@ function updateSoundButtons() {
   planeSoundToggle.setAttribute("aria-pressed", `${planeSoundEnabled}`);
   snakeSoundToggle.textContent = snakeSoundEnabled ? "Sound on" : "Sound off";
   snakeSoundToggle.setAttribute("aria-pressed", `${snakeSoundEnabled}`);
+  bridgeSoundToggle.textContent = bridgeSoundEnabled ? "Sound on" : "Sound off";
+  bridgeSoundToggle.setAttribute("aria-pressed", `${bridgeSoundEnabled}`);
 }
 
 function setPlaneSound(enabled: boolean) {
@@ -1226,7 +1691,13 @@ function setSnakeSound(enabled: boolean) {
   updateSoundButtons();
 }
 
-async function submitIssue(game: "jumpy-plane" | "shooting-snakes", message: string) {
+function setBridgeSound(enabled: boolean) {
+  bridgeSoundEnabled = enabled;
+  localStorage.setItem(bridgeSoundKey, enabled ? "on" : "off");
+  updateSoundButtons();
+}
+
+async function submitIssue(game: "jumpy-plane" | "shooting-snakes" | "glass-bridge", message: string) {
   const response = await fetch(`/api/issues/${game}`, {
     body: JSON.stringify({
       message,
@@ -1273,6 +1744,33 @@ function renderSnakeHighScores() {
   setText(snakeServerNameEls, snakeServerLongName || (snakeServerLongest > 0 ? "Unknown scorer" : "No scorer yet"));
 }
 
+function readBridgeLocalScores() {
+  bridgeLocalTiles = Math.max(0, readStoredNumber(bridgeLocalTilesKey), readStoredNumber(bridgePendingTilesKey));
+  bridgeLocalPoints = Math.max(0, readStoredNumber(bridgeLocalPointsKey), readStoredNumber(bridgePendingPointsKey));
+  writeStoredNumber(bridgeLocalTilesKey, bridgeLocalTiles);
+  writeStoredNumber(bridgeLocalPointsKey, bridgeLocalPoints);
+}
+
+function writeBridgeLocalScores(tiles: number, points: number) {
+  bridgeLocalTiles = Math.max(bridgeLocalTiles, tiles);
+  bridgeLocalPoints = Math.max(bridgeLocalPoints, points);
+  writeStoredNumber(bridgeLocalTilesKey, bridgeLocalTiles);
+  writeStoredNumber(bridgeLocalPointsKey, bridgeLocalPoints);
+}
+
+function renderBridgeHighScores() {
+  setText(bridgeLocalTileEls, formatScore(bridgeLocalTiles));
+  setText(bridgeTodayTileEls, formatScore(bridgeTodayTiles));
+  setText(bridgeServerTileEls, formatScore(bridgeServerTiles));
+  setText(bridgeTodayTileNameEls, bridgeTodayTileName || (bridgeTodayTiles > 0 ? "Unknown scorer" : "No scorer yet"));
+  setText(bridgeServerTileNameEls, bridgeServerTileName || (bridgeServerTiles > 0 ? "Unknown scorer" : "No scorer yet"));
+  setText(bridgeLocalPointEls, formatScore(bridgeLocalPoints));
+  setText(bridgeTodayPointEls, formatScore(bridgeTodayPoints));
+  setText(bridgeServerPointEls, formatScore(bridgeServerPoints));
+  setText(bridgeTodayPointNameEls, bridgeTodayPointName || (bridgeTodayPoints > 0 ? "Unknown scorer" : "No scorer yet"));
+  setText(bridgeServerPointNameEls, bridgeServerPointName || (bridgeServerPoints > 0 ? "Unknown scorer" : "No scorer yet"));
+}
+
 async function loadServerHighScores() {
   try {
     const response = await fetch("/api/high-scores", { cache: "no-store" });
@@ -1307,6 +1805,22 @@ function applyServerSnakeHighScores(scores: HighScoreResponse) {
   snakeServerLongest = Number(scores.allTimeHighest) || snakeServerLongest;
   snakeServerLongName = typeof scores.allTimeName === "string" ? scores.allTimeName : snakeServerLongName;
   renderSnakeHighScores();
+}
+
+function applyServerBridgeTileScores(scores: HighScoreResponse) {
+  bridgeTodayTiles = Number(scores.todayHighest) || bridgeTodayTiles;
+  bridgeTodayTileName = typeof scores.todayName === "string" ? scores.todayName : bridgeTodayTileName;
+  bridgeServerTiles = Number(scores.allTimeHighest) || bridgeServerTiles;
+  bridgeServerTileName = typeof scores.allTimeName === "string" ? scores.allTimeName : bridgeServerTileName;
+  renderBridgeHighScores();
+}
+
+function applyServerBridgePointScores(scores: HighScoreResponse) {
+  bridgeTodayPoints = Number(scores.todayHighest) || bridgeTodayPoints;
+  bridgeTodayPointName = typeof scores.todayName === "string" ? scores.todayName : bridgeTodayPointName;
+  bridgeServerPoints = Number(scores.allTimeHighest) || bridgeServerPoints;
+  bridgeServerPointName = typeof scores.allTimeName === "string" ? scores.allTimeName : bridgeServerPointName;
+  renderBridgeHighScores();
 }
 
 async function submitServerHighScore(finalScore: number, name = "") {
@@ -1372,6 +1886,71 @@ async function submitServerSnakeHighScore(finalScore: number, name = "") {
   }
 }
 
+async function loadServerBridgeHighScores() {
+  try {
+    const [tileResponse, pointResponse] = await Promise.all([
+      fetch("/api/glass-bridge-tile-scores", { cache: "no-store" }),
+      fetch("/api/glass-bridge-point-scores", { cache: "no-store" }),
+    ]);
+    if (tileResponse.ok) {
+      applyServerBridgeTileScores(await tileResponse.json() as HighScoreResponse);
+    }
+    if (pointResponse.ok) {
+      applyServerBridgePointScores(await pointResponse.json() as HighScoreResponse);
+    }
+    void retryPendingServerBridgeScores();
+    void reconcileBridgeLocalScores();
+  } catch {
+    // Glass Bridge can still run locally if the score endpoints are unavailable.
+  }
+}
+
+async function submitServerBridgeTileScore(finalScore: number, name = "") {
+  try {
+    const response = await fetch("/api/glass-bridge-tile-scores", {
+      body: JSON.stringify({ name, score: finalScore }),
+      cache: "no-store",
+      headers: { "Content-Type": "application/json" },
+      method: "POST",
+    });
+    if (!response.ok) {
+      return;
+    }
+
+    const scores = await response.json() as HighScoreResponse;
+    applyServerBridgeTileScores(scores);
+    if (Number(scores.todayHighest) >= finalScore || Number(scores.allTimeHighest) >= finalScore) {
+      localStorage.removeItem(bridgePendingTilesKey);
+    }
+    return scores;
+  } catch {
+    // Ignore sync failures; the browser's bridge record still persists.
+  }
+}
+
+async function submitServerBridgePointScore(finalScore: number, name = "") {
+  try {
+    const response = await fetch("/api/glass-bridge-point-scores", {
+      body: JSON.stringify({ name, score: finalScore }),
+      cache: "no-store",
+      headers: { "Content-Type": "application/json" },
+      method: "POST",
+    });
+    if (!response.ok) {
+      return;
+    }
+
+    const scores = await response.json() as HighScoreResponse;
+    applyServerBridgePointScores(scores);
+    if (Number(scores.todayHighest) >= finalScore || Number(scores.allTimeHighest) >= finalScore) {
+      localStorage.removeItem(bridgePendingPointsKey);
+    }
+    return scores;
+  } catch {
+    // Ignore sync failures; the browser's bridge record still persists.
+  }
+}
+
 function rememberPendingServerScore(finalScore: number) {
   const pendingScore = Number(localStorage.getItem(pendingScoreKey) || 0);
   if (!Number.isFinite(pendingScore) || finalScore > pendingScore) {
@@ -1383,6 +1962,17 @@ function rememberPendingServerSnakeScore(finalScore: number) {
   const pendingScore = Number(localStorage.getItem(snakePendingScoreKey) || 0);
   if (!Number.isFinite(pendingScore) || finalScore > pendingScore) {
     localStorage.setItem(snakePendingScoreKey, `${finalScore}`);
+  }
+}
+
+function rememberPendingServerBridgeScores(tiles: number, points: number) {
+  const pendingTiles = Number(localStorage.getItem(bridgePendingTilesKey) || 0);
+  if (!Number.isFinite(pendingTiles) || tiles > pendingTiles) {
+    localStorage.setItem(bridgePendingTilesKey, `${tiles}`);
+  }
+  const pendingPoints = Number(localStorage.getItem(bridgePendingPointsKey) || 0);
+  if (!Number.isFinite(pendingPoints) || points > pendingPoints) {
+    localStorage.setItem(bridgePendingPointsKey, `${points}`);
   }
 }
 
@@ -1403,6 +1993,17 @@ async function retryPendingServerSnakeScore() {
   }
 }
 
+async function retryPendingServerBridgeScores() {
+  const pendingTiles = Number(localStorage.getItem(bridgePendingTilesKey) || 0);
+  const pendingPoints = Number(localStorage.getItem(bridgePendingPointsKey) || 0);
+  if (Number.isFinite(pendingTiles) && pendingTiles > 0) {
+    await submitServerBridgeTileScore(pendingTiles);
+  }
+  if (Number.isFinite(pendingPoints) && pendingPoints > 0) {
+    await submitServerBridgePointScore(pendingPoints);
+  }
+}
+
 async function reconcileLocalHighScore() {
   if (localHighest > todayHighest || localHighest > serverHighest) {
     rememberPendingServerScore(localHighest);
@@ -1418,6 +2019,17 @@ async function reconcileSnakeLocalHighScore() {
   if (snakeLocalLongest > snakeTodayLongest || snakeLocalLongest > snakeServerLongest) {
     rememberPendingServerSnakeScore(snakeLocalLongest);
     await submitServerSnakeHighScore(snakeLocalLongest);
+  }
+}
+
+async function reconcileBridgeLocalScores() {
+  if (bridgeLocalTiles > bridgeTodayTiles || bridgeLocalTiles > bridgeServerTiles) {
+    rememberPendingServerBridgeScores(bridgeLocalTiles, bridgeLocalPoints);
+    await submitServerBridgeTileScore(bridgeLocalTiles);
+  }
+  if (bridgeLocalPoints > bridgeTodayPoints || bridgeLocalPoints > bridgeServerPoints) {
+    rememberPendingServerBridgeScores(bridgeLocalTiles, bridgeLocalPoints);
+    await submitServerBridgePointScore(bridgeLocalPoints);
   }
 }
 
@@ -1478,6 +2090,38 @@ async function syncFinalSnakeScore(finalScore: number) {
   await submitServerSnakeHighScore(finalScore, name);
 }
 
+async function syncFinalBridgeScores(finalTiles: number, finalPoints: number) {
+  rememberPendingServerBridgeScores(finalTiles, finalPoints);
+  const [tileResult, pointResult] = await Promise.all([
+    submitServerBridgeTileScore(finalTiles),
+    submitServerBridgePointScore(finalPoints),
+  ]);
+
+  const recordLabels: string[] = [];
+  if (tileResult?.todayRecord) {
+    recordLabels.push("today's bridge tile record");
+  }
+  if (tileResult?.allTimeRecord) {
+    recordLabels.push("the server bridge tile record");
+  }
+  if (pointResult?.todayRecord) {
+    recordLabels.push("today's bridge point record");
+  }
+  if (pointResult?.allTimeRecord) {
+    recordLabels.push("the server bridge point record");
+  }
+
+  if (recordLabels.length === 0) {
+    return;
+  }
+
+  const name = await askForRecordName(Math.max(finalTiles, finalPoints), recordLabels, "best result");
+  await Promise.all([
+    submitServerBridgeTileScore(finalTiles, name),
+    submitServerBridgePointScore(finalPoints, name),
+  ]);
+}
+
 function addScore(points: number) {
   score += points;
   scoreEl.textContent = formatScore(score);
@@ -1499,8 +2143,10 @@ function reset(nextState: GameState) {
   snakeLastShotBank = 0;
   resetSnakeJoystick();
   readSnakeLocalLongest();
+  readBridgeLocalScores();
   renderHighScores();
   renderSnakeHighScores();
+  renderBridgeHighScores();
   score = 0;
   obstacles = [];
   bubbles = [];
@@ -1540,11 +2186,16 @@ function reset(nextState: GameState) {
   crashPanel.hidden = true;
   snakeMenuPanel.hidden = true;
   snakeOptionsPanel.hidden = true;
+  bridgeMenuPanel.hidden = true;
+  bridgeOptionsPanel.hidden = true;
+  bridgeDeadPanel.hidden = true;
   reportPanel.hidden = true;
   snakeDeadPanel.hidden = true;
   snakeControls.hidden = true;
+  bridgeControls.hidden = true;
   updateSoundButtons();
   updateSnakeShootButton();
+  updateBridgeControls();
   updateRollButton();
 }
 
@@ -2343,6 +2994,7 @@ function update(dt: number) {
   }
 
   updateEffects(dt);
+  updateBridge(dt);
 
   if (state !== "running") {
     return;
@@ -2410,6 +3062,11 @@ function render(time: number) {
     return;
   }
 
+  if (state === "bridge-menu" || state === "bridge-options" || state === "bridge-running" || state === "bridge-dead") {
+    drawBridgeGame(time);
+    return;
+  }
+
   const canvasWidth = canvas.width / dpr;
   const canvasHeight = canvas.height / dpr;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -2452,6 +3109,24 @@ function loop(now: number) {
 
 window.addEventListener("resize", resize);
 window.addEventListener("keydown", (event) => {
+  if (state === "bridge-running") {
+    if (event.code === "ArrowLeft" || event.code === "KeyA") {
+      event.preventDefault();
+      chooseBridgeSide("left");
+      return;
+    }
+    if (event.code === "ArrowRight" || event.code === "KeyD") {
+      event.preventDefault();
+      chooseBridgeSide("right");
+      return;
+    }
+    if (event.code === "Space" || event.code === "KeyS") {
+      event.preventDefault();
+      spinBridgeWheel();
+      return;
+    }
+  }
+
   if (state === "snake-running") {
     const directionByKey: Partial<Record<string, SnakeDirection>> = {
       ArrowDown: "down",
@@ -2485,7 +3160,15 @@ window.addEventListener("keydown", (event) => {
     roll();
   }
 });
-canvas.addEventListener("pointerdown", flap);
+canvas.addEventListener("pointerdown", (event) => {
+  if (state === "bridge-running") {
+    const box = canvas.getBoundingClientRect();
+    chooseBridgeSide(event.clientX - box.left < box.width / 2 ? "left" : "right");
+    return;
+  }
+
+  flap();
+});
 startButton.addEventListener("click", flap);
 planeOptionsButton.addEventListener("click", showPlaneOptions);
 planeMenuBackButton.addEventListener("click", () => reset("platform"));
@@ -2508,6 +3191,7 @@ selectPlaneButton.addEventListener("click", () => {
   reset("ready");
 });
 selectSnakeButton.addEventListener("click", showSnakeMenu);
+selectBridgeButton.addEventListener("click", showBridgeMenu);
 snakeOptionsButton.addEventListener("click", showSnakeOptions);
 snakeMenuBackButton.addEventListener("click", () => reset("platform"));
 snakeOptionsBackButton.addEventListener("click", showSnakeMenu);
@@ -2516,6 +3200,14 @@ snakeSoundToggle.addEventListener("click", () => {
   setSnakeSound(!snakeSoundEnabled);
 });
 snakeReportIssueButton.addEventListener("click", () => showReportIssue("shooting-snakes", "snake-options"));
+bridgeOptionsButton.addEventListener("click", showBridgeOptions);
+bridgeMenuBackButton.addEventListener("click", () => reset("platform"));
+bridgeOptionsBackButton.addEventListener("click", showBridgeMenu);
+bridgeSoundToggle.addEventListener("click", () => {
+  unlockAudio();
+  setBridgeSound(!bridgeSoundEnabled);
+});
+bridgeReportIssueButton.addEventListener("click", () => showReportIssue("glass-bridge", "bridge-options"));
 issueCancelButton.addEventListener("click", returnFromReportIssue);
 issueForm.addEventListener("submit", (event) => {
   event.preventDefault();
@@ -2544,6 +3236,11 @@ snakeStartButton.addEventListener("click", () => {
 snakeRestartButton.addEventListener("click", () => {
   startSnakeGame(true);
 });
+bridgeStartButton.addEventListener("click", startBridgeGame);
+bridgeRestartButton.addEventListener("click", startBridgeGame);
+bridgeLeftButton.addEventListener("click", () => chooseBridgeSide("left"));
+bridgeRightButton.addEventListener("click", () => chooseBridgeSide("right"));
+bridgeSpinButton.addEventListener("click", spinBridgeWheel);
 fullscreenButton.addEventListener("click", () => {
   void toggleFullscreen();
 });
@@ -2619,10 +3316,13 @@ document.addEventListener("fullscreenchange", () => {
 });
 readLocalHighest();
 readSnakeLocalLongest();
+readBridgeLocalScores();
 renderHighScores();
 renderSnakeHighScores();
+renderBridgeHighScores();
 void loadServerHighScores();
 void loadServerSnakeHighScores();
+void loadServerBridgeHighScores();
 resize();
 updateFullscreenButton();
 reset("platform");
