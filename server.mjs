@@ -16,8 +16,14 @@ const snakeBoard = {
   width: 2880,
 };
 const targetSnakeOrbCount = 54;
-const targetSnakeBotCount = 5;
+const maxSnakeBotCount = 10;
 const snakeBotRespawnTicks = 26;
+const snakeBotPersonalities = [
+  { decisionMax: 5, decisionMin: 2, doubleShotChance: 0.018, mistakeChance: 0.04, randomSafeChance: 0.24, shootChance: 0.012 },
+  { decisionMax: 4, decisionMin: 2, doubleShotChance: 0.04, mistakeChance: 0.07, randomSafeChance: 0.18, shootChance: 0.03 },
+  { decisionMax: 6, decisionMin: 3, doubleShotChance: 0.028, mistakeChance: 0.13, randomSafeChance: 0.2, shootChance: 0.022 },
+  { decisionMax: 7, decisionMin: 3, doubleShotChance: 0.012, mistakeChance: 0.025, randomSafeChance: 0.34, shootChance: 0.008 },
+];
 const snakeDirections = {
   down: { x: 0, y: 1 },
   left: { x: -1, y: 0 },
@@ -55,6 +61,26 @@ function snakeColorFromId(id) {
 
 function snakeOrbColor() {
   return `hsl(${Math.floor(Math.random() * 360)} 96% 64%)`;
+}
+
+function randomInt(min, max) {
+  return min + Math.floor(Math.random() * (max - min + 1));
+}
+
+function randomSnakeBotPersonality() {
+  return snakeBotPersonalities[Math.floor(Math.random() * snakeBotPersonalities.length)];
+}
+
+function randomItem(items) {
+  return items[Math.floor(Math.random() * items.length)];
+}
+
+function resetSnakeBotDecision(bot) {
+  bot.decisionTicks = randomInt(bot.personality.decisionMin, bot.personality.decisionMax);
+}
+
+function targetSnakeBotCount() {
+  return Math.max(0, maxSnakeBotCount - Math.floor(snakePlayers.size / 2));
 }
 
 function allSnakes() {
@@ -141,6 +167,9 @@ function respawnSnake(player) {
   player.score = 0;
   player.shotBank = 0;
   player.shootCooldown = 0;
+  if (player.personality) {
+    resetSnakeBotDecision(player);
+  }
 }
 
 function destroySnake(player) {
@@ -176,11 +205,13 @@ function createSnakeBot() {
     bestLength: 3,
     botRespawnTicks: 0,
     color: snakeColorFromId(id),
+    decisionTicks: 0,
     direction: "right",
     id,
     length: 3,
     nextDirection: "right",
     orbsCollected: 0,
+    personality: randomSnakeBotPersonality(),
     score: 0,
     segments: [],
     shotBank: 0,
@@ -191,7 +222,16 @@ function createSnakeBot() {
 }
 
 function ensureSnakeBots() {
-  while (snakeBots.size < targetSnakeBotCount) {
+  const targetCount = targetSnakeBotCount();
+  while (snakeBots.size > targetCount) {
+    const removable = [...snakeBots.values()].find((bot) => !bot.alive) || [...snakeBots.values()].at(-1);
+    if (!removable) {
+      break;
+    }
+    snakeBots.delete(removable.id);
+  }
+
+  while (snakeBots.size < targetCount) {
     const bot = createSnakeBot();
     snakeBots.set(bot.id, bot);
   }
@@ -249,6 +289,12 @@ function chooseSnakeBotDirection(bot) {
     return;
   }
 
+  bot.decisionTicks = Math.max(0, bot.decisionTicks - 1);
+  if (bot.decisionTicks > 0) {
+    return;
+  }
+  resetSnakeBotDecision(bot);
+
   const target = nearestSnakeOrb(bot.segments[0]);
   const directionNames = Object.keys(snakeDirections);
   const candidates = directionNames
@@ -259,8 +305,20 @@ function chooseSnakeBotDirection(bot) {
     })
     .sort((a, b) => a.targetDistance - b.targetDistance);
 
-  const safeChoice = candidates.find((candidate) => !directionWouldHit(bot, candidate.direction));
-  bot.nextDirection = safeChoice?.direction || bot.direction;
+  const safeCandidates = candidates.filter((candidate) => !directionWouldHit(bot, candidate.direction));
+  const choiceRoll = Math.random();
+
+  if (choiceRoll < bot.personality.mistakeChance) {
+    bot.nextDirection = randomItem(candidates.slice(0, 2)).direction;
+    return;
+  }
+
+  if (safeCandidates.length > 0 && choiceRoll < bot.personality.mistakeChance + bot.personality.randomSafeChance) {
+    bot.nextDirection = randomItem(safeCandidates).direction;
+    return;
+  }
+
+  bot.nextDirection = safeCandidates[0]?.direction || candidates[0]?.direction || bot.direction;
 }
 
 function snakeThreatInLine(player) {
@@ -295,7 +353,7 @@ function updateSnakeBot(bot) {
   chooseSnakeBotDirection(bot);
   bot.direction = bot.nextDirection;
 
-  if (bot.shotBank >= 2 && bot.length > 4 && snakeThreatInLine(bot) && Math.random() < 0.035) {
+  if (bot.shotBank >= 2 && bot.length > 4 && snakeThreatInLine(bot) && Math.random() < bot.personality.doubleShotChance) {
     const firstShot = shootSnakeSegment(bot);
     if (firstShot && bot.shotBank > 0 && bot.length > 2) {
       shootSnakeSegment(bot, { leadCells: 2, skipCooldown: true });
@@ -303,7 +361,7 @@ function updateSnakeBot(bot) {
     return;
   }
 
-  if (bot.shotBank > 0 && bot.length > 3 && snakeThreatInLine(bot) && Math.random() < 0.022) {
+  if (bot.shotBank > 0 && bot.length > 3 && snakeThreatInLine(bot) && Math.random() < bot.personality.shootChance) {
     shootSnakeSegment(bot);
   }
 }
