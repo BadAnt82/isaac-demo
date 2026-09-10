@@ -956,9 +956,10 @@ body.fullscreen-fallback-active {
   z-index: 9;
   right: max(14px, env(safe-area-inset-right));
   bottom: max(14px, env(safe-area-inset-bottom));
-  left: max(14px, env(safe-area-inset-left));
+  left: auto;
+  width: min(220px, 31vw);
   display: grid;
-  grid-template-columns: minmax(150px, 220px);
+  grid-template-columns: 1fr;
   justify-content: center;
   gap: 10px;
 }
@@ -1096,8 +1097,9 @@ body.fullscreen-fallback-active {
   .bridge-controls {
     right: 12px;
     bottom: 12px;
-    left: 12px;
-    grid-template-columns: minmax(136px, 190px);
+    left: auto;
+    width: min(164px, 32vw);
+    grid-template-columns: 1fr;
     gap: 6px;
   }
 
