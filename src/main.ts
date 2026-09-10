@@ -217,6 +217,7 @@ type PixelTurret = {
   isPlayer: boolean;
   rotateDirection: number;
   rotateSpeed: number;
+  shieldHealth: number;
   x: number;
   y: number;
 };
@@ -581,6 +582,8 @@ const pixelRows = 36;
 const pixelShotSpeed = 360;
 const pixelMaxPlayers = 9;
 const pixelBaseFireInterval = 1;
+const pixelShieldMaxHealth = 100;
+const pixelShieldDamage = 10;
 const pixelOwnerColors: Partial<Record<PixelOwner, string>> & { neutral: string; player: string } = {
   neutral: "#606773",
   player: "#35d7ff",
@@ -1077,6 +1080,43 @@ function clampPixelTurretAngle(turret: PixelTurret, angle: number) {
   return normalizeAngle(turret.homeAngle + delta);
 }
 
+function pointInsidePixelBoard(x: number, y: number, layout: PixelBoardLayout) {
+  return x >= layout.x && x <= layout.x + layout.boardW && y >= layout.y && y <= layout.y + layout.boardH;
+}
+
+function pixelRayIntersectsBoard(turret: PixelTurret, angle = turret.angle, layout = pixelLayout()) {
+  if (
+    turret.x > layout.x &&
+    turret.x < layout.x + layout.boardW &&
+    turret.y > layout.y &&
+    turret.y < layout.y + layout.boardH
+  ) {
+    return true;
+  }
+
+  const dx = Math.cos(angle);
+  const dy = Math.sin(angle);
+  const targets = [
+    dx !== 0 ? (layout.x - turret.x) / dx : Number.POSITIVE_INFINITY,
+    dx !== 0 ? (layout.x + layout.boardW - turret.x) / dx : Number.POSITIVE_INFINITY,
+    dy !== 0 ? (layout.y - turret.y) / dy : Number.POSITIVE_INFINITY,
+    dy !== 0 ? (layout.y + layout.boardH - turret.y) / dy : Number.POSITIVE_INFINITY,
+  ].filter((value) => Number.isFinite(value) && value > 0.001);
+
+  return targets.some((distance) =>
+    pointInsidePixelBoard(turret.x + dx * distance, turret.y + dy * distance, layout),
+  );
+}
+
+function pixelShotStart(turret: PixelTurret, layout: PixelBoardLayout) {
+  const dx = Math.cos(turret.angle);
+  const dy = Math.sin(turret.angle);
+  return {
+    x: clampNumber(turret.x + dx * 2, layout.x + 0.5, layout.x + layout.boardW - 0.5),
+    y: clampNumber(turret.y + dy * 2, layout.y + 0.5, layout.y + layout.boardH - 0.5),
+  };
+}
+
 function pixelSpawnAnchors(layout: PixelBoardLayout) {
   const left = layout.x;
   const centerX = layout.x + layout.boardW / 2;
@@ -1106,7 +1146,7 @@ function setPixelTurretPosition(turret: PixelTurret, index: number) {
   turret.y = anchor.y;
   const centered = Math.abs(turret.x - centerX) < 1 && Math.abs(turret.y - centerY) < 1;
   turret.homeAngle = centered ? -Math.PI / 2 : Math.atan2(centerY - turret.y, centerX - turret.x);
-  turret.arc = centered ? Math.PI : Math.PI * 0.42;
+  turret.arc = centered ? Math.PI : turret.isPlayer ? Math.PI / 2 : Math.PI * 0.42;
   turret.angle = clampPixelTurretAngle(turret, turret.angle || turret.homeAngle);
 }
 
@@ -1128,6 +1168,7 @@ function createPixelTurret(id: PixelOwner, isPlayer: boolean): PixelTurret {
     isPlayer,
     rotateDirection: Math.random() < 0.5 ? -1 : 1,
     rotateSpeed: isPlayer ? 0.8 : 0.55 + Math.random() * 0.5,
+    shieldHealth: pixelShieldMaxHealth,
     x: 0,
     y: 0,
   };
@@ -2346,7 +2387,12 @@ function paintPixelCell(index: number, owner: PixelOwner) {
 }
 
 function firePixelShot(turret: PixelTurret) {
-  const barrel = 18;
+  const layout = pixelLayout();
+  if (!pixelRayIntersectsBoard(turret, turret.angle, layout)) {
+    return;
+  }
+
+  const start = pixelShotStart(turret, layout);
   pixelShots.push({
     color: turret.color,
     lastCell: -1,
@@ -2354,9 +2400,26 @@ function firePixelShot(turret: PixelTurret) {
     owner: turret.id,
     vx: Math.cos(turret.angle) * pixelShotSpeed,
     vy: Math.sin(turret.angle) * pixelShotSpeed,
-    x: turret.x + Math.cos(turret.angle) * barrel,
-    y: turret.y + Math.sin(turret.angle) * barrel,
+    x: start.x,
+    y: start.y,
   });
+}
+
+function pixelShotShieldHit(shot: PixelShot) {
+  for (const turret of pixelTurrets) {
+    if (turret.id === shot.owner || turret.shieldHealth <= 0) {
+      continue;
+    }
+
+    const dx = shot.x - turret.x;
+    const dy = shot.y - turret.y;
+    if (dx * dx + dy * dy <= 24 * 24) {
+      turret.shieldHealth = Math.max(0, turret.shieldHealth - pixelShieldDamage);
+      return true;
+    }
+  }
+
+  return false;
 }
 
 function steerPixelTurret(turret: PixelTurret, dt: number) {
@@ -2391,6 +2454,11 @@ function steerPixelTurret(turret: PixelTurret, dt: number) {
   }
 
   turret.angle = clampPixelTurretAngle(turret, turret.angle + turret.rotateDirection * turret.rotateSpeed * dt);
+  if (!pixelRayIntersectsBoard(turret)) {
+    turret.rotateDirection *= -1;
+    turret.angle = clampPixelTurretAngle(turret, turret.homeAngle);
+    return;
+  }
   if (Math.abs(normalizeAngle(turret.angle - turret.homeAngle)) > turret.arc * 0.98) {
     turret.rotateDirection *= -1;
   }
@@ -2417,13 +2485,24 @@ function updatePixelWars(dt: number) {
     shot.x += shot.vx * dt;
     shot.y += shot.vy * dt;
     shot.life -= dt;
-    const cellIndex = pixelCellIndexAt(shot.x, shot.y, layout);
-    if (cellIndex !== -1 && cellIndex !== shot.lastCell) {
-      paintPixelCell(cellIndex, shot.owner);
+    if (pixelShotShieldHit(shot)) {
       pixelShots.splice(index, 1);
       continue;
     }
-    const outside = shot.x < -80 || shot.x > layout.canvasW + 80 || shot.y < -80 || shot.y > layout.canvasH + 80;
+    const cellIndex = pixelCellIndexAt(shot.x, shot.y, layout);
+    if (cellIndex !== -1 && cellIndex !== shot.lastCell) {
+      shot.lastCell = cellIndex;
+      if (pixelCells[cellIndex] !== shot.owner) {
+        paintPixelCell(cellIndex, shot.owner);
+        pixelShots.splice(index, 1);
+        continue;
+      }
+    }
+    const outside =
+      shot.x < layout.x ||
+      shot.x > layout.x + layout.boardW ||
+      shot.y < layout.y ||
+      shot.y > layout.y + layout.boardH;
     if (shot.life <= 0 || outside) {
       pixelShots.splice(index, 1);
     }
@@ -2451,6 +2530,26 @@ function drawPixelTileGrid(layout: PixelBoardLayout) {
 
 function drawPixelTurret(turret: PixelTurret) {
   const radius = turret.isPlayer ? 13 : 11;
+  const shieldRatio = turret.shieldHealth / pixelShieldMaxHealth;
+  ctx.save();
+  ctx.translate(turret.x, turret.y);
+  ctx.strokeStyle = turret.shieldHealth > 0 ? "rgba(206, 244, 255, 0.72)" : "rgba(255, 255, 255, 0.16)";
+  ctx.lineWidth = 3;
+  ctx.setLineDash([5, 4]);
+  ctx.beginPath();
+  ctx.arc(0, 0, 24, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = "rgba(3, 7, 16, 0.78)";
+  ctx.fillRect(-21, -36, 42, 7);
+  ctx.fillStyle = turret.shieldHealth > 35 ? "#78ffca" : "#ff6f6f";
+  ctx.fillRect(-20, -35, 40 * shieldRatio, 5);
+  ctx.fillStyle = "rgba(255, 255, 255, 0.86)";
+  ctx.font = "800 8px Inter, sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillText(`${Math.round(turret.shieldHealth)}`, 0, -40);
+  ctx.restore();
+
   ctx.save();
   ctx.translate(turret.x, turret.y);
   ctx.rotate(turret.angle);
