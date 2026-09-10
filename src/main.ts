@@ -417,7 +417,6 @@ let bridgeWheelRequesting = false;
 let bridgeWheelSpinSequence = 0;
 let bridgeFallTimer = 0;
 let bridgeJackpot = 20;
-let bridgeWheelJackpotValue = 20;
 let bridgeHintWheelLabel = "Hint";
 let bridgeHintWheelTimer = 0;
 let bridgeHintWheelSpinTimer = 0;
@@ -1518,7 +1517,6 @@ async function spinBridgeWheel() {
   bridgeJackpot = Math.max(0, Number(jackpotSpin.jackpot) || bridgeJackpot);
   const award = Math.max(0, Math.floor(Number(jackpotSpin.award) || 0));
   const hitJackpot = jackpotSpin.hit === true && award > 0;
-  bridgeWheelJackpotValue = hitJackpot ? award : bridgeJackpot;
   const outcomeIndex = hitJackpot ? bridgeJackpotSegmentIndex : randomBridgeNormalWheelIndex();
   const outcome = hitJackpot
     ? {
@@ -1601,9 +1599,6 @@ function updateBridge(dt: number) {
   }
 
   bridgeWheelTimer = Math.max(0, bridgeWheelTimer - dt);
-  if (bridgeWheelTimer <= 0 && bridgeWheelSpinTimer <= 0 && !bridgeWheelRequesting) {
-    bridgeWheelJackpotValue = bridgeJackpot;
-  }
   if (bridgeWheelRequesting && bridgeWheelSpinTimer <= 0) {
     bridgeWheelAngle = (bridgeWheelAngle + bridgeWheelPreSpinSpeed * dt) % (Math.PI * 2);
   }
@@ -2088,7 +2083,7 @@ function drawBridgeWheelPanel(canvasHeight: number, areas: BridgeAreas) {
   const hintWheelY = Math.max(pointWheelY + radius * 2 + 54, canvasHeight * 0.5);
 
   drawBridgeWheelFace(bridgeWheelSegments, bridgeWheelAngle, centerX, pointWheelY, radius, true, (outcome, index) =>
-    index === bridgeJackpotSegmentIndex ? ["Jackpot", formatScore(bridgeWheelJackpotValue)] : [outcome.label],
+    index === bridgeJackpotSegmentIndex ? ["Jackpot"] : [outcome.label],
   );
   drawBridgeWheelFace(bridgeHintWheelSegments, bridgeHintWheelAngle, centerX, hintWheelY, radius, false, (outcome) => [
     outcome.label,
@@ -2631,9 +2626,6 @@ async function loadServerBridgeHighScores() {
 
 function applyBridgeJackpot(response: BridgeJackpotResponse) {
   bridgeJackpot = Math.max(0, Number(response.jackpot) || bridgeJackpot);
-  if (bridgeWheelSpinTimer <= 0 && !bridgeWheelRequesting) {
-    bridgeWheelJackpotValue = bridgeJackpot;
-  }
 }
 
 async function loadBridgeJackpot() {
