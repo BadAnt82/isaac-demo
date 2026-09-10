@@ -586,7 +586,7 @@ const pixelBaseFireInterval = 1;
 const pixelShieldMaxHealth = 100;
 const pixelShieldDamage = 10;
 const pixelShieldRadius = 19;
-const pixelCannonLength = 24;
+const pixelCannonLength = pixelShieldRadius;
 const pixelOwnerColors: Partial<Record<PixelOwner, string>> & { neutral: string; player: string } = {
   neutral: "#606773",
   player: "#35d7ff",
@@ -1167,6 +1167,23 @@ function positionPixelTurrets() {
   pixelTurrets.forEach((turret, index) => setPixelTurretPosition(turret, index));
 }
 
+function seedPixelTurretTerritory() {
+  const layout = pixelLayout();
+  pixelTurrets.forEach((turret) => {
+    for (let row = 0; row < pixelRows; row += 1) {
+      for (let column = 0; column < pixelColumns; column += 1) {
+        const cellX = layout.x + column * layout.cellW + layout.cellW / 2;
+        const cellY = layout.y + row * layout.cellH + layout.cellH / 2;
+        const dx = cellX - turret.x;
+        const dy = cellY - turret.y;
+        if (dx * dx + dy * dy <= pixelShieldRadius * pixelShieldRadius) {
+          pixelCells[row * pixelColumns + column] = turret.id;
+        }
+      }
+    }
+  });
+}
+
 function createPixelTurret(id: PixelOwner, isPlayer: boolean): PixelTurret {
   const color = pixelOwnerColor(id);
   return {
@@ -1202,6 +1219,7 @@ function resetPixelWars() {
     pixelTurrets.push(createPixelTurret(`bot-${bot}` as PixelOwner, false));
   }
   positionPixelTurrets();
+  seedPixelTurretTerritory();
   updatePixelScore();
 }
 
@@ -2519,10 +2537,65 @@ function drawPixelTileGrid(layout: PixelBoardLayout) {
   ctx.globalAlpha = 1;
 }
 
-function drawPixelTurret(turret: PixelTurret) {
-  const radius = turret.isPlayer ? 10 : 8;
+function pixelHealthSide(turret: PixelTurret, layout: PixelBoardLayout) {
+  const centerX = layout.x + layout.boardW / 2;
+  const centerY = layout.y + layout.boardH / 2;
+  const dx = turret.x - centerX;
+  const dy = turret.y - centerY;
+  if (Math.abs(dx) > Math.abs(dy)) {
+    return dx < 0 ? "left" : "right";
+  }
+  return dy < 0 ? "top" : "bottom";
+}
+
+function drawPixelTurretHealth(turret: PixelTurret, layout: PixelBoardLayout) {
+  const shieldRatio = turret.shieldHealth / pixelShieldMaxHealth;
+  const side = pixelHealthSide(turret, layout);
+  const shortSide = 5;
+  const longSide = 34;
+  let x = turret.x - longSide / 2;
+  let y = turret.y - pixelShieldRadius - 12;
+  let w = longSide;
+  let h = shortSide;
+
+  if (side === "bottom") {
+    y = turret.y + pixelShieldRadius + 7;
+  } else if (side === "left" || side === "right") {
+    w = shortSide;
+    h = longSide;
+    x = side === "left" ? turret.x - pixelShieldRadius - 12 : turret.x + pixelShieldRadius + 7;
+    y = turret.y - longSide / 2;
+  }
+
+  x = clampNumber(x, 3, layout.canvasW - w - 3);
+  y = clampNumber(y, 3, layout.canvasH - h - 3);
+  ctx.save();
+  ctx.fillStyle = "rgba(3, 7, 16, 0.82)";
+  ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = turret.shieldHealth > 35 ? "#78ffca" : "#ff6f6f";
+  if (side === "left" || side === "right") {
+    const filled = h * shieldRatio;
+    ctx.fillRect(x, y + h - filled, w, filled);
+  } else {
+    ctx.fillRect(x, y, w * shieldRatio, h);
+  }
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.42)";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x, y, w, h);
+  ctx.restore();
+}
+
+function drawPixelTurret(turret: PixelTurret, layout: PixelBoardLayout) {
+  const radius = turret.isPlayer ? 8 : 7;
+  drawPixelTurretHealth(turret, layout);
   ctx.save();
   ctx.translate(turret.x, turret.y);
+  ctx.globalAlpha = 0.13;
+  ctx.fillStyle = turret.color;
+  ctx.beginPath();
+  ctx.arc(0, 0, pixelShieldRadius, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.globalAlpha = 1;
   ctx.strokeStyle = turret.shieldHealth > 0 ? "rgba(206, 244, 255, 0.72)" : "rgba(255, 255, 255, 0.16)";
   ctx.lineWidth = 2;
   ctx.setLineDash([4, 4]);
@@ -2536,7 +2609,7 @@ function drawPixelTurret(turret: PixelTurret) {
   ctx.rotate(turret.angle);
   ctx.fillStyle = "#05070d";
   ctx.beginPath();
-  roundedRectPath(0, -3.5, pixelCannonLength, 7, 4);
+  roundedRectPath(0, -2.5, pixelCannonLength, 5, 3);
   ctx.fill();
   ctx.restore();
 
@@ -2555,35 +2628,6 @@ function drawPixelTurret(turret: PixelTurret) {
   ctx.beginPath();
   ctx.arc(0, 0, radius * 0.42, 0, Math.PI * 2);
   ctx.fill();
-  ctx.restore();
-}
-
-function drawPixelHealthPanel(layout: PixelBoardLayout) {
-  const x = layout.panelX + 22;
-  const rowHeight = clampNumber((layout.canvasH - 144) / Math.max(1, pixelTurrets.length), 20, 34);
-  let y = 128;
-  const barWidth = Math.max(92, Math.min(150, layout.canvasW - x - 24));
-  ctx.save();
-  ctx.font = `900 ${rowHeight < 26 ? 10 : 12}px Inter, sans-serif`;
-  ctx.textAlign = "left";
-  pixelTurrets.forEach((turret) => {
-    const shieldRatio = turret.shieldHealth / pixelShieldMaxHealth;
-    ctx.fillStyle = "rgba(255, 255, 255, 0.72)";
-    ctx.fillText(turret.isPlayer ? "You" : turret.id.replace("-", " "), x + 18, y + 8);
-    ctx.fillStyle = turret.color;
-    ctx.beginPath();
-    ctx.arc(x + 6, y + 4, 5, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = "rgba(3, 7, 16, 0.78)";
-    ctx.fillRect(x, y + 16, barWidth, 7);
-    ctx.fillStyle = turret.shieldHealth > 35 ? "#78ffca" : "#ff6f6f";
-    ctx.fillRect(x, y + 16, barWidth * shieldRatio, 7);
-    ctx.fillStyle = "rgba(255, 255, 255, 0.82)";
-    ctx.textAlign = "right";
-    ctx.fillText(`${Math.round(turret.shieldHealth)}`, x + barWidth, y + 8);
-    ctx.textAlign = "left";
-    y += rowHeight;
-  });
   ctx.restore();
 }
 
@@ -2625,7 +2669,6 @@ function drawPixelWars(time: number) {
   ctx.fillStyle = "rgba(255, 255, 255, 0.66)";
   ctx.fillText(`Turrets ${pixelTurrets.length}`, layout.panelX + 22, 66);
   ctx.fillText(`Claim ${formatScore(pixelTerritory)}%`, layout.panelX + 22, 90);
-  drawPixelHealthPanel(layout);
 
   ctx.save();
   ctx.shadowBlur = 24;
@@ -2670,7 +2713,7 @@ function drawPixelWars(time: number) {
     ctx.fill();
     ctx.restore();
   });
-  pixelTurrets.forEach(drawPixelTurret);
+  pixelTurrets.forEach((turret) => drawPixelTurret(turret, layout));
 
   if (state === "pixel-menu" || state === "pixel-options") {
     ctx.fillStyle = "rgba(5, 9, 20, 0.48)";
