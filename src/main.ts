@@ -579,6 +579,8 @@ const bridgeHintWheelSegments: BridgeHintOutcome[] = [
 const pixelColumns = 54;
 const pixelRows = 36;
 const pixelShotSpeed = 360;
+const pixelMaxPlayers = 9;
+const pixelBaseFireInterval = 1;
 const pixelOwnerColors: Partial<Record<PixelOwner, string>> & { neutral: string; player: string } = {
   neutral: "#606773",
   player: "#35d7ff",
@@ -1025,15 +1027,21 @@ function writePixelLocalBest(value: number) {
 
 function renderPixelScores() {
   setText(pixelLocalScoreEls, `${formatScore(pixelLocalBest)}%`);
-  pixelMenuTurrets.textContent = `${1 + pixelBotCount + Math.max(0, pixelHumanSlots - 1)}`;
+  pixelMenuTurrets.textContent = `${pixelHumanSlots + pixelBotCount}`;
 }
 
 function syncPixelConfigFromInputs() {
   pixelMode = pixelModeInput.value === "multi" ? "multi" : "single";
-  pixelBotCount = clampNumber(Math.round(Number(pixelBotsInput.value) || 0), 0, 12);
-  pixelHumanSlots = pixelMode === "multi" ? clampNumber(Math.round(Number(pixelHumansInput.value) || 1), 1, 8) : 1;
+  pixelHumanSlots =
+    pixelMode === "multi" ? clampNumber(Math.round(Number(pixelHumansInput.value) || 1), 1, pixelMaxPlayers) : 1;
+  pixelBotCount = clampNumber(
+    Math.round(Number(pixelBotsInput.value) || 0),
+    0,
+    Math.max(0, pixelMaxPlayers - pixelHumanSlots),
+  );
   pixelBotsInput.value = `${pixelBotCount}`;
   pixelHumansInput.value = `${pixelHumanSlots}`;
+  pixelBotsInput.max = `${Math.max(0, pixelMaxPlayers - pixelHumanSlots)}`;
   pixelHumansInput.disabled = pixelMode === "single";
   renderPixelScores();
 }
@@ -1062,49 +1070,48 @@ function pixelLayout(): PixelBoardLayout {
 }
 
 function clampPixelTurretAngle(turret: PixelTurret, angle: number) {
+  if (turret.arc >= Math.PI) {
+    return normalizeAngle(angle);
+  }
   const delta = clampNumber(normalizeAngle(angle - turret.homeAngle), -turret.arc, turret.arc);
   return normalizeAngle(turret.homeAngle + delta);
 }
 
-function setPixelTurretPosition(turret: PixelTurret, index: number, totalAuto: number) {
+function pixelSpawnAnchors(layout: PixelBoardLayout) {
+  const left = layout.x;
+  const centerX = layout.x + layout.boardW / 2;
+  const right = layout.x + layout.boardW;
+  const top = layout.y;
+  const centerY = layout.y + layout.boardH / 2;
+  const bottom = layout.y + layout.boardH;
+  return [
+    { x: centerX, y: bottom },
+    { x: left, y: top },
+    { x: centerX, y: top },
+    { x: right, y: top },
+    { x: right, y: centerY },
+    { x: right, y: bottom },
+    { x: left, y: bottom },
+    { x: left, y: centerY },
+    { x: centerX, y: centerY },
+  ];
+}
+
+function setPixelTurretPosition(turret: PixelTurret, index: number) {
   const layout = pixelLayout();
   const centerX = layout.x + layout.boardW / 2;
   const centerY = layout.y + layout.boardH / 2;
-  if (turret.isPlayer) {
-    turret.x = centerX;
-    turret.y = Math.min(layout.canvasH - 14, layout.y + layout.boardH + Math.max(4, layout.cellH * 0.45));
-    turret.homeAngle = -Math.PI / 2;
-    turret.arc = Math.PI * 0.38;
-    turret.angle = clampPixelTurretAngle(turret, turret.angle || turret.homeAngle);
-    return;
-  }
-
-  const ringAngle = -Math.PI / 2 + ((index + 1) * Math.PI * 2) / (totalAuto + 1);
-  const dx = Math.cos(ringAngle);
-  const dy = Math.sin(ringAngle);
-  const candidates = [
-    dx > 0 ? (layout.x + layout.boardW - centerX) / dx : (layout.x - centerX) / dx,
-    dy > 0 ? (layout.y + layout.boardH - centerY) / dy : (layout.y - centerY) / dy,
-  ].filter((value) => Number.isFinite(value) && value > 0);
-  const distance = Math.min(...candidates);
-  turret.x = centerX + dx * distance;
-  turret.y = centerY + dy * distance;
-  turret.homeAngle = normalizeAngle(ringAngle + Math.PI);
-  turret.arc = Math.PI * 0.4;
+  const anchor = pixelSpawnAnchors(layout)[index % pixelMaxPlayers];
+  turret.x = anchor.x;
+  turret.y = anchor.y;
+  const centered = Math.abs(turret.x - centerX) < 1 && Math.abs(turret.y - centerY) < 1;
+  turret.homeAngle = centered ? -Math.PI / 2 : Math.atan2(centerY - turret.y, centerX - turret.x);
+  turret.arc = centered ? Math.PI : Math.PI * 0.42;
   turret.angle = clampPixelTurretAngle(turret, turret.angle || turret.homeAngle);
 }
 
 function positionPixelTurrets() {
-  const autoTurrets = pixelTurrets.filter((turret) => !turret.isPlayer);
-  let autoIndex = 0;
-  pixelTurrets.forEach((turret) => {
-    if (turret.isPlayer) {
-      setPixelTurretPosition(turret, 0, autoTurrets.length);
-      return;
-    }
-    setPixelTurretPosition(turret, autoIndex, autoTurrets.length);
-    autoIndex += 1;
-  });
+  pixelTurrets.forEach((turret, index) => setPixelTurretPosition(turret, index));
 }
 
 function createPixelTurret(id: PixelOwner, isPlayer: boolean): PixelTurret {
@@ -1114,8 +1121,8 @@ function createPixelTurret(id: PixelOwner, isPlayer: boolean): PixelTurret {
     angle: isPlayer ? -Math.PI / 2 : Math.PI / 2,
     arc: Math.PI * 0.4,
     color,
-    fireCooldown: Math.random() * 0.45,
-    fireInterval: isPlayer ? 0.22 : 0.25 + Math.random() * 0.16,
+    fireCooldown: Math.random() * pixelBaseFireInterval,
+    fireInterval: pixelBaseFireInterval,
     homeAngle: isPlayer ? -Math.PI / 2 : Math.PI / 2,
     id,
     isPlayer,
@@ -2413,7 +2420,8 @@ function updatePixelWars(dt: number) {
     const cellIndex = pixelCellIndexAt(shot.x, shot.y, layout);
     if (cellIndex !== -1 && cellIndex !== shot.lastCell) {
       paintPixelCell(cellIndex, shot.owner);
-      shot.lastCell = cellIndex;
+      pixelShots.splice(index, 1);
+      continue;
     }
     const outside = shot.x < -80 || shot.x > layout.canvasW + 80 || shot.y < -80 || shot.y > layout.canvasH + 80;
     if (shot.life <= 0 || outside) {
