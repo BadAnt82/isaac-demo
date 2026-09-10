@@ -19,31 +19,49 @@
             <strong id="score">0</strong>
           </div>
           <div class="hud-actions">
+            <button id="home" type="button" hidden>Home</button>
             <button id="fullscreen" type="button">Full screen</button>
           </div>
         </div>
         <div id="roll" class="roll-action" role="button" tabindex="0" aria-disabled="true">roll (free)</div>
         <div id="overlay" class="overlay">
-          <h1>Jumpy Plane</h1>
-          <p>Tap, click, or press Space to climb.</p>
-          <dl class="high-scores" aria-label="High scores">
-            <div>
-              <dt>Your highest</dt>
-              <dd id="local-high">0</dd>
-            </div>
-            <div>
-              <dt>Today's highest</dt>
-              <dd id="today-high">0</dd>
-              <span id="today-name" class="score-name">No scorer yet</span>
-            </div>
-            <div>
-              <dt>Server highest</dt>
-              <dd id="server-high">0</dd>
-              <span id="server-name" class="score-name">No scorer yet</span>
-            </div>
-          </dl>
-          <button id="start" type="button">Start</button>
-          <button id="restart" type="button" hidden>Restart</button>
+          <div id="home-panel" class="overlay-panel home-panel">
+            <h1>Games</h1>
+            <button id="start" class="game-tile" type="button" aria-label="Start Jumpy Plane">
+              <span class="tile-plane" aria-hidden="true">
+                <span class="tile-plane-tail"></span>
+                <span class="tile-plane-wing top"></span>
+                <span class="tile-plane-body"></span>
+                <span class="tile-plane-cockpit"></span>
+                <span class="tile-plane-wing bottom"></span>
+                <span class="tile-plane-prop"></span>
+              </span>
+              <span class="tile-details">
+                <strong>Jumpy Plane</strong>
+                <dl class="tile-scores" aria-label="Jumpy Plane high scores">
+                  <div>
+                    <dt>Your highest</dt>
+                    <dd id="local-high">0</dd>
+                  </div>
+                  <div>
+                    <dt>Today's highest</dt>
+                    <dd id="today-high">0</dd>
+                    <em id="today-name" class="score-name">No scorer yet</em>
+                  </div>
+                  <div>
+                    <dt>Server highest</dt>
+                    <dd id="server-high">0</dd>
+                    <em id="server-name" class="score-name">No scorer yet</em>
+                  </div>
+                </dl>
+              </span>
+            </button>
+          </div>
+          <div id="crash-panel" class="overlay-panel crash-panel" hidden>
+            <h1>You Crashed</h1>
+            <p id="crash-message">Score 0.</p>
+            <button id="restart" type="button" hidden>Restart</button>
+          </div>
         </div>
         <div id="record-dialog" class="record-dialog" hidden role="dialog" aria-modal="true" aria-labelledby="record-title">
           <form class="record-card">

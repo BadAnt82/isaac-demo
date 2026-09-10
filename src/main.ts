@@ -97,12 +97,17 @@ const todayHighEl = requireElement<HTMLElement>("#today-high");
 const todayNameEl = requireElement<HTMLElement>("#today-name");
 const serverHighEl = requireElement<HTMLElement>("#server-high");
 const serverNameEl = requireElement<HTMLElement>("#server-name");
+const scorePanel = requireElement<HTMLElement>(".score-panel");
 const restartButton = requireElement<HTMLButtonElement>("#restart");
 const startButton = requireElement<HTMLButtonElement>("#start");
+const homeButton = requireElement<HTMLButtonElement>("#home");
 const fullscreenButton = requireElement<HTMLButtonElement>("#fullscreen");
 const rollButton = requireElement<HTMLElement>("#roll");
 const gameFrame = requireElement<HTMLElement>(".game-frame");
 const overlay = requireElement<HTMLElement>("#overlay");
+const homePanel = requireElement<HTMLElement>("#home-panel");
+const crashPanel = requireElement<HTMLElement>("#crash-panel");
+const crashMessage = requireElement<HTMLElement>("#crash-message");
 const recordDialog = requireElement<HTMLElement>("#record-dialog");
 const recordForm = requireElement<HTMLFormElement>(".record-card");
 const recordMessage = requireElement<HTMLElement>("#record-message");
@@ -168,6 +173,11 @@ let serverHighest = 0;
 let todayHighName = "";
 let serverHighName = "";
 let pendingRecordName: ((name: string) => void) | null = null;
+let audioContext: AudioContext | null = null;
+let propellerOscillator: OscillatorNode | null = null;
+let propellerGain: GainNode | null = null;
+let propellerPulse: OscillatorNode | null = null;
+let propellerPulseGain: GainNode | null = null;
 
 const localHighScoreKey = "isaac-demo-high-score";
 const pendingScoreKey = "isaac-demo-pending-score";
@@ -287,6 +297,150 @@ function getBubbleRadius() {
 
 function getGroundHeight() {
   return compactPlayfield ? compactGroundHeight : groundHeight;
+}
+
+function getAudioContext() {
+  const audioWindow = window as Window & { webkitAudioContext?: typeof AudioContext };
+  const AudioConstructor = window.AudioContext || audioWindow.webkitAudioContext;
+  if (!AudioConstructor) {
+    return null;
+  }
+
+  if (!audioContext) {
+    audioContext = new AudioConstructor();
+  }
+
+  return audioContext;
+}
+
+function unlockAudio() {
+  const context = getAudioContext();
+  if (context?.state === "suspended") {
+    void context.resume();
+  }
+}
+
+function playTone(
+  frequency: number,
+  duration: number,
+  type: OscillatorType,
+  volume: number,
+  delay = 0,
+  endFrequency = frequency,
+) {
+  const context = getAudioContext();
+  if (!context) {
+    return;
+  }
+
+  const start = context.currentTime + delay;
+  const oscillator = context.createOscillator();
+  const gain = context.createGain();
+  oscillator.type = type;
+  oscillator.frequency.setValueAtTime(frequency, start);
+  oscillator.frequency.exponentialRampToValueAtTime(Math.max(24, endFrequency), start + duration);
+  gain.gain.setValueAtTime(0.0001, start);
+  gain.gain.exponentialRampToValueAtTime(volume, start + 0.018);
+  gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+  oscillator.connect(gain);
+  gain.connect(context.destination);
+  oscillator.start(start);
+  oscillator.stop(start + duration + 0.03);
+}
+
+function playNoiseBurst(duration: number, volume: number, delay = 0) {
+  const context = getAudioContext();
+  if (!context) {
+    return;
+  }
+
+  const sampleCount = Math.max(1, Math.floor(context.sampleRate * duration));
+  const buffer = context.createBuffer(1, sampleCount, context.sampleRate);
+  const samples = buffer.getChannelData(0);
+  for (let index = 0; index < sampleCount; index += 1) {
+    samples[index] = (Math.random() * 2 - 1) * (1 - index / sampleCount);
+  }
+
+  const start = context.currentTime + delay;
+  const source = context.createBufferSource();
+  const filter = context.createBiquadFilter();
+  const gain = context.createGain();
+  filter.type = "lowpass";
+  filter.frequency.setValueAtTime(900, start);
+  filter.frequency.exponentialRampToValueAtTime(120, start + duration);
+  gain.gain.setValueAtTime(volume, start);
+  gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+  source.buffer = buffer;
+  source.connect(filter);
+  filter.connect(gain);
+  gain.connect(context.destination);
+  source.start(start);
+}
+
+function startPropellerSound() {
+  const context = getAudioContext();
+  if (!context || propellerOscillator) {
+    return;
+  }
+
+  propellerOscillator = context.createOscillator();
+  propellerGain = context.createGain();
+  propellerPulse = context.createOscillator();
+  propellerPulseGain = context.createGain();
+
+  propellerOscillator.type = "sawtooth";
+  propellerOscillator.frequency.value = 58;
+  propellerPulse.type = "sine";
+  propellerPulse.frequency.value = 11;
+  propellerPulseGain.gain.value = 9;
+  propellerGain.gain.value = 0.018;
+
+  propellerPulse.connect(propellerPulseGain);
+  propellerPulseGain.connect(propellerOscillator.frequency);
+  propellerOscillator.connect(propellerGain);
+  propellerGain.connect(context.destination);
+  propellerPulse.start();
+  propellerOscillator.start();
+}
+
+function stopPropellerSound() {
+  const context = audioContext;
+  if (!context || !propellerOscillator || !propellerGain || !propellerPulse) {
+    return;
+  }
+
+  const stopAt = context.currentTime + 0.08;
+  propellerGain.gain.exponentialRampToValueAtTime(0.0001, stopAt);
+  propellerOscillator.stop(stopAt);
+  propellerPulse.stop(stopAt);
+  propellerOscillator = null;
+  propellerGain = null;
+  propellerPulse = null;
+  propellerPulseGain = null;
+}
+
+function playBubbleShootSound() {
+  playTone(360, 0.12, "square", 0.025, 0, 760);
+  playTone(840, 0.06, "triangle", 0.018, 0.05, 520);
+}
+
+function playBubblePopSound() {
+  playTone(780, 0.07, "sine", 0.038, 0, 1140);
+  playTone(420, 0.09, "triangle", 0.026, 0.035, 220);
+}
+
+function playCrashFallSound() {
+  for (let index = 0; index < 3; index += 1) {
+    const delay = index * 0.18;
+    playTone(620 - index * 90, 0.18, "sawtooth", 0.035, delay, 180 - index * 24);
+    playTone(420 - index * 50, 0.16, "sine", 0.018, delay + 0.04, 130);
+  }
+}
+
+function playExplosionSound() {
+  playNoiseBurst(0.36, 0.16);
+  playTone(92, 0.34, "sawtooth", 0.075, 0, 34);
+  playTone(240, 0.12, "square", 0.036, 0.03, 70);
 }
 
 function drawViewportBackground(canvasWidth: number, canvasHeight: number) {
@@ -433,6 +587,7 @@ function addScore(points: number) {
 
 function updateRollButton() {
   const ready = state === "running" && rollTimer <= 0 && (freeRollAvailable || score >= rollPointCost);
+  rollButton.hidden = state !== "running";
   rollButton.classList.toggle("is-disabled", !ready);
   rollButton.setAttribute("aria-disabled", `${!ready}`);
   rollButton.textContent = freeRollAvailable ? "roll (free)" : "roll (-2 points)";
@@ -465,12 +620,23 @@ function reset(nextState: GameState) {
   enemyPlane.bob = 0;
   state = nextState;
   scoreEl.textContent = formatScore(score);
-  restartButton.hidden = nextState !== "ended";
+  scorePanel.hidden = nextState === "ready";
+  homeButton.hidden = nextState === "ready";
+  restartButton.hidden = true;
+  startButton.hidden = nextState !== "ready";
   overlay.hidden = nextState !== "ready";
+  homePanel.hidden = nextState !== "ready";
+  crashPanel.hidden = true;
+  if (nextState === "running") {
+    startPropellerSound();
+  } else {
+    stopPropellerSound();
+  }
   updateRollButton();
 }
 
 function flap() {
+  unlockAudio();
   if (state === "ready") {
     reset("running");
     overlay.hidden = true;
@@ -508,7 +674,8 @@ function drawBackground(time: number) {
   ctx.globalAlpha = 0.38;
   ctx.strokeStyle = "#b59f76";
   ctx.lineWidth = 2;
-  for (let x = 88; x < width; x += 176) {
+  const wallPanelOffset = (time * 30) % 176;
+  for (let x = 88 - wallPanelOffset; x < width + 176; x += 176) {
     ctx.beginPath();
     ctx.moveTo(x, 0);
     ctx.lineTo(x, height);
@@ -516,7 +683,8 @@ function drawBackground(time: number) {
   }
   ctx.globalAlpha = 0.26;
   ctx.fillStyle = "#ffffff";
-  for (let x = 132 - ((time * 8) % 176); x < width + 176; x += 176) {
+  const galleryLightOffset = (time * 22) % 176;
+  for (let x = 132 - galleryLightOffset; x < width + 176; x += 176) {
     ctx.fillRect(x, 48, 54, 8);
     ctx.beginPath();
     ctx.moveTo(x + 6, 56);
@@ -537,6 +705,19 @@ function drawBackground(time: number) {
   ctx.fillRect(0, groundY, width, 10);
   ctx.fillStyle = "#4b3a2a";
   ctx.fillRect(0, groundY + 10, width, groundHeight);
+
+  ctx.save();
+  ctx.globalAlpha = 0.32;
+  ctx.strokeStyle = "#80603c";
+  ctx.lineWidth = 2;
+  const floorOffset = (time * 84) % 72;
+  for (let x = -floorOffset; x < width + 72; x += 72) {
+    ctx.beginPath();
+    ctx.moveTo(x, groundY + 12);
+    ctx.lineTo(x - 18, height);
+    ctx.stroke();
+  }
+  ctx.restore();
 }
 
 function drawCeilingSpikes() {
@@ -888,6 +1069,7 @@ function drawPlaneDebris() {
 }
 
 function fireBubble() {
+  playBubbleShootSound();
   bubbles.push({
     x: enemyPlane.x - 58 * getPlaneScale(),
     y: enemyPlane.y + 4,
@@ -899,6 +1081,7 @@ function fireBubble() {
 }
 
 function roll() {
+  unlockAudio();
   if (state !== "running" || rollTimer > 0 || (!freeRollAvailable && score < rollPointCost)) {
     return;
   }
@@ -961,6 +1144,7 @@ function collide(): CollisionResult {
 }
 
 function startBubbleCrash(hitBubble: Bubble) {
+  playBubblePopSound();
   bubbles = bubbles.filter((bubble) => bubble !== hitBubble);
   bubblePops.push({
     x: hitBubble.x,
@@ -1003,6 +1187,8 @@ function startCeilingCrash() {
 
 function startRandomCrash(options: { downward?: boolean; lift?: boolean } = {}) {
   const motions: CrashMotion[] = ["spin", "flip", "spiral"];
+  stopPropellerSound();
+  playCrashFallSound();
   state = "bubble-crash";
   crashTimer = 0;
   smokeTimer = 0;
@@ -1115,6 +1301,7 @@ function explodePlane() {
     return;
   }
 
+  playExplosionSound();
   crashExploded = true;
   crashEndTimer = 0.86;
   smokeTimer = 0;
@@ -1145,15 +1332,20 @@ function explodePlane() {
 }
 
 function endGame() {
+  stopPropellerSound();
   writeLocalHighest(score);
   renderHighScores();
   void syncFinalScore(score);
   state = "ended";
+  homeButton.hidden = false;
   restartButton.hidden = false;
   overlay.hidden = false;
-  overlay.querySelector("h1")!.textContent = "You Crashed";
-  overlay.querySelector("p")!.textContent = `Score ${formatScore(score)}.`;
+  homePanel.hidden = true;
+  crashPanel.hidden = false;
+  crashPanel.querySelector("h1")!.textContent = "You Crashed";
+  crashMessage.textContent = `Score ${formatScore(score)}.`;
   startButton.hidden = true;
+  updateRollButton();
 }
 
 function isFullscreen() {
@@ -1332,9 +1524,11 @@ window.addEventListener("keydown", (event) => {
 canvas.addEventListener("pointerdown", flap);
 startButton.addEventListener("click", flap);
 restartButton.addEventListener("click", () => {
+  unlockAudio();
   reset("running");
-  overlay.hidden = true;
-  startButton.hidden = true;
+});
+homeButton.addEventListener("click", () => {
+  reset("ready");
 });
 fullscreenButton.addEventListener("click", () => {
   void toggleFullscreen();
@@ -1359,6 +1553,13 @@ recordForm.addEventListener("submit", (event) => {
 document.addEventListener("fullscreenchange", () => {
   updateFullscreenButton();
   resize();
+});
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) {
+    stopPropellerSound();
+  } else if (state === "running") {
+    startPropellerSound();
+  }
 });
 
 readLocalHighest();
