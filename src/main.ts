@@ -150,6 +150,8 @@ type BridgeWheelOutcome = {
 
 type BridgeHintOutcome = {
   color?: string;
+  difficultyTierBonus?: number;
+  face?: string;
   kind: "freebie" | "math";
   label: string;
   operation?: BridgeOperation;
@@ -495,13 +497,14 @@ const bridgeWheelSegments: BridgeWheelOutcome[] = [
 ];
 const bridgeHintWheelSegments: BridgeHintOutcome[] = [
   { color: "rgba(107, 255, 174, 0.9)", kind: "freebie", label: "Free", weight: 1 },
-  { kind: "math", label: "Add", operation: "+", weight: 1 },
-  { kind: "math", label: "Sub", operation: "-", weight: 1 },
-  { kind: "math", label: "Times", operation: "x", weight: 1 },
-  { kind: "math", label: "Divide", operation: "/", weight: 1 },
-  { kind: "math", label: "Add", operation: "+", weight: 1 },
-  { kind: "math", label: "Sub", operation: "-", weight: 1 },
-  { kind: "math", label: "Times", operation: "x", weight: 1 },
+  { difficultyTierBonus: 0, face: ":)", kind: "math", label: "Addition", operation: "+", weight: 1 },
+  { difficultyTierBonus: 1, face: ">:(", kind: "math", label: "Addition", operation: "+", weight: 1 },
+  { difficultyTierBonus: 0, face: ":)", kind: "math", label: "Subtraction", operation: "-", weight: 1 },
+  { difficultyTierBonus: 1, face: ">:(", kind: "math", label: "Subtraction", operation: "-", weight: 1 },
+  { difficultyTierBonus: 0, face: ":)", kind: "math", label: "Multiplication", operation: "x", weight: 1 },
+  { difficultyTierBonus: 1, face: ">:(", kind: "math", label: "Multiplication", operation: "x", weight: 1 },
+  { difficultyTierBonus: 0, face: ":)", kind: "math", label: "Division", operation: "/", weight: 1 },
+  { difficultyTierBonus: 1, face: ">:(", kind: "math", label: "Division", operation: "/", weight: 1 },
 ];
 let planeSoundEnabled = localStorage.getItem(planeSoundKey) !== "off";
 let snakeSoundEnabled = localStorage.getItem(snakeSoundKey) !== "off";
@@ -1203,8 +1206,9 @@ function generateBridgePuzzle(
   correctSide: BridgeSide,
   difficulty: number,
   forcedOperation?: BridgeOperation,
+  difficultyTierBonus = 0,
 ): BridgePuzzle {
-  const tier = bridgePuzzleTier(difficulty);
+  const tier = Math.min(3, bridgePuzzleTier(difficulty) + difficultyTierBonus);
   const operationsByTier: BridgeOperation[][] = [
     ["+", "-", "+"],
     ["+", "-", "x"],
@@ -1227,13 +1231,19 @@ function generateBridgePuzzle(
     answer = left - right;
     prompt = `${left} - ${right}`;
   } else if (operation === "x") {
-    left = randomInteger(tier < 2 ? 2 : 3, tier < 2 ? 8 : 12);
-    right = randomInteger(2, tier < 3 ? 9 : 12);
+    left = randomInteger(
+      tier === 0 ? 2 : tier === 1 ? 3 : tier === 2 ? 4 : 6,
+      tier === 0 ? 6 : tier === 1 ? 9 : tier === 2 ? 12 : 14,
+    );
+    right = randomInteger(2, tier === 0 ? 6 : tier === 1 ? 9 : tier === 2 ? 11 : 12);
     answer = left * right;
     prompt = `${left} x ${right}`;
   } else {
-    answer = randomInteger(tier < 3 ? 2 : 3, tier < 3 ? 12 : 16);
-    right = randomInteger(2, tier < 3 ? 9 : 12);
+    answer = randomInteger(
+      tier === 0 ? 2 : tier === 1 ? 3 : tier === 2 ? 4 : 6,
+      tier === 0 ? 8 : tier === 1 ? 12 : tier === 2 ? 16 : 20,
+    );
+    right = randomInteger(2, tier === 0 ? 6 : tier === 1 ? 9 : tier === 2 ? 10 : 12);
     left = answer * right;
     prompt = `${left} / ${right}`;
   }
@@ -1300,6 +1310,10 @@ function wheelLandingTargetAngle(currentAngle: number, segments: { weight: numbe
   const fullTurn = Math.PI * 2;
   const catchUpTurns = Math.ceil((currentAngle - targetAngle) / fullTurn);
   return targetAngle + (catchUpTurns + 4) * fullTurn;
+}
+
+function bridgeHintOutcomeLabel(outcome: BridgeHintOutcome) {
+  return outcome.face ? `${outcome.label} ${outcome.face}` : outcome.label;
 }
 
 function resetBridgeRun() {
@@ -1568,6 +1582,7 @@ async function spinBridgeHintWheel() {
       bridgeSafePath[bridgeStep],
       difficulty,
       bridgePendingHintOutcome.operation,
+      bridgePendingHintOutcome.difficultyTierBonus ?? 0,
     );
   }
   bridgeHintWheelStartAngle = bridgeHintWheelAngle;
@@ -1621,7 +1636,7 @@ function updateBridge(dt: number) {
     if (bridgeHintWheelSpinTimer <= 0 && bridgePendingHintOutcome) {
       bridgeHintWheelAngle = bridgeHintWheelTargetAngle;
       bridgeHint = { kind: bridgePendingHintOutcome.kind, pathIndex: bridgeStep };
-      bridgeHintWheelLabel = bridgePendingHintOutcome.label;
+      bridgeHintWheelLabel = bridgeHintOutcomeLabel(bridgePendingHintOutcome);
       bridgePendingHintOutcome = null;
       bridgeHintWheelTimer = 1.4;
       updateBridgeScore();
@@ -2032,9 +2047,9 @@ function drawBridgeWheelFace<T extends { color?: string; label: string; weight: 
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillStyle = index === bridgeJackpotSegmentIndex && isPointWheel ? "#ffffff" : "#10253d";
-    ctx.font = `900 ${Math.max(8, radius * (segments.length > 12 ? 0.11 : 0.15))}px Inter, sans-serif`;
+    ctx.font = `900 ${Math.max(7, radius * (isPointWheel ? 0.11 : 0.1))}px Inter, sans-serif`;
     lines.forEach((line, lineIndex) => {
-      const offset = (lineIndex - (lines.length - 1) / 2) * Math.max(10, radius * 0.12);
+      const offset = (lineIndex - (lines.length - 1) / 2) * Math.max(9, radius * 0.12);
       ctx.fillText(line, radius * 0.66, offset);
     });
     ctx.restore();
@@ -2070,7 +2085,8 @@ function drawBridgeWheelPanel(canvasHeight: number, areas: BridgeAreas) {
   );
   drawBridgeWheelFace(bridgeHintWheelSegments, bridgeHintWheelAngle, centerX, hintWheelY, radius, false, (outcome) => [
     outcome.label,
-  ]);
+    outcome.face ?? "",
+  ].filter(Boolean));
 
   ctx.fillStyle = "rgba(255, 255, 255, 0.94)";
   ctx.textAlign = "center";
