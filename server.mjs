@@ -8,6 +8,10 @@ const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const distDir = resolve(__dirname, "dist");
 const storePath = process.env.SCORE_STORE_PATH || resolve(__dirname, "data", "high-scores.json");
 const snakeStorePath = process.env.SNAKE_SCORE_STORE_PATH || resolve(__dirname, "data", "snake-high-scores.json");
+const issueStorePaths = {
+  "jumpy-plane": process.env.JUMPY_PLANE_ISSUE_STORE_PATH || resolve(__dirname, "data", "jumpy-plane-issues.json"),
+  "shooting-snakes": process.env.SHOOTING_SNAKES_ISSUE_STORE_PATH || resolve(__dirname, "data", "shooting-snakes-issues.json"),
+};
 const port = Number(process.env.PORT || 3000);
 const timeZone = process.env.SCORE_TIME_ZONE || "America/Los_Angeles";
 const snakeBoard = {
@@ -655,6 +659,28 @@ function writeScores(scores, path = storePath) {
   writeFileSync(path, `${JSON.stringify(scores, null, 2)}\n`);
 }
 
+function readIssues(path) {
+  try {
+    if (!existsSync(path)) {
+      return [];
+    }
+
+    const issues = JSON.parse(readFileSync(path, "utf8"));
+    return Array.isArray(issues) ? issues : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeIssues(issues, path) {
+  mkdirSync(resolve(path, ".."), { recursive: true });
+  writeFileSync(path, `${JSON.stringify(issues, null, 2)}\n`);
+}
+
+function cleanIssueText(value) {
+  return (typeof value === "string" ? value.trim() : "").slice(0, 900);
+}
+
 function sendJson(response, status, body) {
   response.writeHead(status, {
     "Cache-Control": "no-store",
@@ -679,6 +705,7 @@ function readRequestBody(request) {
 }
 
 async function handleApi(request, response) {
+  const url = new URL(request.url || "/", "http://localhost");
   if (request.url === "/api/high-scores" && request.method === "GET") {
     sendJson(response, 200, readScores(storePath));
     return true;
@@ -699,7 +726,45 @@ async function handleApi(request, response) {
     return true;
   }
 
+  if (url.pathname.startsWith("/api/issues/") && request.method === "POST") {
+    const game = decodeURIComponent(url.pathname.replace("/api/issues/", ""));
+    await handleIssuePost(request, response, game);
+    return true;
+  }
+
   return false;
+}
+
+async function handleIssuePost(request, response, game) {
+  try {
+    const path = issueStorePaths[game];
+    if (!path) {
+      sendJson(response, 404, { error: "Unknown game issue bucket." });
+      return;
+    }
+
+    const body = JSON.parse(await readRequestBody(request));
+    const message = cleanIssueText(body.message);
+    if (message.length < 3) {
+      sendJson(response, 400, { error: "Issue report must include a short message." });
+      return;
+    }
+
+    const issues = readIssues(path);
+    const issue = {
+      createdAt: new Date().toISOString(),
+      game,
+      id: `${game}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+      message,
+      page: cleanIssueText(body.page).slice(0, 240),
+      userAgent: cleanIssueText(body.userAgent).slice(0, 240),
+    };
+    issues.push(issue);
+    writeIssues(issues.slice(-500), path);
+    sendJson(response, 201, { ok: true });
+  } catch {
+    sendJson(response, 400, { error: "Invalid issue report." });
+  }
 }
 
 async function handleScorePost(request, response, path) {

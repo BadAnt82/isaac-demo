@@ -1,6 +1,16 @@
 import "./styles.css";
 
-type GameState = "platform" | "ready" | "running" | "bubble-crash" | "ended" | "snake-menu" | "snake-running" | "snake-dead";
+type GameState =
+  | "platform"
+  | "ready"
+  | "plane-options"
+  | "running"
+  | "bubble-crash"
+  | "ended"
+  | "snake-menu"
+  | "snake-options"
+  | "snake-running"
+  | "snake-dead";
 
 type Obstacle = {
   x: number;
@@ -155,6 +165,13 @@ const snakeServerNameEls = Array.from(document.querySelectorAll<HTMLElement>('[d
 const scorePanel = requireElement<HTMLElement>(".score-panel");
 const restartButton = requireElement<HTMLButtonElement>("#restart");
 const startButton = requireElement<HTMLButtonElement>("#start");
+const planeOptionsButton = requireElement<HTMLButtonElement>("#plane-options");
+const planeMenuBackButton = requireElement<HTMLButtonElement>("#plane-menu-back");
+const planeOptionsBackButton = requireElement<HTMLButtonElement>("#plane-options-back");
+const planeSoundToggle = requireElement<HTMLButtonElement>("#plane-sound-toggle");
+const planeIssueForm = requireElement<HTMLFormElement>("#plane-issue-form");
+const planeIssueText = requireElement<HTMLTextAreaElement>("#plane-issue-text");
+const planeIssueStatus = requireElement<HTMLElement>("#plane-issue-status");
 const selectPlaneButton = requireElement<HTMLButtonElement>("#select-plane");
 const selectSnakeButton = requireElement<HTMLButtonElement>("#select-snake");
 const homeButton = requireElement<HTMLButtonElement>("#home");
@@ -173,9 +190,18 @@ const gameFrame = requireElement<HTMLElement>(".game-frame");
 const overlay = requireElement<HTMLElement>("#overlay");
 const platformPanel = requireElement<HTMLElement>("#platform-panel");
 const gameMenuPanel = requireElement<HTMLElement>("#game-menu-panel");
+const planeOptionsPanel = requireElement<HTMLElement>("#plane-options-panel");
 const crashPanel = requireElement<HTMLElement>("#crash-panel");
 const snakeMenuPanel = requireElement<HTMLElement>("#snake-menu-panel");
+const snakeOptionsPanel = requireElement<HTMLElement>("#snake-options-panel");
 const snakeDeadPanel = requireElement<HTMLElement>("#snake-dead-panel");
+const snakeOptionsButton = requireElement<HTMLButtonElement>("#snake-options");
+const snakeMenuBackButton = requireElement<HTMLButtonElement>("#snake-menu-back");
+const snakeOptionsBackButton = requireElement<HTMLButtonElement>("#snake-options-back");
+const snakeSoundToggle = requireElement<HTMLButtonElement>("#snake-sound-toggle");
+const snakeIssueForm = requireElement<HTMLFormElement>("#snake-issue-form");
+const snakeIssueText = requireElement<HTMLTextAreaElement>("#snake-issue-text");
+const snakeIssueStatus = requireElement<HTMLElement>("#snake-issue-status");
 const snakeMessage = requireElement<HTMLElement>("#snake-message");
 const crashMessage = requireElement<HTMLElement>("#crash-message");
 const recordDialog = requireElement<HTMLElement>("#record-dialog");
@@ -252,6 +278,9 @@ let snakeSnapshot: SnakeSnapshot | null = null;
 let snakeConnected = false;
 let snakeStartPending = false;
 let snakeSpawnedThisRun = false;
+let snakeLastAlive = false;
+let snakeLastLength = 0;
+let snakeLastShotBank = 0;
 let snakeJoystickPointerId: number | null = null;
 let snakeJoystickPulseTimer = 0;
 let lastSnakeShootTime = 0;
@@ -265,8 +294,12 @@ let snakeBestThisRun = 3;
 const localHighScoreKey = "badant-games-jumpy-plane-high-score";
 const pendingScoreKey = "badant-games-jumpy-plane-pending-score";
 const playerNameKey = "badant-games-player-name";
-const snakeLocalLongestKey = "badant-games-glow-snake-longest";
-const snakePendingScoreKey = "badant-games-glow-snake-pending-longest";
+const oldSnakeLocalLongestKey = "badant-games-glow-snake-longest";
+const oldSnakePendingScoreKey = "badant-games-glow-snake-pending-longest";
+const snakeLocalLongestKey = "badant-games-shooting-snakes-longest";
+const snakePendingScoreKey = "badant-games-shooting-snakes-pending-longest";
+const planeSoundKey = "badant-games-jumpy-plane-sound";
+const snakeSoundKey = "badant-games-shooting-snakes-sound";
 const obstacleWidth = 96;
 const obstacleSpeed = 250;
 const spawnEvery = 1.42;
@@ -296,6 +329,8 @@ const snakeFallbackBoard = {
 };
 const fallbackSnakeShotBank = 5;
 const snakeCameraZoom = 1 / 1.2;
+let planeSoundEnabled = localStorage.getItem(planeSoundKey) !== "off";
+let snakeSoundEnabled = localStorage.getItem(snakeSoundKey) !== "off";
 
 type FullscreenFrame = HTMLElement & {
   webkitRequestFullscreen?: () => Promise<void> | void;
@@ -471,27 +506,42 @@ function playNoiseBurst(duration: number, volume: number, delay = 0) {
 }
 
 function playBubbleShootSound() {
+  if (!planeSoundEnabled) {
+    return;
+  }
   playTone(360, 0.12, "square", 0.025, 0, 760);
   playTone(840, 0.06, "triangle", 0.018, 0.05, 520);
 }
 
 function playBubblePopSound() {
+  if (!planeSoundEnabled) {
+    return;
+  }
   playTone(780, 0.07, "sine", 0.038, 0, 1140);
   playTone(420, 0.09, "triangle", 0.026, 0.035, 220);
 }
 
 function playFlapSound() {
+  if (!planeSoundEnabled) {
+    return;
+  }
   playTone(210, 0.055, "triangle", 0.026, 0, 520);
   playTone(1220, 0.045, "sine", 0.018, 0.035, 760);
 }
 
 function playRollSound() {
+  if (!planeSoundEnabled) {
+    return;
+  }
   playTone(520, 0.11, "sine", 0.04, 0, 820);
   playTone(820, 0.12, "triangle", 0.034, 0.08, 460);
   playTone(440, 0.13, "sine", 0.032, 0.17, 720);
 }
 
 function playCrashFallSound() {
+  if (!planeSoundEnabled) {
+    return;
+  }
   for (let index = 0; index < 3; index += 1) {
     const delay = index * 0.18;
     playTone(620 - index * 90, 0.18, "sawtooth", 0.035, delay, 180 - index * 24);
@@ -500,9 +550,45 @@ function playCrashFallSound() {
 }
 
 function playExplosionSound() {
+  if (!planeSoundEnabled) {
+    return;
+  }
   playNoiseBurst(0.36, 0.16);
   playTone(92, 0.34, "sawtooth", 0.075, 0, 34);
   playTone(240, 0.12, "square", 0.036, 0.03, 70);
+}
+
+function playSnakeOrbSound() {
+  if (!snakeSoundEnabled) {
+    return;
+  }
+  playTone(300, 0.07, "sine", 0.028, 0, 520);
+  playTone(520, 0.08, "triangle", 0.022, 0.035, 360);
+}
+
+function playSnakeShotPickupSound() {
+  if (!snakeSoundEnabled) {
+    return;
+  }
+  playTone(880, 0.07, "triangle", 0.04, 0, 1320);
+  playTone(1420, 0.06, "sine", 0.026, 0.045, 960);
+  playTone(620, 0.1, "square", 0.018, 0.08, 720);
+}
+
+function playSnakeDeathSound() {
+  if (!snakeSoundEnabled) {
+    return;
+  }
+  playTone(220, 0.11, "sawtooth", 0.05, 0, 74);
+  playTone(92, 0.18, "triangle", 0.038, 0.055, 42);
+  playNoiseBurst(0.16, 0.055, 0.02);
+}
+
+function playSnakeShootSound() {
+  if (!snakeSoundEnabled) {
+    return;
+  }
+  playTone(180, 0.08, "square", 0.032, 0, 680);
 }
 
 function getSnakeSocketUrl() {
@@ -538,6 +624,17 @@ function connectSnakeSocket() {
 
     snakeSnapshot = message;
     const self = getLocalSnake();
+    if (state === "snake-running" && self) {
+      if (snakeLastAlive && self.alive) {
+        if (self.shotBank > snakeLastShotBank) {
+          playSnakeShotPickupSound();
+        } else if (self.segments.length > snakeLastLength) {
+          playSnakeOrbSound();
+        }
+      } else if (snakeLastAlive && !self.alive) {
+        playSnakeDeathSound();
+      }
+    }
     if (self?.alive) {
       snakeSpawnedThisRun = true;
     }
@@ -548,6 +645,15 @@ function connectSnakeSocket() {
     }
     if (state === "snake-running" && self && !self.alive && snakeSpawnedThisRun) {
       showSnakeDead();
+    }
+    if (self) {
+      snakeLastAlive = self.alive;
+      snakeLastLength = self.segments.length;
+      snakeLastShotBank = self.shotBank;
+    } else {
+      snakeLastAlive = false;
+      snakeLastLength = 0;
+      snakeLastShotBank = 0;
     }
     updateSnakeScore();
   });
@@ -565,6 +671,9 @@ function leaveSnakeRoom() {
   window.clearTimeout(snakeReconnectTimer);
   snakeStartPending = false;
   snakeSpawnedThisRun = false;
+  snakeLastAlive = false;
+  snakeLastLength = 0;
+  snakeLastShotBank = 0;
   snakeConnected = false;
   snakeClientId = "";
   snakeSnapshot = null;
@@ -584,10 +693,40 @@ function setSnakeLayout(active: boolean) {
   resize();
 }
 
+function showPlaneOptions() {
+  leaveSnakeRoom();
+  setSnakeLayout(false);
+  state = "plane-options";
+  overlay.hidden = false;
+  overlay.classList.remove("is-platform");
+  platformPanel.hidden = true;
+  gameMenuPanel.hidden = true;
+  planeOptionsPanel.hidden = false;
+  crashPanel.hidden = true;
+  snakeMenuPanel.hidden = true;
+  snakeOptionsPanel.hidden = true;
+  snakeDeadPanel.hidden = true;
+  scorePanel.hidden = true;
+  homeButton.hidden = false;
+  startButton.hidden = true;
+  restartButton.hidden = true;
+  snakeControls.hidden = true;
+  planeIssueStatus.textContent = "";
+  updateSoundButtons();
+  updateRollButton();
+}
+
+function showPlaneMenu() {
+  reset("ready");
+}
+
 function startSnakeGame(restart = false) {
   unlockAudio();
   snakeBestThisRun = 3;
   snakeSpawnedThisRun = false;
+  snakeLastAlive = false;
+  snakeLastLength = 0;
+  snakeLastShotBank = 0;
   resetSnakeJoystick();
   state = "snake-running";
   scoreLabel.textContent = "Length";
@@ -595,8 +734,10 @@ function startSnakeGame(restart = false) {
   overlay.classList.remove("is-platform");
   platformPanel.hidden = true;
   gameMenuPanel.hidden = true;
+  planeOptionsPanel.hidden = true;
   crashPanel.hidden = true;
   snakeMenuPanel.hidden = true;
+  snakeOptionsPanel.hidden = true;
   snakeDeadPanel.hidden = true;
   scorePanel.hidden = true;
   homeButton.hidden = false;
@@ -618,6 +759,9 @@ function showSnakeMenu() {
   leaveSnakeRoom();
   setSnakeLayout(false);
   resetSnakeJoystick();
+  snakeLastAlive = false;
+  snakeLastLength = 0;
+  snakeLastShotBank = 0;
   readSnakeLocalLongest();
   renderSnakeHighScores();
   void loadServerSnakeHighScores();
@@ -627,12 +771,36 @@ function showSnakeMenu() {
   overlay.classList.remove("is-platform");
   platformPanel.hidden = true;
   gameMenuPanel.hidden = true;
+  planeOptionsPanel.hidden = true;
   crashPanel.hidden = true;
   snakeMenuPanel.hidden = false;
+  snakeOptionsPanel.hidden = true;
   snakeDeadPanel.hidden = true;
   scorePanel.hidden = true;
   homeButton.hidden = false;
   snakeControls.hidden = true;
+  updateRollButton();
+}
+
+function showSnakeOptions() {
+  leaveSnakeRoom();
+  setSnakeLayout(false);
+  resetSnakeJoystick();
+  state = "snake-options";
+  overlay.hidden = false;
+  overlay.classList.remove("is-platform");
+  platformPanel.hidden = true;
+  gameMenuPanel.hidden = true;
+  planeOptionsPanel.hidden = true;
+  crashPanel.hidden = true;
+  snakeMenuPanel.hidden = true;
+  snakeOptionsPanel.hidden = false;
+  snakeDeadPanel.hidden = true;
+  scorePanel.hidden = true;
+  homeButton.hidden = false;
+  snakeControls.hidden = true;
+  snakeIssueStatus.textContent = "";
+  updateSoundButtons();
   updateRollButton();
 }
 
@@ -646,8 +814,10 @@ function showSnakeDead() {
   overlay.classList.remove("is-platform");
   platformPanel.hidden = true;
   gameMenuPanel.hidden = true;
+  planeOptionsPanel.hidden = true;
   crashPanel.hidden = true;
   snakeMenuPanel.hidden = true;
+  snakeOptionsPanel.hidden = true;
   snakeDeadPanel.hidden = false;
   scorePanel.hidden = false;
   homeButton.hidden = false;
@@ -788,7 +958,7 @@ function shootSnake() {
   }
 
   lastSnakeShootTime = now;
-  playTone(180, 0.08, "square", 0.032, 0, 680);
+  playSnakeShootSound();
   sendSnakeMessage({ type: "snake-shoot" });
   updateSnakeShootButton();
 }
@@ -963,6 +1133,42 @@ function setText(elements: HTMLElement[], text: string) {
   });
 }
 
+function updateSoundButtons() {
+  planeSoundToggle.textContent = planeSoundEnabled ? "Sound on" : "Sound off";
+  planeSoundToggle.setAttribute("aria-pressed", `${planeSoundEnabled}`);
+  snakeSoundToggle.textContent = snakeSoundEnabled ? "Sound on" : "Sound off";
+  snakeSoundToggle.setAttribute("aria-pressed", `${snakeSoundEnabled}`);
+}
+
+function setPlaneSound(enabled: boolean) {
+  planeSoundEnabled = enabled;
+  localStorage.setItem(planeSoundKey, enabled ? "on" : "off");
+  updateSoundButtons();
+}
+
+function setSnakeSound(enabled: boolean) {
+  snakeSoundEnabled = enabled;
+  localStorage.setItem(snakeSoundKey, enabled ? "on" : "off");
+  updateSoundButtons();
+}
+
+async function submitIssue(game: "jumpy-plane" | "shooting-snakes", message: string) {
+  const response = await fetch(`/api/issues/${game}`, {
+    body: JSON.stringify({
+      message,
+      page: window.location.href,
+      userAgent: navigator.userAgent,
+    }),
+    cache: "no-store",
+    headers: { "Content-Type": "application/json" },
+    method: "POST",
+  });
+
+  if (!response.ok) {
+    throw new Error("Issue report failed.");
+  }
+}
+
 function renderHighScores() {
   setText(localHighEls, formatScore(localHighest));
   setText(todayHighEls, formatScore(todayHighest));
@@ -972,8 +1178,12 @@ function renderHighScores() {
 }
 
 function readSnakeLocalLongest() {
-  const storedScore = Number(localStorage.getItem(snakeLocalLongestKey) || 3);
+  const storedValue = localStorage.getItem(snakeLocalLongestKey) ?? localStorage.getItem(oldSnakeLocalLongestKey) ?? "3";
+  const storedScore = Number(storedValue);
   snakeLocalLongest = Number.isFinite(storedScore) ? Math.max(3, storedScore) : 3;
+  if (localStorage.getItem(snakeLocalLongestKey) === null && localStorage.getItem(oldSnakeLocalLongestKey) !== null) {
+    localStorage.setItem(snakeLocalLongestKey, `${snakeLocalLongest}`);
+  }
 }
 
 function writeSnakeLocalLongest(nextLength: number) {
@@ -1080,6 +1290,7 @@ async function submitServerSnakeHighScore(finalScore: number, name = "") {
     applyServerSnakeHighScores(scores);
     if (Number(scores.todayHighest) >= finalScore || Number(scores.allTimeHighest) >= finalScore) {
       localStorage.removeItem(snakePendingScoreKey);
+      localStorage.removeItem(oldSnakePendingScoreKey);
     }
     return scores;
   } catch {
@@ -1109,7 +1320,10 @@ async function retryPendingServerScore() {
 }
 
 async function retryPendingServerSnakeScore() {
-  const pendingScore = Number(localStorage.getItem(snakePendingScoreKey) || 0);
+  const pendingScore = Math.max(
+    Number(localStorage.getItem(snakePendingScoreKey) || 0),
+    Number(localStorage.getItem(oldSnakePendingScoreKey) || 0),
+  );
   if (Number.isFinite(pendingScore) && pendingScore > 0) {
     await submitServerSnakeHighScore(pendingScore);
   }
@@ -1123,7 +1337,7 @@ async function reconcileLocalHighScore() {
 }
 
 async function reconcileSnakeLocalHighScore() {
-  if (localStorage.getItem(snakeLocalLongestKey) === null) {
+  if (localStorage.getItem(snakeLocalLongestKey) === null && localStorage.getItem(oldSnakeLocalLongestKey) === null) {
     return;
   }
 
@@ -1206,6 +1420,9 @@ function updateRollButton() {
 function reset(nextState: GameState) {
   readLocalHighest();
   snakeSpawnedThisRun = false;
+  snakeLastAlive = false;
+  snakeLastLength = 0;
+  snakeLastShotBank = 0;
   resetSnakeJoystick();
   readSnakeLocalLongest();
   renderHighScores();
@@ -1245,10 +1462,13 @@ function reset(nextState: GameState) {
   overlay.classList.toggle("is-platform", nextState === "platform");
   platformPanel.hidden = nextState !== "platform";
   gameMenuPanel.hidden = nextState !== "ready";
+  planeOptionsPanel.hidden = nextState !== "plane-options";
   crashPanel.hidden = true;
   snakeMenuPanel.hidden = true;
+  snakeOptionsPanel.hidden = true;
   snakeDeadPanel.hidden = true;
   snakeControls.hidden = true;
+  updateSoundButtons();
   updateSnakeShootButton();
   updateRollButton();
 }
@@ -1976,7 +2196,11 @@ function endGame() {
   overlay.classList.remove("is-platform");
   platformPanel.hidden = true;
   gameMenuPanel.hidden = true;
+  planeOptionsPanel.hidden = true;
   crashPanel.hidden = false;
+  snakeMenuPanel.hidden = true;
+  snakeOptionsPanel.hidden = true;
+  snakeDeadPanel.hidden = true;
   crashPanel.querySelector("h1")!.textContent = "You Crashed";
   crashMessage.textContent = `Score ${formatScore(score)}.`;
   startButton.hidden = true;
@@ -2105,7 +2329,7 @@ function update(dt: number) {
 }
 
 function render(time: number) {
-  if (state === "snake-menu" || state === "snake-running" || state === "snake-dead") {
+  if (state === "snake-menu" || state === "snake-options" || state === "snake-running" || state === "snake-dead") {
     drawSnakeGame(time);
     return;
   }
@@ -2187,6 +2411,31 @@ window.addEventListener("keydown", (event) => {
 });
 canvas.addEventListener("pointerdown", flap);
 startButton.addEventListener("click", flap);
+planeOptionsButton.addEventListener("click", showPlaneOptions);
+planeMenuBackButton.addEventListener("click", () => reset("platform"));
+planeOptionsBackButton.addEventListener("click", showPlaneMenu);
+planeSoundToggle.addEventListener("click", () => {
+  unlockAudio();
+  setPlaneSound(!planeSoundEnabled);
+});
+planeIssueForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  const message = planeIssueText.value.trim();
+  if (!message) {
+    planeIssueStatus.textContent = "Add a short note first.";
+    return;
+  }
+
+  planeIssueStatus.textContent = "Sending...";
+  void submitIssue("jumpy-plane", message)
+    .then(() => {
+      planeIssueText.value = "";
+      planeIssueStatus.textContent = "Issue saved.";
+    })
+    .catch(() => {
+      planeIssueStatus.textContent = "Issue did not save.";
+    });
+});
 restartButton.addEventListener("click", () => {
   unlockAudio();
   reset("running");
@@ -2200,6 +2449,31 @@ selectPlaneButton.addEventListener("click", () => {
   reset("ready");
 });
 selectSnakeButton.addEventListener("click", showSnakeMenu);
+snakeOptionsButton.addEventListener("click", showSnakeOptions);
+snakeMenuBackButton.addEventListener("click", () => reset("platform"));
+snakeOptionsBackButton.addEventListener("click", showSnakeMenu);
+snakeSoundToggle.addEventListener("click", () => {
+  unlockAudio();
+  setSnakeSound(!snakeSoundEnabled);
+});
+snakeIssueForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  const message = snakeIssueText.value.trim();
+  if (!message) {
+    snakeIssueStatus.textContent = "Add a short note first.";
+    return;
+  }
+
+  snakeIssueStatus.textContent = "Sending...";
+  void submitIssue("shooting-snakes", message)
+    .then(() => {
+      snakeIssueText.value = "";
+      snakeIssueStatus.textContent = "Issue saved.";
+    })
+    .catch(() => {
+      snakeIssueStatus.textContent = "Issue did not save.";
+    });
+});
 snakeStartButton.addEventListener("click", () => {
   startSnakeGame();
 });
