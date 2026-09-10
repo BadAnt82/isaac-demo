@@ -144,6 +144,7 @@ type BridgeWheelOutcome = {
   color?: string;
   label: string;
   apply: (points: number) => number;
+  weight: number;
 };
 
 type BridgeJackpotResponse = {
@@ -396,6 +397,7 @@ let bridgePendingWheelOutcome: BridgeWheelOutcome | null = null;
 let bridgeWheelRequesting = false;
 let bridgeFallTimer = 0;
 let bridgeJackpot = 20;
+let bridgeWheelJackpotValue = 20;
 let bridgeJackpotOdds = 20;
 
 const localHighScoreKey = "badant-games-jumpy-plane-high-score";
@@ -450,17 +452,17 @@ const bridgeSuccessDuration = 0.52;
 const bridgeScrollDuration = 0.34;
 const bridgeWheelSpinDuration = 1.25;
 const bridgeNormalWheelOutcomes: BridgeWheelOutcome[] = [
-  { label: "+1", apply: (points) => points + 1 },
-  { label: "+3", apply: (points) => points + 3 },
-  { label: "-1", apply: (points) => points - 1 },
-  { label: "-2", apply: (points) => points - 2 },
-  { label: "x2", apply: (points) => points * 2 },
-  { label: "/2", apply: (points) => Math.floor(points / 2) },
+  { label: "+1", apply: (points) => points + 1, weight: 4 },
+  { label: "+3", apply: (points) => points + 3, weight: 3 },
+  { label: "-1", apply: (points) => points - 1, weight: 3 },
+  { label: "-2", apply: (points) => points - 2, weight: 3 },
+  { label: "x2", apply: (points) => points * 2, weight: 3 },
+  { label: "/2", apply: (points) => Math.floor(points / 2), weight: 3 },
 ];
 const bridgeJackpotSegmentIndex = 0;
 const bridgeWheelSegments: BridgeWheelOutcome[] = [
-  { color: "rgba(255, 95, 118, 0.94)", label: "JP", apply: (points) => points },
-  ...Array.from({ length: 19 }, (_, index) => bridgeNormalWheelOutcomes[index % bridgeNormalWheelOutcomes.length]),
+  { color: "rgba(255, 95, 118, 0.94)", label: "JP", apply: (points) => points, weight: 1 },
+  ...bridgeNormalWheelOutcomes,
 ];
 let planeSoundEnabled = localStorage.getItem(planeSoundKey) !== "off";
 let snakeSoundEnabled = localStorage.getItem(snakeSoundKey) !== "off";
@@ -1135,10 +1137,30 @@ function randomChoice<T>(items: T[]) {
   return items[Math.floor(Math.random() * items.length)];
 }
 
-function generateBridgePuzzle(correctSide: BridgeSide): BridgePuzzle {
-  const operation = ["+", "-", "x", "/"][Math.floor(Math.random() * 4)];
-  let left = randomInteger(2, 12);
-  let right = randomInteger(2, 12);
+function bridgePuzzleTier(pathIndex: number) {
+  if (pathIndex < 5) {
+    return 0;
+  }
+  if (pathIndex < 12) {
+    return 1;
+  }
+  if (pathIndex < 22) {
+    return 2;
+  }
+  return 3;
+}
+
+function generateBridgePuzzle(correctSide: BridgeSide, pathIndex: number): BridgePuzzle {
+  const tier = bridgePuzzleTier(pathIndex);
+  const operationsByTier = [
+    ["+", "-", "+"],
+    ["+", "-", "x"],
+    ["+", "-", "x", "/"],
+    ["+", "-", "x", "/", "x"],
+  ];
+  const operation = randomChoice(operationsByTier[tier]);
+  let left = randomInteger(1, tier === 0 ? 10 : tier === 1 ? 18 : tier === 2 ? 30 : 48);
+  let right = randomInteger(1, tier === 0 ? 10 : tier === 1 ? 18 : tier === 2 ? 30 : 48);
   let answer = 0;
   let prompt = "";
 
@@ -1152,17 +1174,19 @@ function generateBridgePuzzle(correctSide: BridgeSide): BridgePuzzle {
     answer = left - right;
     prompt = `${left} - ${right}`;
   } else if (operation === "x") {
-    right = randomInteger(2, 9);
+    left = randomInteger(tier < 2 ? 2 : 3, tier < 2 ? 8 : 12);
+    right = randomInteger(2, tier < 3 ? 9 : 12);
     answer = left * right;
     prompt = `${left} x ${right}`;
   } else {
-    answer = left;
-    right = randomInteger(2, 9);
+    answer = randomInteger(tier < 3 ? 2 : 3, tier < 3 ? 12 : 16);
+    right = randomInteger(2, tier < 3 ? 9 : 12);
     left = answer * right;
     prompt = `${left} / ${right}`;
   }
 
-  const offset = randomChoice([-4, -3, -2, -1, 1, 2, 3, 4]);
+  const offsets = tier < 2 ? [-3, -2, -1, 1, 2, 3] : [-8, -5, -3, -2, 2, 3, 5, 8];
+  const offset = randomChoice(offsets);
   let wrongAnswer = Math.max(0, answer + offset);
   if (wrongAnswer === answer) {
     wrongAnswer += 1;
@@ -1182,8 +1206,34 @@ function ensureBridgeRows(count: number) {
   while (bridgeSafePath.length < count) {
     const correctSide = Math.random() < 0.5 ? "left" : "right";
     bridgeSafePath.push(correctSide);
-    bridgePuzzles.push(generateBridgePuzzle(correctSide));
+    bridgePuzzles.push(generateBridgePuzzle(correctSide, bridgePuzzles.length));
   }
+}
+
+function bridgeWheelTotalWeight() {
+  return bridgeWheelSegments.reduce((total, segment) => total + segment.weight, 0);
+}
+
+function bridgeWheelSegmentBounds(index: number) {
+  const totalWeight = bridgeWheelTotalWeight();
+  const startWeight = bridgeWheelSegments.slice(0, index).reduce((total, segment) => total + segment.weight, 0);
+  const start = (Math.PI * 2 * startWeight) / totalWeight;
+  const end = start + (Math.PI * 2 * bridgeWheelSegments[index].weight) / totalWeight;
+  return { center: start + (end - start) / 2, end, start };
+}
+
+function randomBridgeNormalWheelIndex() {
+  const normalSegments = bridgeWheelSegments.slice(1);
+  const totalWeight = normalSegments.reduce((total, segment) => total + segment.weight, 0);
+  let roll = Math.random() * totalWeight;
+  for (let index = 0; index < normalSegments.length; index += 1) {
+    roll -= normalSegments[index].weight;
+    if (roll <= 0) {
+      return index + 1;
+    }
+  }
+
+  return bridgeWheelSegments.length - 1;
 }
 
 function resetBridgeRun() {
@@ -1375,20 +1425,23 @@ async function spinBridgeWheel() {
   bridgeJackpotOdds = Math.max(1, Number(jackpotSpin.odds) || bridgeJackpotOdds);
   const award = Math.max(0, Math.floor(Number(jackpotSpin.award) || 0));
   const hitJackpot = jackpotSpin.hit === true && award > 0;
-  const outcomeIndex = hitJackpot
-    ? bridgeJackpotSegmentIndex
-    : 1 + Math.floor(Math.random() * (bridgeWheelSegments.length - 1));
+  bridgeWheelJackpotValue = hitJackpot ? award : bridgeJackpot;
+  const outcomeIndex = hitJackpot ? bridgeJackpotSegmentIndex : randomBridgeNormalWheelIndex();
   const outcome = hitJackpot
     ? {
         color: bridgeWheelSegments[bridgeJackpotSegmentIndex].color,
         label: `JP +${formatScore(award)}`,
         apply: (points: number) => points + award,
+        weight: bridgeWheelSegments[bridgeJackpotSegmentIndex].weight,
       }
     : bridgeWheelSegments[outcomeIndex];
-  const segmentAngle = (Math.PI * 2) / bridgeWheelSegments.length;
+  const segmentBounds = bridgeWheelSegmentBounds(outcomeIndex);
   bridgePendingWheelOutcome = outcome;
   bridgeWheelStartAngle = bridgeWheelAngle;
-  bridgeWheelTargetAngle = Math.PI * 8 - Math.PI / 2 - (outcomeIndex * segmentAngle + segmentAngle / 2);
+  const targetAngle = -Math.PI / 2 - segmentBounds.center;
+  const fullTurn = Math.PI * 2;
+  const catchUpTurns = Math.ceil((bridgeWheelAngle - targetAngle) / fullTurn);
+  bridgeWheelTargetAngle = targetAngle + (catchUpTurns + 4) * fullTurn;
   bridgeWheelLabel = "Spinning";
   bridgeWheelTimer = bridgeWheelSpinDuration;
   bridgeWheelSpinTimer = bridgeWheelSpinDuration;
@@ -1402,6 +1455,9 @@ function updateBridge(dt: number) {
   }
 
   bridgeWheelTimer = Math.max(0, bridgeWheelTimer - dt);
+  if (bridgeWheelTimer <= 0 && bridgeWheelSpinTimer <= 0 && !bridgeWheelRequesting) {
+    bridgeWheelJackpotValue = bridgeJackpot;
+  }
   if (bridgeWheelSpinTimer > 0) {
     bridgeWheelSpinTimer = Math.max(0, bridgeWheelSpinTimer - dt);
     const progress = 1 - bridgeWheelSpinTimer / bridgeWheelSpinDuration;
@@ -1803,14 +1859,12 @@ function drawBridgeWheelPanel(canvasHeight: number, areas: BridgeAreas) {
   const centerX = areas.wheelX + areas.wheelWidth / 2;
   const centerY = canvasHeight * 0.33;
   const radius = Math.min(96, areas.wheelWidth * 0.34, canvasHeight * 0.2);
-  const segmentAngle = (Math.PI * 2) / bridgeWheelSegments.length;
 
   ctx.save();
   ctx.translate(centerX, centerY);
   ctx.rotate(bridgeWheelAngle);
   bridgeWheelSegments.forEach((outcome, index) => {
-    const start = index * segmentAngle;
-    const end = start + segmentAngle;
+    const { center, end, start } = bridgeWheelSegmentBounds(index);
     ctx.fillStyle =
       outcome.color ?? (index % 2 === 0 ? "rgba(127, 223, 255, 0.82)" : "rgba(255, 216, 90, 0.86)");
     ctx.strokeStyle = "rgba(8, 18, 32, 0.72)";
@@ -1823,12 +1877,19 @@ function drawBridgeWheelPanel(canvasHeight: number, areas: BridgeAreas) {
     ctx.stroke();
 
     ctx.save();
-    ctx.rotate(start + segmentAngle / 2);
+    ctx.rotate(center);
     ctx.fillStyle = "#10253d";
-    ctx.font = `900 ${Math.max(13, radius * 0.18)}px Inter, sans-serif`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText(outcome.label, radius * 0.62, 0);
+    if (index === bridgeJackpotSegmentIndex) {
+      ctx.fillStyle = "#ffffff";
+      ctx.font = `900 ${Math.max(8, radius * 0.1)}px Inter, sans-serif`;
+      ctx.fillText("JP", radius * 0.7, -6);
+      ctx.fillText(formatScore(bridgeWheelJackpotValue), radius * 0.7, 6);
+    } else {
+      ctx.font = `900 ${Math.max(13, radius * 0.18)}px Inter, sans-serif`;
+      ctx.fillText(outcome.label, radius * 0.62, 0);
+    }
     ctx.restore();
   });
   ctx.restore();
@@ -1848,15 +1909,12 @@ function drawBridgeWheelPanel(canvasHeight: number, areas: BridgeAreas) {
   ctx.fillText("Wheel", centerX, Math.max(26, centerY - radius - 42));
   ctx.font = "900 24px Inter, sans-serif";
   ctx.fillText(bridgeWheelSpinTimer > 0 ? "Spinning" : bridgeWheelLabel, centerX, centerY + radius + 38);
-  ctx.fillStyle = "#ffd85a";
-  ctx.font = "900 13px Inter, sans-serif";
-  ctx.fillText(`Jackpot ${formatScore(bridgeJackpot)}`, centerX, centerY + radius + 60);
   ctx.fillStyle = "#afefff";
   ctx.font = "800 11px Inter, sans-serif";
-  ctx.fillText(`1 in ${formatScore(bridgeJackpotOdds)} chance`, centerX, centerY + radius + 78);
+  ctx.fillText(`Jackpot odds 1 in ${formatScore(bridgeJackpotOdds)}`, centerX, centerY + radius + 60);
 
   const puzzle = bridgePuzzles[bridgeStep];
-  const promptY = Math.min(canvasHeight - 112, centerY + radius + 96);
+  const promptY = Math.min(canvasHeight - 112, centerY + radius + 78);
   ctx.fillStyle = "rgba(213, 245, 255, 0.12)";
   ctx.strokeStyle = "rgba(205, 249, 255, 0.32)";
   ctx.lineWidth = 1;
@@ -2349,6 +2407,9 @@ async function loadServerBridgeHighScores() {
 function applyBridgeJackpot(response: BridgeJackpotResponse) {
   bridgeJackpot = Math.max(0, Number(response.jackpot) || bridgeJackpot);
   bridgeJackpotOdds = Math.max(1, Number(response.odds) || bridgeJackpotOdds);
+  if (bridgeWheelSpinTimer <= 0 && !bridgeWheelRequesting) {
+    bridgeWheelJackpotValue = bridgeJackpot;
+  }
 }
 
 async function loadBridgeJackpot() {
