@@ -494,13 +494,13 @@ const bridgeWheelSegments: BridgeWheelOutcome[] = [
   ...Array.from({ length: 19 }, (_, index) => bridgeNormalWheelOutcomes[index % bridgeNormalWheelOutcomes.length]),
 ];
 const bridgeHintWheelSegments: BridgeHintOutcome[] = [
-  { color: "rgba(107, 255, 174, 0.9)", kind: "freebie", label: "Free", weight: 2 },
-  { kind: "math", label: "Add", operation: "+", weight: 3 },
-  { kind: "math", label: "Sub", operation: "-", weight: 3 },
-  { kind: "math", label: "Times", operation: "x", weight: 3 },
-  { kind: "math", label: "Divide", operation: "/", weight: 2 },
-  { kind: "math", label: "Add", operation: "+", weight: 3 },
-  { kind: "math", label: "Sub", operation: "-", weight: 3 },
+  { color: "rgba(107, 255, 174, 0.9)", kind: "freebie", label: "Free", weight: 1 },
+  { kind: "math", label: "Add", operation: "+", weight: 1 },
+  { kind: "math", label: "Sub", operation: "-", weight: 1 },
+  { kind: "math", label: "Times", operation: "x", weight: 1 },
+  { kind: "math", label: "Divide", operation: "/", weight: 1 },
+  { kind: "math", label: "Add", operation: "+", weight: 1 },
+  { kind: "math", label: "Sub", operation: "-", weight: 1 },
   { kind: "math", label: "Times", operation: "x", weight: 1 },
 ];
 let planeSoundEnabled = localStorage.getItem(planeSoundKey) !== "off";
