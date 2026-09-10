@@ -1151,8 +1151,8 @@ function endGame() {
   state = "ended";
   restartButton.hidden = false;
   overlay.hidden = false;
-  overlay.querySelector("h1")!.textContent = "Flight Complete";
-  overlay.querySelector("p")!.textContent = `Score ${formatScore(score)}. Ready for another pass?`;
+  overlay.querySelector("h1")!.textContent = "You Crashed";
+  overlay.querySelector("p")!.textContent = `Score ${formatScore(score)}.`;
   startButton.hidden = true;
 }
 
@@ -1332,10 +1332,9 @@ window.addEventListener("keydown", (event) => {
 canvas.addEventListener("pointerdown", flap);
 startButton.addEventListener("click", flap);
 restartButton.addEventListener("click", () => {
-  overlay.querySelector("h1")!.textContent = "Isaac Demo";
-  overlay.querySelector("p")!.textContent = "Tap, click, or press Space to climb.";
-  startButton.hidden = false;
-  reset("ready");
+  reset("running");
+  overlay.hidden = true;
+  startButton.hidden = true;
 });
 fullscreenButton.addEventListener("click", () => {
   void toggleFullscreen();
