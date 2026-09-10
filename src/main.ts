@@ -624,12 +624,11 @@ function drawPlaneBody(
   cockpitColor: string,
   direction: 1 | -1,
   scale = 1,
-  axisRoll = 1,
 ) {
   ctx.save();
   ctx.translate(x, y);
+  ctx.scale(direction * scale, scale);
   ctx.rotate(rotation);
-  ctx.scale(direction * scale, scale * axisRoll);
 
   ctx.fillStyle = "rgba(30, 38, 50, 0.18)";
   ctx.beginPath();
@@ -703,8 +702,7 @@ function drawPlaneBody(
 
 function drawPlane() {
   const rollProgress = rollTimer > 0 ? 1 - rollTimer / rollDuration : 0;
-  const axisRoll = rollTimer > 0 ? Math.cos(Math.PI * 2 * rollProgress) : 1;
-  const visibleAxisRoll = Math.sign(axisRoll || 1) * Math.max(0.18, Math.abs(axisRoll));
+  const rollRotation = rollTimer > 0 ? Math.PI * 2 * rollProgress : 0;
   if (crashExploded) {
     return;
   }
@@ -712,14 +710,13 @@ function drawPlane() {
   drawPlaneBody(
     plane.x,
     plane.y,
-    plane.rotation,
+    plane.rotation + rollRotation,
     "#ffd232",
     "#ffe891",
     "#f4a51c",
     "#6fc8ff",
     1,
     getPlaneScale(),
-    visibleAxisRoll,
   );
 }
 
@@ -970,6 +967,19 @@ function startImpactCrash() {
   explodePlane();
 }
 
+function startFloorCrash() {
+  const groundY = height - getGroundHeight();
+  state = "bubble-crash";
+  crashTimer = 0;
+  smokeTimer = 0;
+  crashEndTimer = 0;
+  crashExploded = false;
+  rollTimer = 0;
+  plane.y = Math.min(plane.y, groundY - plane.radius - Math.max(58, height * 0.14));
+  plane.velocity = Math.max(plane.velocity, 140);
+  plane.rotation = Math.max(plane.rotation, 0.58);
+}
+
 function startCeilingCrash() {
   state = "bubble-crash";
   crashTimer = 0;
@@ -1052,8 +1062,13 @@ function updateBubbleCrash(dt: number) {
 
   const groundY = height - getGroundHeight();
   if (plane.y + plane.radius >= groundY || crashTimer > 2.1) {
-    plane.y = Math.min(plane.y, groundY - plane.radius * 0.45);
-    explodePlane();
+    if (crashTimer < 0.52) {
+      plane.y = groundY - plane.radius - 3;
+      plane.velocity = Math.min(plane.velocity, -90);
+    } else {
+      plane.y = Math.min(plane.y, groundY - plane.radius * 0.45);
+      explodePlane();
+    }
   }
 }
 
@@ -1216,7 +1231,7 @@ function update(dt: number) {
   if (collision === "ceiling") {
     startCeilingCrash();
   } else if (collision === "floor") {
-    startImpactCrash();
+    startFloorCrash();
   } else if (collision === "obstacle") {
     startImpactCrash();
   }
