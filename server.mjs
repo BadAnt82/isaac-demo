@@ -27,6 +27,7 @@ const snakeProjectileRangeCells = 72;
 const snakeProjectileSpeedCells = 4;
 const snakeShotRecoilTicks = 4;
 const snakeBotRespawnTicks = 26;
+const snakeIdleResetDelayMs = 30000;
 const snakeBotPersonalities = [
   { decisionMax: 5, decisionMin: 2, doubleShotChance: 0.018, mistakeChance: 0.04, randomSafeChance: 0.24, shootChance: 0.012 },
   { decisionMax: 4, decisionMin: 2, doubleShotChance: 0.04, mistakeChance: 0.07, randomSafeChance: 0.18, shootChance: 0.03 },
@@ -47,6 +48,7 @@ let nextSnakeId = 1;
 let nextSnakeOrbId = 1;
 let nextSnakeProjectileId = 1;
 let snakeRoomInterval = null;
+let snakeIdleResetTimer = null;
 
 const contentTypes = {
   ".css": "text/css; charset=utf-8",
@@ -102,7 +104,11 @@ function resetSnakeBotDecision(bot) {
 }
 
 function targetSnakeBotCount() {
-  return Math.max(0, maxSnakeBotCount - Math.floor(snakePlayers.size / 2));
+  return Math.max(0, maxSnakeBotCount - Math.floor(activeSnakePlayers().length / 2));
+}
+
+function activeSnakePlayers() {
+  return [...snakePlayers.values()].filter((player) => player.active);
 }
 
 function allSnakes() {
@@ -599,6 +605,11 @@ function tickSnakeRoom() {
 }
 
 function startSnakeRoom() {
+  if (snakeIdleResetTimer) {
+    clearTimeout(snakeIdleResetTimer);
+    snakeIdleResetTimer = null;
+  }
+
   if (snakeRoomInterval) {
     return;
   }
@@ -606,16 +617,32 @@ function startSnakeRoom() {
   snakeRoomInterval = setInterval(tickSnakeRoom, 115);
 }
 
-function stopSnakeRoomIfIdle() {
-  if (snakePlayers.size > 0 || !snakeRoomInterval) {
-    return;
+function clearSnakeRoom() {
+  if (snakeIdleResetTimer) {
+    clearTimeout(snakeIdleResetTimer);
+    snakeIdleResetTimer = null;
   }
 
-  clearInterval(snakeRoomInterval);
-  snakeRoomInterval = null;
+  if (snakeRoomInterval) {
+    clearInterval(snakeRoomInterval);
+    snakeRoomInterval = null;
+  }
+
   snakeBots.clear();
   snakeOrbs.length = 0;
   snakeProjectiles.length = 0;
+}
+
+function stopSnakeRoomIfIdle() {
+  if (activeSnakePlayers().length > 0 || !snakeRoomInterval || snakeIdleResetTimer) {
+    return;
+  }
+
+  snakeIdleResetTimer = setTimeout(() => {
+    if (activeSnakePlayers().length === 0) {
+      clearSnakeRoom();
+    }
+  }, snakeIdleResetDelayMs);
 }
 
 function todayKey() {
@@ -863,6 +890,7 @@ snakeServer.on("connection", (socket) => {
   const id = `snake-${nextSnakeId}`;
   nextSnakeId += 1;
   const player = {
+    active: false,
     alive: false,
     bestLength: 3,
     color: snakeColorFromId(id),
@@ -879,7 +907,6 @@ snakeServer.on("connection", (socket) => {
     socket,
   };
   snakePlayers.set(id, player);
-  startSnakeRoom();
   socket.send(JSON.stringify({ board: snakeBoard, id, type: "snake-welcome" }));
   socket.send(JSON.stringify(snakeSnapshot()));
 
@@ -892,6 +919,8 @@ snakeServer.on("connection", (socket) => {
     }
 
     if (message.type === "snake-start" || message.type === "snake-restart") {
+      player.active = true;
+      startSnakeRoom();
       respawnSnake(player);
       broadcastSnakeState();
       return;

@@ -687,6 +687,16 @@ body.fullscreen-fallback-active {
   color: #8fffe0;
 }
 
+.snake-tile .tile-scores dt {
+  color: #c8fff0;
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.52);
+}
+
+.snake-tile .tile-scores dd {
+  color: #ffffff;
+  text-shadow: 0 0 10px rgba(117, 255, 213, 0.46);
+}
+
 .tile-snake {
   position: relative;
   display: block;
@@ -762,6 +772,29 @@ body.fullscreen-fallback-active {
   font-size: clamp(1.35rem, 4vw, 2rem);
   font-weight: 900;
   line-height: 1;
+}
+
+.snake-menu-panel .high-scores div,
+.snake-dead-panel .high-scores div {
+  border-color: rgba(137, 255, 206, 0.36);
+  background: rgba(5, 22, 31, 0.86);
+  box-shadow: inset 0 0 18px rgba(137, 255, 206, 0.06);
+}
+
+.snake-menu-panel .high-scores dt,
+.snake-dead-panel .high-scores dt {
+  color: #c8fff0;
+}
+
+.snake-menu-panel .high-scores dd,
+.snake-dead-panel .high-scores dd {
+  color: #ffffff;
+  text-shadow: 0 0 12px rgba(117, 255, 213, 0.48);
+}
+
+.snake-menu-panel .score-name,
+.snake-dead-panel .score-name {
+  color: #9af7dc;
 }
 
 .crash-panel #restart {
