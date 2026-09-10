@@ -246,8 +246,10 @@ let snakeClientId = "";
 let snakeSnapshot: SnakeSnapshot | null = null;
 let snakeConnected = false;
 let snakeStartPending = false;
+let snakeSpawnedThisRun = false;
 let snakeJoystickPointerId: number | null = null;
 let snakeJoystickPulseTimer = 0;
+let lastSnakeShootTime = 0;
 let snakeLocalLongest = 3;
 let snakeTodayLongest = 0;
 let snakeServerLongest = 0;
@@ -529,12 +531,15 @@ function connectSnakeSocket() {
 
     snakeSnapshot = message;
     const self = getLocalSnake();
+    if (self?.alive) {
+      snakeSpawnedThisRun = true;
+    }
     if (self) {
       snakeBestThisRun = Math.max(snakeBestThisRun, self.bestLength ?? 0, self.segments.length);
       writeSnakeLocalLongest(snakeBestThisRun);
       renderSnakeHighScores();
     }
-    if (state === "snake-running" && self && !self.alive) {
+    if (state === "snake-running" && self && !self.alive && snakeSpawnedThisRun) {
       showSnakeDead();
     }
     updateSnakeScore();
@@ -552,6 +557,7 @@ function connectSnakeSocket() {
 function leaveSnakeRoom() {
   window.clearTimeout(snakeReconnectTimer);
   snakeStartPending = false;
+  snakeSpawnedThisRun = false;
   snakeConnected = false;
   snakeClientId = "";
   snakeSnapshot = null;
@@ -568,6 +574,7 @@ function getLocalSnake() {
 function startSnakeGame(restart = false) {
   unlockAudio();
   snakeBestThisRun = 3;
+  snakeSpawnedThisRun = false;
   resetSnakeJoystick();
   state = "snake-running";
   scoreLabel.textContent = "Length";
@@ -616,6 +623,7 @@ function showSnakeMenu() {
 
 function showSnakeDead() {
   state = "snake-dead";
+  snakeSpawnedThisRun = false;
   resetSnakeJoystick();
   scoreLabel.textContent = "Longest";
   overlay.hidden = false;
@@ -732,12 +740,18 @@ function shootSnake() {
   if (state !== "snake-running") {
     return;
   }
+  const now = performance.now();
+  if (now - lastSnakeShootTime < 180) {
+    return;
+  }
+
   const self = getLocalSnake();
   if (!self || self.shotBank <= 0 || self.segments.length <= 2) {
     updateSnakeShootButton();
     return;
   }
 
+  lastSnakeShootTime = now;
   playTone(180, 0.08, "square", 0.032, 0, 680);
   sendSnakeMessage({ type: "snake-shoot" });
   updateSnakeShootButton();
@@ -1151,6 +1165,7 @@ function updateRollButton() {
 
 function reset(nextState: GameState) {
   readLocalHighest();
+  snakeSpawnedThisRun = false;
   resetSnakeJoystick();
   readSnakeLocalLongest();
   renderHighScores();
@@ -2191,6 +2206,15 @@ snakeJoystick.addEventListener("pointercancel", (event) => {
 snakeJoystick.addEventListener("lostpointercapture", () => {
   snakeJoystickPointerId = null;
   resetSnakeJoystick();
+});
+snakeShootButton.addEventListener("pointerdown", (event) => {
+  if (state !== "snake-running") {
+    return;
+  }
+
+  event.preventDefault();
+  unlockAudio();
+  shootSnake();
 });
 snakeShootButton.addEventListener("click", shootSnake);
 rollButton.addEventListener("click", roll);

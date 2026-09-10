@@ -15,6 +15,7 @@ const snakeBoard = {
   height: 1920,
   width: 2880,
 };
+const targetSnakeOrbCount = 54;
 const snakeDirections = {
   down: { x: 0, y: 1 },
   left: { x: -1, y: 0 },
@@ -116,7 +117,7 @@ function spawnSnakeOrb(x = randomGridCoordinate(snakeBoard.width), y = randomGri
 }
 
 function seedSnakeOrbs() {
-  while (snakeOrbs.length < 90) {
+  while (snakeOrbs.length < targetSnakeOrbCount) {
     spawnSnakeOrb();
   }
 }
@@ -141,7 +142,7 @@ function destroySnake(player) {
   }
 
   player.alive = false;
-  const drops = Math.ceil(player.segments.length * 0.5);
+  const drops = Math.floor(player.segments.length * 0.5);
   for (let index = 0; index < drops; index += 1) {
     const segment = player.segments[Math.floor((index / Math.max(1, drops)) * player.segments.length)];
     spawnSnakeOrb(segment.x, segment.y);

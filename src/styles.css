@@ -226,6 +226,7 @@ button:focus-visible {
 .snake-shoot {
   min-width: 132px;
   pointer-events: auto;
+  touch-action: manipulation;
 }
 
 .roll-action {
