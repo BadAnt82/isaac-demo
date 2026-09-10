@@ -166,11 +166,9 @@
           </div>
         </div>
         <div id="snake-controls" class="snake-controls" hidden>
-          <div class="snake-pad">
-            <button type="button" data-snake-direction="up" aria-label="Move up">Up</button>
-            <button type="button" data-snake-direction="left" aria-label="Move left">Left</button>
-            <button type="button" data-snake-direction="down" aria-label="Move down">Down</button>
-            <button type="button" data-snake-direction="right" aria-label="Move right">Right</button>
+          <div id="snake-joystick" class="snake-joystick" role="application" aria-label="Snake movement joystick">
+            <div class="snake-joystick-ring" aria-hidden="true"></div>
+            <div id="snake-joystick-thumb" class="snake-joystick-thumb" aria-hidden="true"></div>
           </div>
           <button id="snake-shoot" class="snake-shoot" type="button">Shoot (0/2)</button>
         </div>

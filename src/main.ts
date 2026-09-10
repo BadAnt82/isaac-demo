@@ -160,6 +160,7 @@ const homeButton = requireElement<HTMLButtonElement>("#home");
 const fullscreenButton = requireElement<HTMLButtonElement>("#fullscreen");
 const rollButton = requireElement<HTMLElement>("#roll");
 const snakeControls = requireElement<HTMLElement>("#snake-controls");
+const snakeJoystick = requireElement<HTMLElement>("#snake-joystick");
 const snakeStartButton = requireElement<HTMLButtonElement>("#snake-start");
 const snakeRestartButton = requireElement<HTMLButtonElement>("#snake-restart");
 const snakeShootButton = requireElement<HTMLButtonElement>("#snake-shoot");
@@ -245,6 +246,8 @@ let snakeClientId = "";
 let snakeSnapshot: SnakeSnapshot | null = null;
 let snakeConnected = false;
 let snakeStartPending = false;
+let snakeJoystickPointerId: number | null = null;
+let snakeJoystickPulseTimer = 0;
 let snakeLocalLongest = 3;
 let snakeTodayLongest = 0;
 let snakeServerLongest = 0;
@@ -565,6 +568,7 @@ function getLocalSnake() {
 function startSnakeGame(restart = false) {
   unlockAudio();
   snakeBestThisRun = 3;
+  resetSnakeJoystick();
   state = "snake-running";
   scoreLabel.textContent = "Length";
   overlay.hidden = true;
@@ -591,6 +595,7 @@ function startSnakeGame(restart = false) {
 
 function showSnakeMenu() {
   leaveSnakeRoom();
+  resetSnakeJoystick();
   readSnakeLocalLongest();
   renderSnakeHighScores();
   void loadServerSnakeHighScores();
@@ -611,6 +616,7 @@ function showSnakeMenu() {
 
 function showSnakeDead() {
   state = "snake-dead";
+  resetSnakeJoystick();
   scoreLabel.textContent = "Longest";
   overlay.hidden = false;
   overlay.classList.remove("is-platform");
@@ -652,9 +658,72 @@ function updateSnakeShootButton() {
   snakeShootButton.disabled = !canShoot;
 }
 
-function setSnakeDirection(direction: SnakeDirection) {
+function directionFromJoystick(dx: number, dy: number, deadZone: number) {
+  if (Math.hypot(dx, dy) < deadZone) {
+    return null;
+  }
+
+  if (Math.abs(dx) > Math.abs(dy)) {
+    return dx > 0 ? "right" : "left";
+  }
+
+  return dy > 0 ? "down" : "up";
+}
+
+function setSnakeJoystickOffset(x: number, y: number, active = false) {
+  snakeJoystick.style.setProperty("--stick-x", `${x}px`);
+  snakeJoystick.style.setProperty("--stick-y", `${y}px`);
+  snakeJoystick.classList.toggle("is-active", active);
+}
+
+function resetSnakeJoystick() {
+  window.clearTimeout(snakeJoystickPulseTimer);
+  snakeJoystickPulseTimer = 0;
+  setSnakeJoystickOffset(0, 0);
+}
+
+function pulseSnakeJoystick(direction: SnakeDirection) {
+  if (snakeJoystickPointerId !== null) {
+    return;
+  }
+
+  const distance = Math.min(34, snakeJoystick.getBoundingClientRect().width * 0.28);
+  const offsets: Record<SnakeDirection, SnakePoint> = {
+    down: { x: 0, y: distance },
+    left: { x: -distance, y: 0 },
+    right: { x: distance, y: 0 },
+    up: { x: 0, y: -distance },
+  };
+  setSnakeJoystickOffset(offsets[direction].x, offsets[direction].y, true);
+  window.clearTimeout(snakeJoystickPulseTimer);
+  snakeJoystickPulseTimer = window.setTimeout(resetSnakeJoystick, 170);
+}
+
+function updateSnakeJoystickFromPointer(event: PointerEvent) {
+  const rect = snakeJoystick.getBoundingClientRect();
+  const centerX = rect.left + rect.width * 0.5;
+  const centerY = rect.top + rect.height * 0.5;
+  const maxDistance = rect.width * 0.34;
+  const dx = event.clientX - centerX;
+  const dy = event.clientY - centerY;
+  const distance = Math.min(maxDistance, Math.hypot(dx, dy));
+  const angle = Math.atan2(dy, dx);
+  const stickX = Math.cos(angle) * distance;
+  const stickY = Math.sin(angle) * distance;
+  const direction = directionFromJoystick(dx, dy, rect.width * 0.14);
+
+  setSnakeJoystickOffset(stickX, stickY, true);
+  if (direction) {
+    setSnakeDirection(direction);
+  }
+}
+
+function setSnakeDirection(direction: SnakeDirection, reflectJoystick = false) {
   if (state !== "snake-running") {
     return;
+  }
+  if (reflectJoystick) {
+    pulseSnakeJoystick(direction);
   }
   sendSnakeMessage({ direction, type: "snake-direction" });
 }
@@ -1082,6 +1151,7 @@ function updateRollButton() {
 
 function reset(nextState: GameState) {
   readLocalHighest();
+  resetSnakeJoystick();
   readSnakeLocalLongest();
   renderHighScores();
   renderSnakeHighScores();
@@ -2040,7 +2110,7 @@ window.addEventListener("keydown", (event) => {
     const direction = directionByKey[event.code];
     if (direction) {
       event.preventDefault();
-      setSnakeDirection(direction);
+      setSnakeDirection(direction, true);
       return;
     }
     if (event.code === "Space") {
@@ -2083,13 +2153,44 @@ snakeRestartButton.addEventListener("click", () => {
 fullscreenButton.addEventListener("click", () => {
   void toggleFullscreen();
 });
-document.querySelectorAll<HTMLButtonElement>("[data-snake-direction]").forEach((button) => {
-  button.addEventListener("click", () => {
-    const direction = button.dataset.snakeDirection as SnakeDirection | undefined;
-    if (direction) {
-      setSnakeDirection(direction);
-    }
-  });
+snakeJoystick.addEventListener("pointerdown", (event) => {
+  if (state !== "snake-running") {
+    return;
+  }
+
+  event.preventDefault();
+  unlockAudio();
+  snakeJoystickPointerId = event.pointerId;
+  snakeJoystick.setPointerCapture(event.pointerId);
+  updateSnakeJoystickFromPointer(event);
+});
+snakeJoystick.addEventListener("pointermove", (event) => {
+  if (event.pointerId !== snakeJoystickPointerId) {
+    return;
+  }
+
+  event.preventDefault();
+  updateSnakeJoystickFromPointer(event);
+});
+snakeJoystick.addEventListener("pointerup", (event) => {
+  if (event.pointerId !== snakeJoystickPointerId) {
+    return;
+  }
+
+  snakeJoystickPointerId = null;
+  resetSnakeJoystick();
+});
+snakeJoystick.addEventListener("pointercancel", (event) => {
+  if (event.pointerId !== snakeJoystickPointerId) {
+    return;
+  }
+
+  snakeJoystickPointerId = null;
+  resetSnakeJoystick();
+});
+snakeJoystick.addEventListener("lostpointercapture", () => {
+  snakeJoystickPointerId = null;
+  resetSnakeJoystick();
 });
 snakeShootButton.addEventListener("click", shootSnake);
 rollButton.addEventListener("click", roll);
