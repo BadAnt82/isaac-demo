@@ -395,6 +395,7 @@ let bridgeWheelStartAngle = 0;
 let bridgeWheelTargetAngle = 0;
 let bridgePendingWheelOutcome: BridgeWheelOutcome | null = null;
 let bridgeWheelRequesting = false;
+let bridgeWheelSpinSequence = 0;
 let bridgeFallTimer = 0;
 let bridgeJackpot = 20;
 let bridgeWheelJackpotValue = 20;
@@ -450,6 +451,8 @@ const bridgeFallDuration = 0.95;
 const bridgeJumpDuration = 0.34;
 const bridgeSuccessDuration = 0.52;
 const bridgeScrollDuration = 0.34;
+const bridgeWheelPreSpinDuration = 0.62;
+const bridgeWheelPreSpinSpeed = Math.PI * 9;
 const bridgeWheelSpinDuration = 1.25;
 const bridgeNormalWheelOutcomes: BridgeWheelOutcome[] = [
   { label: "+1", apply: (points) => points + 1, weight: 4 },
@@ -1137,6 +1140,12 @@ function randomChoice<T>(items: T[]) {
   return items[Math.floor(Math.random() * items.length)];
 }
 
+function delay(milliseconds: number) {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, milliseconds);
+  });
+}
+
 function bridgePuzzleTier(pathIndex: number) {
   if (pathIndex < 5) {
     return 0;
@@ -1257,6 +1266,7 @@ function resetBridgeRun() {
   bridgeWheelTargetAngle = 0;
   bridgePendingWheelOutcome = null;
   bridgeWheelRequesting = false;
+  bridgeWheelSpinSequence += 1;
   bridgeFallTimer = 0;
   ensureBridgeRows(bridgeVisibleRows + 3);
 }
@@ -1349,6 +1359,7 @@ function chooseBridgeSide(side: BridgeSide) {
     bridgeJumpTimer > 0 ||
     bridgeSuccessTimer > 0 ||
     bridgeScrollTimer > 0 ||
+    bridgeWheelRequesting ||
     bridgeWheelSpinTimer > 0
   ) {
     return;
@@ -1409,9 +1420,18 @@ async function spinBridgeWheel() {
   bridgePoints -= bridgeWheelCost;
   bridgeWheelRequesting = true;
   bridgeWheelLabel = "Spinning";
+  const spinSequence = ++bridgeWheelSpinSequence;
+  playBridgeWheelSound();
   updateBridgeScore();
 
-  const jackpotSpin = await submitBridgeJackpotSpin();
+  const [jackpotSpin] = await Promise.all([
+    submitBridgeJackpotSpin(),
+    delay(bridgeWheelPreSpinDuration * 1000),
+  ]);
+  if (spinSequence !== bridgeWheelSpinSequence || state !== "bridge-running") {
+    return;
+  }
+
   bridgeWheelRequesting = false;
   if (!jackpotSpin) {
     bridgePoints += bridgeWheelCost;
@@ -1445,7 +1465,6 @@ async function spinBridgeWheel() {
   bridgeWheelLabel = "Spinning";
   bridgeWheelTimer = bridgeWheelSpinDuration;
   bridgeWheelSpinTimer = bridgeWheelSpinDuration;
-  playBridgeWheelSound();
   updateBridgeScore();
 }
 
@@ -1457,6 +1476,9 @@ function updateBridge(dt: number) {
   bridgeWheelTimer = Math.max(0, bridgeWheelTimer - dt);
   if (bridgeWheelTimer <= 0 && bridgeWheelSpinTimer <= 0 && !bridgeWheelRequesting) {
     bridgeWheelJackpotValue = bridgeJackpot;
+  }
+  if (bridgeWheelRequesting && bridgeWheelSpinTimer <= 0) {
+    bridgeWheelAngle = (bridgeWheelAngle + bridgeWheelPreSpinSpeed * dt) % (Math.PI * 2);
   }
   if (bridgeWheelSpinTimer > 0) {
     bridgeWheelSpinTimer = Math.max(0, bridgeWheelSpinTimer - dt);
@@ -1908,7 +1930,11 @@ function drawBridgeWheelPanel(canvasHeight: number, areas: BridgeAreas) {
   ctx.textBaseline = "alphabetic";
   ctx.fillText("Wheel", centerX, Math.max(26, centerY - radius - 42));
   ctx.font = "900 24px Inter, sans-serif";
-  ctx.fillText(bridgeWheelSpinTimer > 0 ? "Spinning" : bridgeWheelLabel, centerX, centerY + radius + 38);
+  ctx.fillText(
+    bridgeWheelRequesting || bridgeWheelSpinTimer > 0 ? "Spinning" : bridgeWheelLabel,
+    centerX,
+    centerY + radius + 38,
+  );
   ctx.fillStyle = "#afefff";
   ctx.font = "800 11px Inter, sans-serif";
   ctx.fillText(`Jackpot odds 1 in ${formatScore(bridgeJackpotOdds)}`, centerX, centerY + radius + 60);
