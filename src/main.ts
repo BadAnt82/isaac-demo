@@ -61,6 +61,8 @@ type PlaneDebris = {
   duration: number;
 };
 
+type CrashMotion = "spin" | "flip" | "spiral";
+
 type CollisionResult = "none" | "ceiling" | "floor" | "obstacle" | "bubble";
 
 type HighScoreResponse = {
@@ -153,10 +155,13 @@ let smokePuffs: SmokePuff[] = [];
 let planeDebris: PlaneDebris[] = [];
 let compactPlayfield = false;
 let rollTimer = 0;
+let freeRollAvailable = true;
 let crashTimer = 0;
 let smokeTimer = 0;
 let crashEndTimer = 0;
 let crashExploded = false;
+let crashMotion: CrashMotion = "spin";
+let crashDuration = 0.86;
 let localHighest = 0;
 let todayHighest = 0;
 let serverHighest = 0;
@@ -166,6 +171,7 @@ let pendingRecordName: ((name: string) => void) | null = null;
 
 const mobileBreakpoint = 700;
 const localHighScoreKey = "isaac-demo-high-score";
+const pendingScoreKey = "isaac-demo-pending-score";
 const obstacleWidth = 96;
 const obstacleSpeed = 250;
 const spawnEvery = 1.42;
@@ -330,6 +336,8 @@ async function loadServerHighScores() {
     serverHighest = Number(scores.allTimeHighest) || 0;
     serverHighName = typeof scores.allTimeName === "string" ? scores.allTimeName : "";
     renderHighScores();
+    void retryPendingServerScore();
+    void reconcileLocalHighScore();
   } catch {
     // The game should still work offline or from a static dev server.
   }
@@ -357,9 +365,33 @@ async function submitServerHighScore(finalScore: number, name = "") {
 
     const scores = await response.json() as HighScoreResponse;
     applyServerHighScores(scores);
+    if (Number(scores.todayHighest) >= finalScore || Number(scores.allTimeHighest) >= finalScore) {
+      localStorage.removeItem(pendingScoreKey);
+    }
     return scores;
   } catch {
     // Ignore score sync failures; the local score still persists.
+  }
+}
+
+function rememberPendingServerScore(finalScore: number) {
+  const pendingScore = Number(localStorage.getItem(pendingScoreKey) || 0);
+  if (!Number.isFinite(pendingScore) || finalScore > pendingScore) {
+    localStorage.setItem(pendingScoreKey, `${finalScore}`);
+  }
+}
+
+async function retryPendingServerScore() {
+  const pendingScore = Number(localStorage.getItem(pendingScoreKey) || 0);
+  if (Number.isFinite(pendingScore) && pendingScore > 0) {
+    await submitServerHighScore(pendingScore);
+  }
+}
+
+async function reconcileLocalHighScore() {
+  if (localHighest > todayHighest || localHighest > serverHighest) {
+    rememberPendingServerScore(localHighest);
+    await submitServerHighScore(localHighest);
   }
 }
 
@@ -375,6 +407,7 @@ function askForRecordName(finalScore: number, recordLabels: string[]) {
 }
 
 async function syncFinalScore(finalScore: number) {
+  rememberPendingServerScore(finalScore);
   const result = await submitServerHighScore(finalScore);
   if (!result) {
     return;
@@ -402,10 +435,10 @@ function addScore(points: number) {
 }
 
 function updateRollButton() {
-  const ready = state === "running" && score >= rollPointCost && rollTimer <= 0;
+  const ready = state === "running" && rollTimer <= 0 && (freeRollAvailable || score >= rollPointCost);
   rollButton.classList.toggle("is-disabled", !ready);
   rollButton.setAttribute("aria-disabled", `${!ready}`);
-  rollButton.textContent = "roll -2";
+  rollButton.textContent = freeRollAvailable ? "free" : "roll 2 points";
 }
 
 function reset(nextState: GameState) {
@@ -421,10 +454,13 @@ function reset(nextState: GameState) {
   spawnTimer = 0.45;
   bubbleTimer = compactPlayfield ? 1.45 : 1;
   rollTimer = 0;
+  freeRollAvailable = true;
   crashTimer = 0;
   smokeTimer = 0;
   crashEndTimer = 0;
   crashExploded = false;
+  crashMotion = "spin";
+  crashDuration = 0.86;
   plane.y = height * 0.48;
   plane.velocity = 0;
   plane.rotation = 0;
@@ -866,12 +902,16 @@ function fireBubble() {
 }
 
 function roll() {
-  if (state !== "running" || score < rollPointCost || rollTimer > 0) {
+  if (state !== "running" || rollTimer > 0 || (!freeRollAvailable && score < rollPointCost)) {
     return;
   }
 
   rollTimer = rollDuration;
-  addScore(-rollPointCost);
+  if (freeRollAvailable) {
+    freeRollAvailable = false;
+  } else {
+    addScore(-rollPointCost);
+  }
   updateRollButton();
 }
 
@@ -947,48 +987,41 @@ function startBubbleCrash(hitBubble: Bubble) {
     });
   }
 
-  state = "bubble-crash";
-  crashTimer = 0;
-  smokeTimer = 0;
-  crashEndTimer = 0;
-  crashExploded = false;
-  rollTimer = 0;
-  plane.velocity = Math.min(plane.velocity, -125);
+  startRandomCrash({ lift: true });
 }
 
 function startImpactCrash() {
-  state = "bubble-crash";
-  crashTimer = 0;
-  smokeTimer = 0;
-  crashEndTimer = 0;
-  crashExploded = false;
-  rollTimer = 0;
-  plane.velocity = 0;
-  explodePlane();
+  startRandomCrash();
 }
 
 function startFloorCrash() {
   const groundY = height - getGroundHeight();
-  state = "bubble-crash";
-  crashTimer = 0;
-  smokeTimer = 0;
-  crashEndTimer = 0;
-  crashExploded = false;
-  rollTimer = 0;
   plane.y = Math.min(plane.y, groundY - plane.radius - Math.max(58, height * 0.14));
-  plane.velocity = Math.max(plane.velocity, 140);
-  plane.rotation = Math.max(plane.rotation, 0.58);
+  startRandomCrash({ downward: true });
 }
 
 function startCeilingCrash() {
+  startRandomCrash({ downward: true });
+}
+
+function startRandomCrash(options: { downward?: boolean; lift?: boolean } = {}) {
+  const motions: CrashMotion[] = ["spin", "flip", "spiral"];
   state = "bubble-crash";
   crashTimer = 0;
   smokeTimer = 0;
   crashEndTimer = 0;
   crashExploded = false;
+  crashMotion = motions[Math.floor(Math.random() * motions.length)];
+  crashDuration = 0.68 + Math.random() * 0.5;
   rollTimer = 0;
-  plane.velocity = Math.max(plane.velocity, 120);
-  plane.rotation = Math.max(plane.rotation, 0.55);
+  if (options.lift) {
+    plane.velocity = Math.min(plane.velocity, -125);
+  } else if (options.downward) {
+    plane.velocity = Math.max(plane.velocity, 140);
+  } else {
+    plane.velocity = Math.max(plane.velocity, 40 + Math.random() * 120);
+  }
+  plane.rotation = Math.max(plane.rotation, 0.46 + Math.random() * 0.32);
 }
 
 function updateEffects(dt: number) {
@@ -1051,8 +1084,16 @@ function updateBubbleCrash(dt: number) {
 
   plane.velocity += getGravity() * 1.16 * dt;
   plane.y += plane.velocity * dt;
-  plane.x += Math.sin(crashTimer * 12) * 42 * dt;
-  plane.rotation += (compactPlayfield ? 6.8 : 7.8) * dt;
+  if (crashMotion === "spiral") {
+    plane.x += Math.sin(crashTimer * 13) * 52 * dt;
+    plane.rotation += (compactPlayfield ? 6.8 : 7.8) * dt;
+  } else if (crashMotion === "flip") {
+    plane.x += Math.sin(crashTimer * 8) * 18 * dt;
+    plane.rotation += (compactPlayfield ? 9.2 : 10.6) * dt;
+  } else {
+    plane.x += Math.cos(crashTimer * 18) * 24 * dt;
+    plane.rotation += (compactPlayfield ? 12.5 : 14) * dt;
+  }
 
   smokeTimer -= dt;
   while (smokeTimer <= 0) {
@@ -1061,7 +1102,7 @@ function updateBubbleCrash(dt: number) {
   }
 
   const groundY = height - getGroundHeight();
-  if (plane.y + plane.radius >= groundY || crashTimer > 2.1) {
+  if (plane.y + plane.radius >= groundY || crashTimer > crashDuration) {
     if (crashTimer < 0.52) {
       plane.y = groundY - plane.radius - 3;
       plane.velocity = Math.min(plane.velocity, -90);
@@ -1114,7 +1155,7 @@ function endGame() {
   restartButton.hidden = false;
   overlay.hidden = false;
   overlay.querySelector("h1")!.textContent = "Flight Complete";
-  overlay.querySelector("p")!.textContent = `Score ${score}. Ready for another pass?`;
+  overlay.querySelector("p")!.textContent = `Score ${formatScore(score)}. Ready for another pass?`;
   startButton.hidden = true;
 }
 
