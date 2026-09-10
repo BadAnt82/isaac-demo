@@ -141,8 +141,21 @@ type SnakeWelcome = {
 type BridgeSide = "left" | "right";
 
 type BridgeWheelOutcome = {
+  color?: string;
   label: string;
   apply: (points: number) => number;
+};
+
+type BridgeJackpotResponse = {
+  jackpot?: number;
+  odds?: number;
+  seed?: number;
+};
+
+type BridgeJackpotSpinResponse = BridgeJackpotResponse & {
+  award?: number;
+  contributed?: number;
+  hit?: boolean;
 };
 
 type BridgePuzzle = {
@@ -380,7 +393,10 @@ let bridgeWheelAngle = 0;
 let bridgeWheelStartAngle = 0;
 let bridgeWheelTargetAngle = 0;
 let bridgePendingWheelOutcome: BridgeWheelOutcome | null = null;
+let bridgeWheelRequesting = false;
 let bridgeFallTimer = 0;
+let bridgeJackpot = 20;
+let bridgeJackpotOdds = 20;
 
 const localHighScoreKey = "badant-games-jumpy-plane-high-score";
 const oldLocalHighScoreKeys = ["isaac-demo-high-score"];
@@ -433,13 +449,18 @@ const bridgeJumpDuration = 0.34;
 const bridgeSuccessDuration = 0.52;
 const bridgeScrollDuration = 0.34;
 const bridgeWheelSpinDuration = 1.25;
-const bridgeWheelOutcomes: BridgeWheelOutcome[] = [
+const bridgeNormalWheelOutcomes: BridgeWheelOutcome[] = [
   { label: "+1", apply: (points) => points + 1 },
   { label: "+3", apply: (points) => points + 3 },
   { label: "-1", apply: (points) => points - 1 },
   { label: "-2", apply: (points) => points - 2 },
   { label: "x2", apply: (points) => points * 2 },
   { label: "/2", apply: (points) => Math.floor(points / 2) },
+];
+const bridgeJackpotSegmentIndex = 0;
+const bridgeWheelSegments: BridgeWheelOutcome[] = [
+  { color: "rgba(255, 95, 118, 0.94)", label: "JP", apply: (points) => points },
+  ...Array.from({ length: 19 }, (_, index) => bridgeNormalWheelOutcomes[index % bridgeNormalWheelOutcomes.length]),
 ];
 let planeSoundEnabled = localStorage.getItem(planeSoundKey) !== "off";
 let snakeSoundEnabled = localStorage.getItem(snakeSoundKey) !== "off";
@@ -973,6 +994,7 @@ function showBridgeMenu() {
   readBridgeLocalScores();
   renderBridgeHighScores();
   void loadServerBridgeHighScores();
+  void loadBridgeJackpot();
   state = "bridge-menu";
   scoreEl.textContent = "0";
   overlay.hidden = false;
@@ -1184,6 +1206,7 @@ function resetBridgeRun() {
   bridgeWheelStartAngle = 0;
   bridgeWheelTargetAngle = 0;
   bridgePendingWheelOutcome = null;
+  bridgeWheelRequesting = false;
   bridgeFallTimer = 0;
   ensureBridgeRows(bridgeVisibleRows + 3);
 }
@@ -1194,6 +1217,7 @@ function updateBridgeControls() {
     bridgeJumpTimer > 0 ||
     bridgeSuccessTimer > 0 ||
     bridgeScrollTimer > 0 ||
+    bridgeWheelRequesting ||
     bridgeWheelSpinTimer > 0;
   bridgeSpinButton.disabled = state !== "bridge-running" || bridgeBusy || bridgePoints < bridgeWheelCost;
   bridgeSpinButton.textContent = bridgePoints >= bridgeWheelCost ? "Spin wheel (-1)" : "Need 1 point";
@@ -1242,6 +1266,7 @@ function startBridgeGame() {
   setSnakeLayout(false);
   resetSnakeJoystick();
   resetBridgeRun();
+  void loadBridgeJackpot();
   scoreLabel.textContent = "Points";
   state = "bridge-running";
   overlay.hidden = true;
@@ -1316,13 +1341,14 @@ function resolveBridgeChoice() {
   updateBridgeControls();
 }
 
-function spinBridgeWheel() {
+async function spinBridgeWheel() {
   if (
     state !== "bridge-running" ||
     bridgeFallTimer > 0 ||
     bridgeJumpTimer > 0 ||
     bridgeSuccessTimer > 0 ||
     bridgeScrollTimer > 0 ||
+    bridgeWheelRequesting ||
     bridgeWheelSpinTimer > 0 ||
     bridgePoints < bridgeWheelCost
   ) {
@@ -1331,9 +1357,35 @@ function spinBridgeWheel() {
 
   unlockAudio();
   bridgePoints -= bridgeWheelCost;
-  const outcomeIndex = Math.floor(Math.random() * bridgeWheelOutcomes.length);
-  const outcome = bridgeWheelOutcomes[outcomeIndex];
-  const segmentAngle = (Math.PI * 2) / bridgeWheelOutcomes.length;
+  bridgeWheelRequesting = true;
+  bridgeWheelLabel = "Spinning";
+  updateBridgeScore();
+
+  const jackpotSpin = await submitBridgeJackpotSpin();
+  bridgeWheelRequesting = false;
+  if (!jackpotSpin) {
+    bridgePoints += bridgeWheelCost;
+    bridgeWheelLabel = "Offline";
+    bridgeWheelTimer = 1.4;
+    updateBridgeScore();
+    return;
+  }
+
+  bridgeJackpot = Math.max(0, Number(jackpotSpin.jackpot) || bridgeJackpot);
+  bridgeJackpotOdds = Math.max(1, Number(jackpotSpin.odds) || bridgeJackpotOdds);
+  const award = Math.max(0, Math.floor(Number(jackpotSpin.award) || 0));
+  const hitJackpot = jackpotSpin.hit === true && award > 0;
+  const outcomeIndex = hitJackpot
+    ? bridgeJackpotSegmentIndex
+    : 1 + Math.floor(Math.random() * (bridgeWheelSegments.length - 1));
+  const outcome = hitJackpot
+    ? {
+        color: bridgeWheelSegments[bridgeJackpotSegmentIndex].color,
+        label: `JP +${formatScore(award)}`,
+        apply: (points: number) => points + award,
+      }
+    : bridgeWheelSegments[outcomeIndex];
+  const segmentAngle = (Math.PI * 2) / bridgeWheelSegments.length;
   bridgePendingWheelOutcome = outcome;
   bridgeWheelStartAngle = bridgeWheelAngle;
   bridgeWheelTargetAngle = Math.PI * 8 - Math.PI / 2 - (outcomeIndex * segmentAngle + segmentAngle / 2);
@@ -1751,15 +1803,16 @@ function drawBridgeWheelPanel(canvasHeight: number, areas: BridgeAreas) {
   const centerX = areas.wheelX + areas.wheelWidth / 2;
   const centerY = canvasHeight * 0.33;
   const radius = Math.min(96, areas.wheelWidth * 0.34, canvasHeight * 0.2);
-  const segmentAngle = (Math.PI * 2) / bridgeWheelOutcomes.length;
+  const segmentAngle = (Math.PI * 2) / bridgeWheelSegments.length;
 
   ctx.save();
   ctx.translate(centerX, centerY);
   ctx.rotate(bridgeWheelAngle);
-  bridgeWheelOutcomes.forEach((outcome, index) => {
+  bridgeWheelSegments.forEach((outcome, index) => {
     const start = index * segmentAngle;
     const end = start + segmentAngle;
-    ctx.fillStyle = index % 2 === 0 ? "rgba(127, 223, 255, 0.82)" : "rgba(255, 216, 90, 0.86)";
+    ctx.fillStyle =
+      outcome.color ?? (index % 2 === 0 ? "rgba(127, 223, 255, 0.82)" : "rgba(255, 216, 90, 0.86)");
     ctx.strokeStyle = "rgba(8, 18, 32, 0.72)";
     ctx.lineWidth = 2;
     ctx.beginPath();
@@ -1795,9 +1848,15 @@ function drawBridgeWheelPanel(canvasHeight: number, areas: BridgeAreas) {
   ctx.fillText("Wheel", centerX, Math.max(26, centerY - radius - 42));
   ctx.font = "900 24px Inter, sans-serif";
   ctx.fillText(bridgeWheelSpinTimer > 0 ? "Spinning" : bridgeWheelLabel, centerX, centerY + radius + 38);
+  ctx.fillStyle = "#ffd85a";
+  ctx.font = "900 13px Inter, sans-serif";
+  ctx.fillText(`Jackpot ${formatScore(bridgeJackpot)}`, centerX, centerY + radius + 60);
+  ctx.fillStyle = "#afefff";
+  ctx.font = "800 11px Inter, sans-serif";
+  ctx.fillText(`1 in ${formatScore(bridgeJackpotOdds)} chance`, centerX, centerY + radius + 78);
 
   const puzzle = bridgePuzzles[bridgeStep];
-  const promptY = Math.min(canvasHeight - 112, centerY + radius + 78);
+  const promptY = Math.min(canvasHeight - 112, centerY + radius + 96);
   ctx.fillStyle = "rgba(213, 245, 255, 0.12)";
   ctx.strokeStyle = "rgba(205, 249, 255, 0.32)";
   ctx.lineWidth = 1;
@@ -1989,7 +2048,7 @@ function drawBridgeGame(time: number) {
   ctx.fillText(`Tiles ${formatScore(bridgeTiles)}`, 18, 34);
   ctx.fillText(`Points ${formatScore(bridgePoints)}`, 18, 60);
   ctx.textAlign = "right";
-  ctx.fillText(`Wheel ${bridgeWheelTimer > 0 ? bridgeWheelLabel : "costs 1"}`, canvasWidth - 18, 34);
+  ctx.fillText(`Jackpot ${formatScore(bridgeJackpot)}`, canvasWidth - 18, 34);
   ctx.textAlign = "left";
 }
 
@@ -2284,6 +2343,42 @@ async function loadServerBridgeHighScores() {
     void reconcileBridgeLocalScores();
   } catch {
     // Glass Bridge can still run locally if the score endpoints are unavailable.
+  }
+}
+
+function applyBridgeJackpot(response: BridgeJackpotResponse) {
+  bridgeJackpot = Math.max(0, Number(response.jackpot) || bridgeJackpot);
+  bridgeJackpotOdds = Math.max(1, Number(response.odds) || bridgeJackpotOdds);
+}
+
+async function loadBridgeJackpot() {
+  try {
+    const response = await fetch("/api/glass-bridge-jackpot", { cache: "no-store" });
+    if (!response.ok) {
+      return;
+    }
+
+    applyBridgeJackpot(await response.json() as BridgeJackpotResponse);
+  } catch {
+    // The game can still run if the jackpot endpoint is temporarily unavailable.
+  }
+}
+
+async function submitBridgeJackpotSpin() {
+  try {
+    const response = await fetch("/api/glass-bridge-jackpot-spin", {
+      cache: "no-store",
+      method: "POST",
+    });
+    if (!response.ok) {
+      return null;
+    }
+
+    const spin = await response.json() as BridgeJackpotSpinResponse;
+    applyBridgeJackpot(spin);
+    return spin;
+  } catch {
+    return null;
   }
 }
 
@@ -3504,7 +3599,7 @@ window.addEventListener("keydown", (event) => {
     }
     if (event.code === "Space" || event.code === "KeyS") {
       event.preventDefault();
-      spinBridgeWheel();
+      void spinBridgeWheel();
       return;
     }
   }
@@ -3627,7 +3722,9 @@ snakeRestartButton.addEventListener("click", () => {
 });
 bridgeStartButton.addEventListener("click", startBridgeGame);
 bridgeRestartButton.addEventListener("click", startBridgeGame);
-bridgeSpinButton.addEventListener("click", spinBridgeWheel);
+bridgeSpinButton.addEventListener("click", () => {
+  void spinBridgeWheel();
+});
 fullscreenButton.addEventListener("click", () => {
   void toggleFullscreen();
 });
@@ -3710,6 +3807,7 @@ renderBridgeHighScores();
 void loadServerHighScores();
 void loadServerSnakeHighScores();
 void loadServerBridgeHighScores();
+void loadBridgeJackpot();
 resize();
 updateFullscreenButton();
 reset("platform");

@@ -11,11 +11,15 @@ const snakeStorePath = process.env.SNAKE_SCORE_STORE_PATH || resolve(__dirname, 
 const bridgeTileStorePath = process.env.BRIDGE_TILE_SCORE_STORE_PATH || resolve(__dirname, "data", "glass-bridge-tile-scores.json");
 const bridgePointStorePath =
   process.env.BRIDGE_POINT_SCORE_STORE_PATH || resolve(__dirname, "data", "glass-bridge-point-scores.json");
+const bridgeJackpotStorePath =
+  process.env.BRIDGE_JACKPOT_STORE_PATH || resolve(__dirname, "data", "glass-bridge-jackpot.json");
 const issueStorePaths = {
   "glass-bridge": process.env.GLASS_BRIDGE_ISSUE_STORE_PATH || resolve(__dirname, "data", "glass-bridge-issues.json"),
   "jumpy-plane": process.env.JUMPY_PLANE_ISSUE_STORE_PATH || resolve(__dirname, "data", "jumpy-plane-issues.json"),
   "shooting-snakes": process.env.SHOOTING_SNAKES_ISSUE_STORE_PATH || resolve(__dirname, "data", "shooting-snakes-issues.json"),
 };
+const bridgeJackpotSeed = 20;
+const bridgeJackpotHitOdds = 20;
 const port = Number(process.env.PORT || 3000);
 const timeZone = process.env.SCORE_TIME_ZONE || "America/Los_Angeles";
 const snakeBoard = {
@@ -758,6 +762,38 @@ function writeIssues(issues, path) {
   writeFileSync(path, `${JSON.stringify(issues, null, 2)}\n`);
 }
 
+function normalizeBridgeJackpot(store) {
+  const value = Number(store?.value);
+  return {
+    value: Number.isFinite(value) && value >= 0 ? Math.floor(value) : bridgeJackpotSeed,
+  };
+}
+
+function readBridgeJackpot() {
+  try {
+    if (!existsSync(bridgeJackpotStorePath)) {
+      return { value: bridgeJackpotSeed };
+    }
+
+    return normalizeBridgeJackpot(JSON.parse(readFileSync(bridgeJackpotStorePath, "utf8")));
+  } catch {
+    return { value: bridgeJackpotSeed };
+  }
+}
+
+function writeBridgeJackpot(store) {
+  mkdirSync(resolve(bridgeJackpotStorePath, ".."), { recursive: true });
+  writeFileSync(bridgeJackpotStorePath, `${JSON.stringify(normalizeBridgeJackpot(store), null, 2)}\n`);
+}
+
+function bridgeJackpotSnapshot() {
+  return {
+    jackpot: readBridgeJackpot().value,
+    odds: bridgeJackpotHitOdds,
+    seed: bridgeJackpotSeed,
+  };
+}
+
 function cleanIssueText(value) {
   return (typeof value === "string" ? value.trim() : "").slice(0, 900);
 }
@@ -807,6 +843,11 @@ async function handleApi(request, response) {
     return true;
   }
 
+  if (request.url === "/api/glass-bridge-jackpot" && request.method === "GET") {
+    sendJson(response, 200, bridgeJackpotSnapshot());
+    return true;
+  }
+
   if (request.url === "/api/high-scores" && request.method === "POST") {
     await handleScorePost(request, response, storePath);
     return true;
@@ -827,6 +868,11 @@ async function handleApi(request, response) {
     return true;
   }
 
+  if (request.url === "/api/glass-bridge-jackpot-spin" && request.method === "POST") {
+    handleBridgeJackpotSpin(response);
+    return true;
+  }
+
   if (url.pathname.startsWith("/api/issues/") && request.method === "POST") {
     const game = decodeURIComponent(url.pathname.replace("/api/issues/", ""));
     await handleIssuePost(request, response, game);
@@ -834,6 +880,23 @@ async function handleApi(request, response) {
   }
 
   return false;
+}
+
+function handleBridgeJackpotSpin(response) {
+  const current = readBridgeJackpot();
+  const contributedValue = current.value + 1;
+  const hit = Math.floor(Math.random() * bridgeJackpotHitOdds) === 0;
+  const award = hit ? contributedValue : 0;
+  const nextValue = hit ? bridgeJackpotSeed : contributedValue;
+  writeBridgeJackpot({ value: nextValue });
+  sendJson(response, 200, {
+    award,
+    contributed: 1,
+    hit,
+    jackpot: nextValue,
+    odds: bridgeJackpotHitOdds,
+    seed: bridgeJackpotSeed,
+  });
 }
 
 async function handleIssuePost(request, response, game) {
