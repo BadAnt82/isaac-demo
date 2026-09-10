@@ -20,7 +20,7 @@ const snakeBoard = {
   width: 2880,
 };
 const targetSnakeOrbCount = 54;
-const maxSnakeOrbCount = 84;
+const maxSnakeOrbCount = 132;
 const maxSnakeBotCount = 10;
 const maxSnakeShotBank = 5;
 const snakeProjectileRangeCells = 72;
@@ -28,6 +28,7 @@ const snakeProjectileSpeedCells = 4;
 const snakeShotRecoilTicks = 4;
 const snakeBotRespawnTicks = 26;
 const snakeIdleResetDelayMs = 30000;
+const snakeRandomOrbSpawnIntervalMs = 1000;
 const snakeBotPersonalities = [
   { decisionMax: 5, decisionMin: 2, doubleShotChance: 0.018, mistakeChance: 0.04, randomSafeChance: 0.24, shootChance: 0.012 },
   { decisionMax: 4, decisionMin: 2, doubleShotChance: 0.04, mistakeChance: 0.07, randomSafeChance: 0.18, shootChance: 0.03 },
@@ -49,6 +50,7 @@ let nextSnakeOrbId = 1;
 let nextSnakeProjectileId = 1;
 let snakeRoomInterval = null;
 let snakeIdleResetTimer = null;
+let lastSnakeRandomOrbSpawnAt = 0;
 
 const contentTypes = {
   ".css": "text/css; charset=utf-8",
@@ -182,11 +184,26 @@ function spawnSnakeOrb(x = randomGridCoordinate(snakeBoard.width), y = randomGri
   return true;
 }
 
-function seedSnakeOrbs() {
-  while (snakeOrbs.length < targetSnakeOrbCount) {
-    if (!spawnSnakeOrb()) {
-      break;
+function seedSnakeOrbs(options = {}) {
+  const now = Date.now();
+  const instant = Boolean(options.instant);
+
+  if (instant) {
+    while (snakeOrbs.length < targetSnakeOrbCount) {
+      if (!spawnSnakeOrb()) {
+        break;
+      }
     }
+    lastSnakeRandomOrbSpawnAt = now;
+    return;
+  }
+
+  if (snakeOrbs.length >= targetSnakeOrbCount || now - lastSnakeRandomOrbSpawnAt < snakeRandomOrbSpawnIntervalMs) {
+    return;
+  }
+
+  if (spawnSnakeOrb()) {
+    lastSnakeRandomOrbSpawnAt = now;
   }
 }
 
@@ -460,7 +477,6 @@ function updateSnakePlayer(player) {
       player.bestLength = Math.max(player.bestLength || 3, player.length);
     }
     snakeOrbs.splice(eatenIndex, 1);
-    spawnSnakeOrb();
   }
   trimSnake(player);
 }
@@ -614,6 +630,9 @@ function startSnakeRoom() {
     return;
   }
 
+  if (snakeOrbs.length === 0) {
+    seedSnakeOrbs({ instant: true });
+  }
   snakeRoomInterval = setInterval(tickSnakeRoom, 115);
 }
 
@@ -631,6 +650,7 @@ function clearSnakeRoom() {
   snakeBots.clear();
   snakeOrbs.length = 0;
   snakeProjectiles.length = 0;
+  lastSnakeRandomOrbSpawnAt = 0;
 }
 
 function stopSnakeRoomIfIdle() {
