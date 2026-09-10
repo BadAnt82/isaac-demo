@@ -169,7 +169,6 @@ let todayHighName = "";
 let serverHighName = "";
 let pendingRecordName: ((name: string) => void) | null = null;
 
-const mobileBreakpoint = 700;
 const localHighScoreKey = "isaac-demo-high-score";
 const pendingScoreKey = "isaac-demo-pending-score";
 const obstacleWidth = 96;
@@ -207,17 +206,15 @@ type FullscreenDocument = Document & {
 
 function resize() {
   const box = canvas.getBoundingClientRect();
-  compactPlayfield =
-    window.matchMedia(`(max-width: ${mobileBreakpoint}px)`).matches ||
-    window.matchMedia("(hover: none) and (pointer: coarse)").matches;
+  compactPlayfield = true;
   const cssWidth = Math.max(320, Math.floor(box.width));
-  const cssHeight = compactPlayfield ? Math.max(1, Math.floor(box.height)) : Math.max(360, Math.floor(box.height));
+  const cssHeight = Math.max(1, Math.floor(box.height));
   dpr = Math.min(window.devicePixelRatio || 1, 2);
-  width = compactPlayfield ? compactWorldWidth : cssWidth;
-  height = compactPlayfield ? compactWorldHeight : cssHeight;
-  renderScale = compactPlayfield ? Math.min(cssWidth / width, cssHeight / height) : 1;
-  renderOffsetX = compactPlayfield ? (cssWidth - width * renderScale) / 2 : 0;
-  renderOffsetY = compactPlayfield ? (cssHeight - height * renderScale) / 2 : 0;
+  width = compactWorldWidth;
+  height = compactWorldHeight;
+  renderScale = Math.min(cssWidth / width, cssHeight / height);
+  renderOffsetX = (cssWidth - width * renderScale) / 2;
+  renderOffsetY = (cssHeight - height * renderScale) / 2;
   canvas.width = Math.floor(cssWidth * dpr);
   canvas.height = Math.floor(cssHeight * dpr);
   ctx.setTransform(
@@ -438,7 +435,7 @@ function updateRollButton() {
   const ready = state === "running" && rollTimer <= 0 && (freeRollAvailable || score >= rollPointCost);
   rollButton.classList.toggle("is-disabled", !ready);
   rollButton.setAttribute("aria-disabled", `${!ready}`);
-  rollButton.textContent = freeRollAvailable ? "free" : "roll 2 points";
+  rollButton.textContent = freeRollAvailable ? "roll (free)" : "roll (-2 points)";
 }
 
 function reset(nextState: GameState) {
