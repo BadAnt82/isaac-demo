@@ -169,6 +169,7 @@ const planeOptionsButton = requireElement<HTMLButtonElement>("#plane-options");
 const planeMenuBackButton = requireElement<HTMLButtonElement>("#plane-menu-back");
 const planeOptionsBackButton = requireElement<HTMLButtonElement>("#plane-options-back");
 const planeSoundToggle = requireElement<HTMLButtonElement>("#plane-sound-toggle");
+const planeReportIssueButton = requireElement<HTMLButtonElement>("#plane-report-issue");
 const planeIssueForm = requireElement<HTMLFormElement>("#plane-issue-form");
 const planeIssueText = requireElement<HTMLTextAreaElement>("#plane-issue-text");
 const planeIssueStatus = requireElement<HTMLElement>("#plane-issue-status");
@@ -199,6 +200,7 @@ const snakeOptionsButton = requireElement<HTMLButtonElement>("#snake-options");
 const snakeMenuBackButton = requireElement<HTMLButtonElement>("#snake-menu-back");
 const snakeOptionsBackButton = requireElement<HTMLButtonElement>("#snake-options-back");
 const snakeSoundToggle = requireElement<HTMLButtonElement>("#snake-sound-toggle");
+const snakeReportIssueButton = requireElement<HTMLButtonElement>("#snake-report-issue");
 const snakeIssueForm = requireElement<HTMLFormElement>("#snake-issue-form");
 const snakeIssueText = requireElement<HTMLTextAreaElement>("#snake-issue-text");
 const snakeIssueStatus = requireElement<HTMLElement>("#snake-issue-status");
@@ -711,7 +713,7 @@ function showPlaneOptions() {
   startButton.hidden = true;
   restartButton.hidden = true;
   snakeControls.hidden = true;
-  planeIssueStatus.textContent = "";
+  hideIssueForms();
   updateSoundButtons();
   updateRollButton();
 }
@@ -799,7 +801,7 @@ function showSnakeOptions() {
   scorePanel.hidden = true;
   homeButton.hidden = false;
   snakeControls.hidden = true;
-  snakeIssueStatus.textContent = "";
+  hideIssueForms();
   updateSoundButtons();
   updateRollButton();
 }
@@ -1138,6 +1140,25 @@ function updateSoundButtons() {
   planeSoundToggle.setAttribute("aria-pressed", `${planeSoundEnabled}`);
   snakeSoundToggle.textContent = snakeSoundEnabled ? "Sound on" : "Sound off";
   snakeSoundToggle.setAttribute("aria-pressed", `${snakeSoundEnabled}`);
+}
+
+function hideIssueForms() {
+  planeIssueForm.hidden = true;
+  planeIssueStatus.textContent = "";
+  snakeIssueForm.hidden = true;
+  snakeIssueStatus.textContent = "";
+}
+
+function showPlaneIssueForm() {
+  planeIssueForm.hidden = false;
+  planeIssueStatus.textContent = "";
+  planeIssueText.focus();
+}
+
+function showSnakeIssueForm() {
+  snakeIssueForm.hidden = false;
+  snakeIssueStatus.textContent = "";
+  snakeIssueText.focus();
 }
 
 function setPlaneSound(enabled: boolean) {
@@ -2418,6 +2439,7 @@ planeSoundToggle.addEventListener("click", () => {
   unlockAudio();
   setPlaneSound(!planeSoundEnabled);
 });
+planeReportIssueButton.addEventListener("click", showPlaneIssueForm);
 planeIssueForm.addEventListener("submit", (event) => {
   event.preventDefault();
   const message = planeIssueText.value.trim();
@@ -2431,6 +2453,10 @@ planeIssueForm.addEventListener("submit", (event) => {
     .then(() => {
       planeIssueText.value = "";
       planeIssueStatus.textContent = "Issue saved.";
+      window.setTimeout(() => {
+        planeIssueForm.hidden = true;
+        planeIssueStatus.textContent = "";
+      }, 900);
     })
     .catch(() => {
       planeIssueStatus.textContent = "Issue did not save.";
@@ -2456,6 +2482,7 @@ snakeSoundToggle.addEventListener("click", () => {
   unlockAudio();
   setSnakeSound(!snakeSoundEnabled);
 });
+snakeReportIssueButton.addEventListener("click", showSnakeIssueForm);
 snakeIssueForm.addEventListener("submit", (event) => {
   event.preventDefault();
   const message = snakeIssueText.value.trim();
@@ -2469,6 +2496,10 @@ snakeIssueForm.addEventListener("submit", (event) => {
     .then(() => {
       snakeIssueText.value = "";
       snakeIssueStatus.textContent = "Issue saved.";
+      window.setTimeout(() => {
+        snakeIssueForm.hidden = true;
+        snakeIssueStatus.textContent = "";
+      }, 900);
     })
     .catch(() => {
       snakeIssueStatus.textContent = "Issue did not save.";

@@ -443,6 +443,10 @@ body.fullscreen-fallback-active {
   text-align: left;
 }
 
+.issue-form[hidden] {
+  display: none;
+}
+
 .issue-form label {
   color: #26384d;
   font-size: 0.82rem;
