@@ -958,7 +958,8 @@ body.fullscreen-fallback-active {
   bottom: max(14px, env(safe-area-inset-bottom));
   left: max(14px, env(safe-area-inset-left));
   display: grid;
-  grid-template-columns: 1fr minmax(128px, 1.15fr) 1fr;
+  grid-template-columns: minmax(150px, 220px);
+  justify-content: center;
   gap: 10px;
 }
 
@@ -1096,7 +1097,7 @@ body.fullscreen-fallback-active {
     right: 12px;
     bottom: 12px;
     left: 12px;
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(136px, 190px);
     gap: 6px;
   }
 
