@@ -82,7 +82,7 @@ button:focus-visible {
   display: block;
   width: 100%;
   height: 100%;
-  touch-action: manipulation;
+  touch-action: none;
 }
 
 .hud {
@@ -781,6 +781,57 @@ body.fullscreen-fallback-active {
   transform: rotateX(28deg);
 }
 
+.pixel-tile {
+  background:
+    linear-gradient(180deg, rgba(21, 28, 47, 0.96), rgba(42, 32, 63, 0.94)),
+    #151c2f;
+  color: #f7fbff;
+}
+
+.pixel-tile:hover {
+  background: linear-gradient(180deg, rgba(30, 39, 65, 0.98), rgba(56, 42, 82, 0.96));
+}
+
+.pixel-tile .tile-scores dt {
+  color: #d8f2ff;
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.5);
+}
+
+.pixel-tile .tile-scores dd {
+  color: #ffffff;
+  text-shadow: 0 0 10px rgba(80, 215, 255, 0.48);
+}
+
+.tile-pixel {
+  display: grid;
+  width: 84px;
+  height: 56px;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+  filter: drop-shadow(0 0 12px rgba(80, 215, 255, 0.48));
+}
+
+.tile-pixel span {
+  border: 1px solid rgba(247, 251, 255, 0.52);
+  border-radius: 3px;
+  background: #606773;
+}
+
+.tile-pixel span:nth-child(2),
+.tile-pixel span:nth-child(4),
+.tile-pixel span:nth-child(9) {
+  background: #35d7ff;
+}
+
+.tile-pixel span:nth-child(3),
+.tile-pixel span:nth-child(7) {
+  background: #ff4d75;
+}
+
+.tile-pixel span:nth-child(6) {
+  background: #ffd84f;
+}
+
 .high-scores {
   display: grid;
   width: min(100%, 540px);
@@ -869,6 +920,51 @@ body.fullscreen-fallback-active {
 .bridge-menu-panel .score-name,
 .bridge-dead-panel .score-name {
   color: #afefff;
+}
+
+.pixel-menu-panel .high-scores div {
+  border-color: rgba(80, 215, 255, 0.36);
+  background: rgba(8, 14, 29, 0.86);
+  box-shadow: inset 0 0 18px rgba(80, 215, 255, 0.07);
+}
+
+.pixel-menu-panel .high-scores dt {
+  color: #d8f2ff;
+}
+
+.pixel-menu-panel .high-scores dd {
+  color: #ffffff;
+  text-shadow: 0 0 12px rgba(80, 215, 255, 0.5);
+}
+
+.game-config {
+  display: grid;
+  width: min(100%, 420px);
+  grid-template-columns: minmax(112px, 0.75fr) minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+}
+
+.game-config label {
+  color: #26384d;
+  font-size: 0.78rem;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.game-config input,
+.game-config select {
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid rgba(22, 32, 52, 0.28);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.82);
+  color: #162034;
+  font: inherit;
+  font-weight: 800;
+  padding: 0 12px;
 }
 
 .crash-panel #restart {

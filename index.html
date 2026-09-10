@@ -121,6 +121,36 @@
                   </dl>
                 </span>
               </button>
+              <button id="select-pixel" class="game-tile pixel-tile" type="button" aria-label="Open Pixel Wars">
+                <span class="tile-pixel" aria-hidden="true">
+                  <span></span>
+                  <span></span>
+                  <span></span>
+                  <span></span>
+                  <span></span>
+                  <span></span>
+                  <span></span>
+                  <span></span>
+                  <span></span>
+                </span>
+                <span class="tile-details">
+                  <strong>Pixel Wars</strong>
+                  <dl class="tile-scores" aria-label="Pixel Wars stats">
+                    <div>
+                      <dt>Best claim</dt>
+                      <dd data-pixel-score="local">0%</dd>
+                    </div>
+                    <div>
+                      <dt>Goal</dt>
+                      <dd>100%</dd>
+                    </div>
+                    <div>
+                      <dt>Mode</dt>
+                      <dd>Turret</dd>
+                    </div>
+                  </dl>
+                </span>
+              </button>
             </div>
           </div>
           <div id="game-menu-panel" class="overlay-panel game-menu-panel" hidden>
@@ -251,6 +281,44 @@
             <button id="bridge-sound-toggle" type="button">Sound on</button>
             <button id="bridge-report-issue" type="button">Report issue</button>
             <button id="bridge-options-back" type="button">Back</button>
+          </div>
+          <div id="pixel-menu-panel" class="overlay-panel pixel-menu-panel" hidden>
+            <h1>Pixel Wars</h1>
+            <dl class="high-scores" aria-label="Pixel Wars stats">
+              <div>
+                <dt>Best claim</dt>
+                <dd data-pixel-score="local">0%</dd>
+              </div>
+              <div>
+                <dt>Goal</dt>
+                <dd>100%</dd>
+              </div>
+              <div>
+                <dt>Turrets</dt>
+                <dd id="pixel-menu-turrets">4</dd>
+              </div>
+            </dl>
+            <form id="pixel-config" class="game-config">
+              <label for="pixel-mode">Match</label>
+              <select id="pixel-mode">
+                <option value="single">Single player</option>
+                <option value="multi">Multiplayer host</option>
+              </select>
+              <label for="pixel-bots">AI bots</label>
+              <input id="pixel-bots" type="number" min="0" max="12" value="3" />
+              <label for="pixel-humans">Human players</label>
+              <input id="pixel-humans" type="number" min="1" max="8" value="1" />
+            </form>
+            <div class="menu-actions">
+              <button id="pixel-start" type="button">Start</button>
+              <button id="pixel-options" type="button">Options</button>
+              <button id="pixel-menu-back" type="button">Back to games</button>
+            </div>
+          </div>
+          <div id="pixel-options-panel" class="overlay-panel options-panel" hidden>
+            <h1>Pixel Wars Options</h1>
+            <button id="pixel-report-issue" type="button">Report issue</button>
+            <button id="pixel-options-back" type="button">Back</button>
           </div>
           <div id="report-panel" class="overlay-panel options-panel report-panel" hidden>
             <h1>Report Issue</h1>

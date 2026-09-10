@@ -15,7 +15,10 @@ type GameState =
   | "bridge-menu"
   | "bridge-options"
   | "bridge-running"
-  | "bridge-dead";
+  | "bridge-dead"
+  | "pixel-menu"
+  | "pixel-options"
+  | "pixel-running";
 
 type Obstacle = {
   x: number;
@@ -198,6 +201,49 @@ type BridgeAreas = {
   wheelX: number;
 };
 
+type PixelMode = "single" | "multi";
+
+type PixelOwner = "neutral" | "player" | `bot-${number}` | `human-${number}`;
+
+type PixelTurret = {
+  aiTargetTimer: number;
+  angle: number;
+  arc: number;
+  color: string;
+  fireCooldown: number;
+  fireInterval: number;
+  homeAngle: number;
+  id: PixelOwner;
+  isPlayer: boolean;
+  rotateDirection: number;
+  rotateSpeed: number;
+  x: number;
+  y: number;
+};
+
+type PixelShot = {
+  color: string;
+  lastCell: number;
+  life: number;
+  owner: PixelOwner;
+  vx: number;
+  vy: number;
+  x: number;
+  y: number;
+};
+
+type PixelBoardLayout = {
+  boardH: number;
+  boardW: number;
+  cellH: number;
+  cellW: number;
+  canvasH: number;
+  canvasW: number;
+  panelX: number;
+  x: number;
+  y: number;
+};
+
 function requireElement<T extends Element>(selector: string) {
   const element = document.querySelector<T>(selector);
   if (!element) {
@@ -248,6 +294,7 @@ const planeReportIssueButton = requireElement<HTMLButtonElement>("#plane-report-
 const selectPlaneButton = requireElement<HTMLButtonElement>("#select-plane");
 const selectSnakeButton = requireElement<HTMLButtonElement>("#select-snake");
 const selectBridgeButton = requireElement<HTMLButtonElement>("#select-bridge");
+const selectPixelButton = requireElement<HTMLButtonElement>("#select-pixel");
 const homeButton = requireElement<HTMLButtonElement>("#home");
 const fullscreenButton = requireElement<HTMLButtonElement>("#fullscreen");
 const rollButton = requireElement<HTMLElement>("#roll");
@@ -287,6 +334,18 @@ const bridgeReportIssueButton = requireElement<HTMLButtonElement>("#bridge-repor
 const bridgeControls = requireElement<HTMLElement>("#bridge-controls");
 const bridgeHintSpinButton = requireElement<HTMLButtonElement>("#bridge-hint-spin");
 const bridgeSpinButton = requireElement<HTMLButtonElement>("#bridge-spin");
+const pixelLocalScoreEls = Array.from(document.querySelectorAll<HTMLElement>('[data-pixel-score="local"]'));
+const pixelMenuPanel = requireElement<HTMLElement>("#pixel-menu-panel");
+const pixelOptionsPanel = requireElement<HTMLElement>("#pixel-options-panel");
+const pixelStartButton = requireElement<HTMLButtonElement>("#pixel-start");
+const pixelOptionsButton = requireElement<HTMLButtonElement>("#pixel-options");
+const pixelMenuBackButton = requireElement<HTMLButtonElement>("#pixel-menu-back");
+const pixelOptionsBackButton = requireElement<HTMLButtonElement>("#pixel-options-back");
+const pixelReportIssueButton = requireElement<HTMLButtonElement>("#pixel-report-issue");
+const pixelModeInput = requireElement<HTMLSelectElement>("#pixel-mode");
+const pixelBotsInput = requireElement<HTMLInputElement>("#pixel-bots");
+const pixelHumansInput = requireElement<HTMLInputElement>("#pixel-humans");
+const pixelMenuTurrets = requireElement<HTMLElement>("#pixel-menu-turrets");
 const reportPanel = requireElement<HTMLElement>("#report-panel");
 const issueForm = requireElement<HTMLFormElement>("#issue-form");
 const issueText = requireElement<HTMLTextAreaElement>("#issue-text");
@@ -375,8 +434,8 @@ let snakeLastShotBank = 0;
 let snakeJoystickPointerId: number | null = null;
 let snakeJoystickPulseTimer = 0;
 let lastSnakeShootTime = 0;
-let reportGame: "jumpy-plane" | "shooting-snakes" | "glass-bridge" = "jumpy-plane";
-let reportReturnState: "plane-options" | "snake-options" | "bridge-options" = "plane-options";
+let reportGame: "jumpy-plane" | "shooting-snakes" | "glass-bridge" | "pixel-wars" = "jumpy-plane";
+let reportReturnState: "plane-options" | "snake-options" | "bridge-options" | "pixel-options" = "plane-options";
 let snakeLocalLongest = 3;
 let snakeTodayLongest = 0;
 let snakeServerLongest = 0;
@@ -426,6 +485,18 @@ let bridgeHintWheelTargetAngle = 0;
 let bridgePendingHintOutcome: BridgeHintOutcome | null = null;
 let bridgeHintWheelRequesting = false;
 let bridgeHintWheelSpinSequence = 0;
+let pixelMode: PixelMode = "single";
+let pixelBotCount = 3;
+let pixelHumanSlots = 1;
+let pixelCells: PixelOwner[] = [];
+let pixelTurrets: PixelTurret[] = [];
+let pixelShots: PixelShot[] = [];
+let pixelAimActive = false;
+let pixelAimPointerId: number | null = null;
+let pixelAimX = 0;
+let pixelAimY = 0;
+let pixelTerritory = 0;
+let pixelLocalBest = 0;
 
 const localHighScoreKey = "badant-games-jumpy-plane-high-score";
 const oldLocalHighScoreKeys = ["isaac-demo-high-score"];
@@ -439,6 +510,7 @@ const bridgeLocalTilesKey = "badant-games-glass-bridge-tiles";
 const bridgeLocalPointsKey = "badant-games-glass-bridge-points";
 const bridgePendingTilesKey = "badant-games-glass-bridge-pending-tiles";
 const bridgePendingPointsKey = "badant-games-glass-bridge-pending-points";
+const pixelLocalBestKey = "badant-games-pixel-wars-best-claim";
 const planeSoundKey = "badant-games-jumpy-plane-sound";
 const snakeSoundKey = "badant-games-shooting-snakes-sound";
 const bridgeSoundKey = "badant-games-glass-bridge-sound";
@@ -504,6 +576,32 @@ const bridgeHintWheelSegments: BridgeHintOutcome[] = [
   { difficultyTierBonus: 0, face: ":)", kind: "math", label: "Division", operation: "/", weight: 1 },
   { difficultyTierBonus: 1, face: ">:(", kind: "math", label: "Division", operation: "/", weight: 1 },
 ];
+const pixelColumns = 54;
+const pixelRows = 36;
+const pixelShotSpeed = 360;
+const pixelOwnerColors: Partial<Record<PixelOwner, string>> & { neutral: string; player: string } = {
+  neutral: "#606773",
+  player: "#35d7ff",
+  "bot-1": "#ff4d75",
+  "bot-2": "#ffd84f",
+  "bot-3": "#6dff80",
+  "bot-4": "#b66dff",
+  "bot-5": "#ff8a3d",
+  "bot-6": "#45ffce",
+  "bot-7": "#ff65dc",
+  "bot-8": "#a5ff45",
+  "bot-9": "#4d75ff",
+  "bot-10": "#ffef8a",
+  "bot-11": "#ff5335",
+  "bot-12": "#72a8ff",
+  "human-2": "#ffffff",
+  "human-3": "#f7a8ff",
+  "human-4": "#a8ffea",
+  "human-5": "#ffc7a8",
+  "human-6": "#c8ff9b",
+  "human-7": "#a8d1ff",
+  "human-8": "#ffb3cb",
+};
 let planeSoundEnabled = localStorage.getItem(planeSoundKey) !== "off";
 let snakeSoundEnabled = localStorage.getItem(snakeSoundKey) !== "off";
 let bridgeSoundEnabled = localStorage.getItem(bridgeSoundKey) !== "off";
@@ -545,6 +643,9 @@ function resize() {
   if (state === "platform" || state === "ready") {
     plane.y = height * 0.48;
     enemyPlane.y = height * 0.36;
+  }
+  if (state === "pixel-running") {
+    positionPixelTurrets();
   }
   updateFullscreenButton();
 }
@@ -894,6 +995,262 @@ function setSnakeLayout(active: boolean) {
   resize();
 }
 
+function clampNumber(value: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function normalizeAngle(angle: number) {
+  let normalized = angle;
+  while (normalized > Math.PI) {
+    normalized -= Math.PI * 2;
+  }
+  while (normalized < -Math.PI) {
+    normalized += Math.PI * 2;
+  }
+  return normalized;
+}
+
+function pixelOwnerColor(owner: PixelOwner) {
+  return pixelOwnerColors[owner] ?? "#ffffff";
+}
+
+function readPixelLocalBest() {
+  pixelLocalBest = Math.max(0, readStoredNumber(pixelLocalBestKey));
+}
+
+function writePixelLocalBest(value: number) {
+  pixelLocalBest = Math.max(pixelLocalBest, value);
+  writeStoredNumber(pixelLocalBestKey, pixelLocalBest);
+}
+
+function renderPixelScores() {
+  setText(pixelLocalScoreEls, `${formatScore(pixelLocalBest)}%`);
+  pixelMenuTurrets.textContent = `${1 + pixelBotCount + Math.max(0, pixelHumanSlots - 1)}`;
+}
+
+function syncPixelConfigFromInputs() {
+  pixelMode = pixelModeInput.value === "multi" ? "multi" : "single";
+  pixelBotCount = clampNumber(Math.round(Number(pixelBotsInput.value) || 0), 0, 12);
+  pixelHumanSlots = pixelMode === "multi" ? clampNumber(Math.round(Number(pixelHumansInput.value) || 1), 1, 8) : 1;
+  pixelBotsInput.value = `${pixelBotCount}`;
+  pixelHumansInput.value = `${pixelHumanSlots}`;
+  pixelHumansInput.disabled = pixelMode === "single";
+  renderPixelScores();
+}
+
+function pixelLayout(): PixelBoardLayout {
+  const canvasW = canvas.width / dpr;
+  const canvasH = canvas.height / dpr;
+  const panelX = Math.round(canvasW * 0.58);
+  const padding = Math.max(12, Math.min(28, canvasW * 0.024));
+  const availableW = panelX - padding * 2;
+  const availableH = canvasH - padding * 2;
+  const cellSize = Math.floor(Math.max(5, Math.min(availableW / pixelColumns, availableH / pixelRows)));
+  const boardW = cellSize * pixelColumns;
+  const boardH = cellSize * pixelRows;
+  return {
+    boardH,
+    boardW,
+    canvasH,
+    canvasW,
+    cellH: cellSize,
+    cellW: cellSize,
+    panelX,
+    x: Math.round((panelX - boardW) * 0.5),
+    y: Math.round((canvasH - boardH) * 0.5),
+  };
+}
+
+function clampPixelTurretAngle(turret: PixelTurret, angle: number) {
+  const delta = clampNumber(normalizeAngle(angle - turret.homeAngle), -turret.arc, turret.arc);
+  return normalizeAngle(turret.homeAngle + delta);
+}
+
+function setPixelTurretPosition(turret: PixelTurret, index: number, totalAuto: number) {
+  const layout = pixelLayout();
+  const centerX = layout.x + layout.boardW / 2;
+  const centerY = layout.y + layout.boardH / 2;
+  if (turret.isPlayer) {
+    turret.x = centerX;
+    turret.y = Math.min(layout.canvasH - 14, layout.y + layout.boardH + Math.max(4, layout.cellH * 0.45));
+    turret.homeAngle = -Math.PI / 2;
+    turret.arc = Math.PI * 0.38;
+    turret.angle = clampPixelTurretAngle(turret, turret.angle || turret.homeAngle);
+    return;
+  }
+
+  const ringAngle = -Math.PI / 2 + ((index + 1) * Math.PI * 2) / (totalAuto + 1);
+  const dx = Math.cos(ringAngle);
+  const dy = Math.sin(ringAngle);
+  const candidates = [
+    dx > 0 ? (layout.x + layout.boardW - centerX) / dx : (layout.x - centerX) / dx,
+    dy > 0 ? (layout.y + layout.boardH - centerY) / dy : (layout.y - centerY) / dy,
+  ].filter((value) => Number.isFinite(value) && value > 0);
+  const distance = Math.min(...candidates);
+  turret.x = centerX + dx * distance;
+  turret.y = centerY + dy * distance;
+  turret.homeAngle = normalizeAngle(ringAngle + Math.PI);
+  turret.arc = Math.PI * 0.4;
+  turret.angle = clampPixelTurretAngle(turret, turret.angle || turret.homeAngle);
+}
+
+function positionPixelTurrets() {
+  const autoTurrets = pixelTurrets.filter((turret) => !turret.isPlayer);
+  let autoIndex = 0;
+  pixelTurrets.forEach((turret) => {
+    if (turret.isPlayer) {
+      setPixelTurretPosition(turret, 0, autoTurrets.length);
+      return;
+    }
+    setPixelTurretPosition(turret, autoIndex, autoTurrets.length);
+    autoIndex += 1;
+  });
+}
+
+function createPixelTurret(id: PixelOwner, isPlayer: boolean): PixelTurret {
+  const color = pixelOwnerColor(id);
+  return {
+    aiTargetTimer: 0,
+    angle: isPlayer ? -Math.PI / 2 : Math.PI / 2,
+    arc: Math.PI * 0.4,
+    color,
+    fireCooldown: Math.random() * 0.45,
+    fireInterval: isPlayer ? 0.22 : 0.25 + Math.random() * 0.16,
+    homeAngle: isPlayer ? -Math.PI / 2 : Math.PI / 2,
+    id,
+    isPlayer,
+    rotateDirection: Math.random() < 0.5 ? -1 : 1,
+    rotateSpeed: isPlayer ? 0.8 : 0.55 + Math.random() * 0.5,
+    x: 0,
+    y: 0,
+  };
+}
+
+function resetPixelWars() {
+  syncPixelConfigFromInputs();
+  pixelCells = Array.from({ length: pixelColumns * pixelRows }, () => "neutral");
+  pixelShots = [];
+  pixelAimActive = false;
+  pixelAimPointerId = null;
+  pixelTerritory = 0;
+  pixelTurrets = [createPixelTurret("player", true)];
+  for (let human = 2; human <= pixelHumanSlots; human += 1) {
+    pixelTurrets.push(createPixelTurret(`human-${human}` as PixelOwner, false));
+  }
+  for (let bot = 1; bot <= pixelBotCount; bot += 1) {
+    pixelTurrets.push(createPixelTurret(`bot-${bot}` as PixelOwner, false));
+  }
+  positionPixelTurrets();
+  updatePixelScore();
+}
+
+function updatePixelScore() {
+  if (pixelCells.length === 0) {
+    pixelTerritory = 0;
+    scoreLabel.textContent = "Claim";
+    scoreEl.textContent = "0%";
+    return;
+  }
+  const owned = pixelCells.filter((owner) => owner === "player").length;
+  pixelTerritory = Math.round((owned / pixelCells.length) * 1000) / 10;
+  scoreLabel.textContent = "Claim";
+  scoreEl.textContent = `${formatScore(pixelTerritory)}%`;
+  if (pixelTerritory > pixelLocalBest) {
+    writePixelLocalBest(pixelTerritory);
+    renderPixelScores();
+  }
+}
+
+function startPixelWars() {
+  unlockAudio();
+  leaveSnakeRoom();
+  setSnakeLayout(false);
+  resetSnakeJoystick();
+  resetPixelWars();
+  state = "pixel-running";
+  overlay.hidden = true;
+  overlay.classList.remove("is-platform");
+  platformPanel.hidden = true;
+  gameMenuPanel.hidden = true;
+  planeOptionsPanel.hidden = true;
+  crashPanel.hidden = true;
+  snakeMenuPanel.hidden = true;
+  snakeOptionsPanel.hidden = true;
+  bridgeMenuPanel.hidden = true;
+  bridgeOptionsPanel.hidden = true;
+  bridgeDeadPanel.hidden = true;
+  pixelMenuPanel.hidden = true;
+  pixelOptionsPanel.hidden = true;
+  reportPanel.hidden = true;
+  snakeDeadPanel.hidden = true;
+  scorePanel.hidden = false;
+  homeButton.hidden = false;
+  startButton.hidden = true;
+  restartButton.hidden = true;
+  snakeControls.hidden = true;
+  bridgeControls.hidden = true;
+  updateRollButton();
+}
+
+function showPixelMenu() {
+  leaveSnakeRoom();
+  setSnakeLayout(false);
+  resetSnakeJoystick();
+  readPixelLocalBest();
+  syncPixelConfigFromInputs();
+  state = "pixel-menu";
+  overlay.hidden = false;
+  overlay.classList.remove("is-platform");
+  platformPanel.hidden = true;
+  gameMenuPanel.hidden = true;
+  planeOptionsPanel.hidden = true;
+  crashPanel.hidden = true;
+  snakeMenuPanel.hidden = true;
+  snakeOptionsPanel.hidden = true;
+  bridgeMenuPanel.hidden = true;
+  bridgeOptionsPanel.hidden = true;
+  bridgeDeadPanel.hidden = true;
+  pixelMenuPanel.hidden = false;
+  pixelOptionsPanel.hidden = true;
+  reportPanel.hidden = true;
+  snakeDeadPanel.hidden = true;
+  scorePanel.hidden = true;
+  homeButton.hidden = false;
+  startButton.hidden = true;
+  restartButton.hidden = true;
+  snakeControls.hidden = true;
+  bridgeControls.hidden = true;
+  updateRollButton();
+}
+
+function showPixelOptions() {
+  leaveSnakeRoom();
+  setSnakeLayout(false);
+  resetSnakeJoystick();
+  state = "pixel-options";
+  overlay.hidden = false;
+  overlay.classList.remove("is-platform");
+  platformPanel.hidden = true;
+  gameMenuPanel.hidden = true;
+  planeOptionsPanel.hidden = true;
+  crashPanel.hidden = true;
+  snakeMenuPanel.hidden = true;
+  snakeOptionsPanel.hidden = true;
+  bridgeMenuPanel.hidden = true;
+  bridgeOptionsPanel.hidden = true;
+  bridgeDeadPanel.hidden = true;
+  pixelMenuPanel.hidden = true;
+  pixelOptionsPanel.hidden = false;
+  reportPanel.hidden = true;
+  snakeDeadPanel.hidden = true;
+  scorePanel.hidden = true;
+  homeButton.hidden = false;
+  snakeControls.hidden = true;
+  bridgeControls.hidden = true;
+  issueStatus.textContent = "";
+  updateRollButton();
+}
+
 function showPlaneOptions() {
   leaveSnakeRoom();
   setSnakeLayout(false);
@@ -909,6 +1266,8 @@ function showPlaneOptions() {
   bridgeMenuPanel.hidden = true;
   bridgeOptionsPanel.hidden = true;
   bridgeDeadPanel.hidden = true;
+  pixelMenuPanel.hidden = true;
+  pixelOptionsPanel.hidden = true;
   reportPanel.hidden = true;
   snakeDeadPanel.hidden = true;
   scorePanel.hidden = true;
@@ -947,6 +1306,8 @@ function startSnakeGame(restart = false) {
   bridgeMenuPanel.hidden = true;
   bridgeOptionsPanel.hidden = true;
   bridgeDeadPanel.hidden = true;
+  pixelMenuPanel.hidden = true;
+  pixelOptionsPanel.hidden = true;
   reportPanel.hidden = true;
   snakeDeadPanel.hidden = true;
   scorePanel.hidden = true;
@@ -989,6 +1350,8 @@ function showSnakeMenu() {
   bridgeMenuPanel.hidden = true;
   bridgeOptionsPanel.hidden = true;
   bridgeDeadPanel.hidden = true;
+  pixelMenuPanel.hidden = true;
+  pixelOptionsPanel.hidden = true;
   reportPanel.hidden = true;
   snakeDeadPanel.hidden = true;
   scorePanel.hidden = true;
@@ -1016,6 +1379,8 @@ function showSnakeOptions() {
   bridgeMenuPanel.hidden = true;
   bridgeOptionsPanel.hidden = true;
   bridgeDeadPanel.hidden = true;
+  pixelMenuPanel.hidden = true;
+  pixelOptionsPanel.hidden = true;
   reportPanel.hidden = true;
   snakeDeadPanel.hidden = true;
   scorePanel.hidden = true;
@@ -1050,6 +1415,8 @@ function showBridgeMenu() {
   bridgeMenuPanel.hidden = false;
   bridgeOptionsPanel.hidden = true;
   bridgeDeadPanel.hidden = true;
+  pixelMenuPanel.hidden = true;
+  pixelOptionsPanel.hidden = true;
   reportPanel.hidden = true;
   snakeDeadPanel.hidden = true;
   scorePanel.hidden = true;
@@ -1078,6 +1445,8 @@ function showBridgeOptions() {
   bridgeMenuPanel.hidden = true;
   bridgeOptionsPanel.hidden = false;
   bridgeDeadPanel.hidden = true;
+  pixelMenuPanel.hidden = true;
+  pixelOptionsPanel.hidden = true;
   reportPanel.hidden = true;
   snakeDeadPanel.hidden = true;
   scorePanel.hidden = true;
@@ -1090,8 +1459,8 @@ function showBridgeOptions() {
 }
 
 function showReportIssue(
-  game: "jumpy-plane" | "shooting-snakes" | "glass-bridge",
-  returnState: "plane-options" | "snake-options" | "bridge-options",
+  game: "jumpy-plane" | "shooting-snakes" | "glass-bridge" | "pixel-wars",
+  returnState: "plane-options" | "snake-options" | "bridge-options" | "pixel-options",
 ) {
   reportGame = game;
   reportReturnState = returnState;
@@ -1110,6 +1479,8 @@ function showReportIssue(
   bridgeMenuPanel.hidden = true;
   bridgeOptionsPanel.hidden = true;
   bridgeDeadPanel.hidden = true;
+  pixelMenuPanel.hidden = true;
+  pixelOptionsPanel.hidden = true;
   reportPanel.hidden = false;
   snakeDeadPanel.hidden = true;
   scorePanel.hidden = true;
@@ -1123,7 +1494,9 @@ function showReportIssue(
 }
 
 function returnFromReportIssue() {
-  if (reportReturnState === "bridge-options") {
+  if (reportReturnState === "pixel-options") {
+    showPixelOptions();
+  } else if (reportReturnState === "bridge-options") {
     showBridgeOptions();
   } else if (reportReturnState === "snake-options") {
     showSnakeOptions();
@@ -1149,6 +1522,8 @@ function showSnakeDead() {
   bridgeMenuPanel.hidden = true;
   bridgeOptionsPanel.hidden = true;
   bridgeDeadPanel.hidden = true;
+  pixelMenuPanel.hidden = true;
+  pixelOptionsPanel.hidden = true;
   reportPanel.hidden = true;
   snakeDeadPanel.hidden = false;
   scorePanel.hidden = false;
@@ -1396,6 +1771,8 @@ function showBridgeDead() {
   bridgeMenuPanel.hidden = true;
   bridgeOptionsPanel.hidden = true;
   bridgeDeadPanel.hidden = false;
+  pixelMenuPanel.hidden = true;
+  pixelOptionsPanel.hidden = true;
   reportPanel.hidden = true;
   snakeDeadPanel.hidden = true;
   scorePanel.hidden = false;
@@ -1430,6 +1807,8 @@ function startBridgeGame() {
   bridgeMenuPanel.hidden = true;
   bridgeOptionsPanel.hidden = true;
   bridgeDeadPanel.hidden = true;
+  pixelMenuPanel.hidden = true;
+  pixelOptionsPanel.hidden = true;
   reportPanel.hidden = true;
   snakeDeadPanel.hidden = true;
   scorePanel.hidden = false;
@@ -1935,6 +2314,254 @@ function drawSnakeGame(time: number) {
   }
 }
 
+function pixelCellIndexAt(x: number, y: number, layout = pixelLayout()) {
+  if (x < layout.x || x >= layout.x + layout.boardW || y < layout.y || y >= layout.y + layout.boardH) {
+    return -1;
+  }
+  const column = Math.floor((x - layout.x) / layout.cellW);
+  const row = Math.floor((y - layout.y) / layout.cellH);
+  if (column < 0 || column >= pixelColumns || row < 0 || row >= pixelRows) {
+    return -1;
+  }
+  return row * pixelColumns + column;
+}
+
+function paintPixelCell(index: number, owner: PixelOwner) {
+  if (index < 0 || index >= pixelCells.length) {
+    return;
+  }
+  const currentOwner = pixelCells[index];
+  if (currentOwner === "neutral") {
+    pixelCells[index] = owner;
+  } else if (currentOwner !== owner) {
+    pixelCells[index] = "neutral";
+  }
+}
+
+function firePixelShot(turret: PixelTurret) {
+  const barrel = 18;
+  pixelShots.push({
+    color: turret.color,
+    lastCell: -1,
+    life: 2.2,
+    owner: turret.id,
+    vx: Math.cos(turret.angle) * pixelShotSpeed,
+    vy: Math.sin(turret.angle) * pixelShotSpeed,
+    x: turret.x + Math.cos(turret.angle) * barrel,
+    y: turret.y + Math.sin(turret.angle) * barrel,
+  });
+}
+
+function steerPixelTurret(turret: PixelTurret, dt: number) {
+  if (turret.isPlayer && pixelAimActive) {
+    turret.angle = clampPixelTurretAngle(turret, Math.atan2(pixelAimY - turret.y, pixelAimX - turret.x));
+    return;
+  }
+
+  if (!turret.isPlayer) {
+    turret.aiTargetTimer -= dt;
+    if (turret.aiTargetTimer <= 0) {
+      const layout = pixelLayout();
+      const targetOwner = Math.random() < 0.68 ? "neutral" : "player";
+      const targetIndexes = pixelCells
+        .map((owner, index) => ({ index, owner }))
+        .filter((cell) => cell.owner === targetOwner || (targetOwner !== "neutral" && cell.owner !== turret.id));
+      const choice = targetIndexes[Math.floor(Math.random() * targetIndexes.length)]?.index ?? Math.floor(Math.random() * pixelCells.length);
+      const column = choice % pixelColumns;
+      const row = Math.floor(choice / pixelColumns);
+      const targetX = layout.x + column * layout.cellW + layout.cellW / 2;
+      const targetY = layout.y + row * layout.cellH + layout.cellH / 2;
+      const targetAngle = clampPixelTurretAngle(turret, Math.atan2(targetY - turret.y, targetX - turret.x));
+      const delta = normalizeAngle(targetAngle - turret.angle);
+      turret.rotateDirection = delta >= 0 ? 1 : -1;
+      turret.aiTargetTimer = 0.35 + Math.random() * 1.1;
+      turret.angle = clampPixelTurretAngle(
+        turret,
+        turret.angle + clampNumber(delta, -turret.rotateSpeed * dt * 3, turret.rotateSpeed * dt * 3),
+      );
+      return;
+    }
+  }
+
+  turret.angle = clampPixelTurretAngle(turret, turret.angle + turret.rotateDirection * turret.rotateSpeed * dt);
+  if (Math.abs(normalizeAngle(turret.angle - turret.homeAngle)) > turret.arc * 0.98) {
+    turret.rotateDirection *= -1;
+  }
+}
+
+function updatePixelWars(dt: number) {
+  if (state !== "pixel-running") {
+    return;
+  }
+
+  positionPixelTurrets();
+  pixelTurrets.forEach((turret) => {
+    steerPixelTurret(turret, dt);
+    turret.fireCooldown -= dt;
+    if (turret.fireCooldown <= 0) {
+      firePixelShot(turret);
+      turret.fireCooldown = turret.fireInterval * (0.82 + Math.random() * 0.36);
+    }
+  });
+
+  const layout = pixelLayout();
+  for (let index = pixelShots.length - 1; index >= 0; index -= 1) {
+    const shot = pixelShots[index];
+    shot.x += shot.vx * dt;
+    shot.y += shot.vy * dt;
+    shot.life -= dt;
+    const cellIndex = pixelCellIndexAt(shot.x, shot.y, layout);
+    if (cellIndex !== -1 && cellIndex !== shot.lastCell) {
+      paintPixelCell(cellIndex, shot.owner);
+      shot.lastCell = cellIndex;
+    }
+    const outside = shot.x < -80 || shot.x > layout.canvasW + 80 || shot.y < -80 || shot.y > layout.canvasH + 80;
+    if (shot.life <= 0 || outside) {
+      pixelShots.splice(index, 1);
+    }
+  }
+
+  updatePixelScore();
+}
+
+function drawPixelTileGrid(layout: PixelBoardLayout) {
+  for (let row = 0; row < pixelRows; row += 1) {
+    for (let column = 0; column < pixelColumns; column += 1) {
+      const owner = pixelCells[row * pixelColumns + column] ?? "neutral";
+      ctx.fillStyle = pixelOwnerColor(owner);
+      ctx.globalAlpha = owner === "neutral" ? 0.78 : 0.95;
+      ctx.fillRect(
+        layout.x + column * layout.cellW,
+        layout.y + row * layout.cellH,
+        Math.max(1, layout.cellW - 1),
+        Math.max(1, layout.cellH - 1),
+      );
+    }
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawPixelTurret(turret: PixelTurret) {
+  const radius = turret.isPlayer ? 13 : 11;
+  ctx.save();
+  ctx.translate(turret.x, turret.y);
+  ctx.rotate(turret.angle);
+  ctx.fillStyle = "rgba(8, 12, 22, 0.9)";
+  ctx.beginPath();
+  roundedRectPath(0, -5, 28, 10, 5);
+  ctx.fill();
+  ctx.fillStyle = turret.color;
+  ctx.fillRect(16, -3, 18, 6);
+  ctx.restore();
+
+  ctx.save();
+  ctx.translate(turret.x, turret.y);
+  ctx.shadowBlur = turret.isPlayer ? 18 : 10;
+  ctx.shadowColor = turret.color;
+  ctx.fillStyle = turret.color;
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.74)";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(0, 0, radius, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = "rgba(7, 12, 22, 0.9)";
+  ctx.beginPath();
+  ctx.arc(0, 0, radius * 0.42, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawPixelWars(time: number) {
+  const layout = pixelLayout();
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const background = ctx.createLinearGradient(0, 0, layout.canvasW, layout.canvasH);
+  background.addColorStop(0, "#111827");
+  background.addColorStop(0.56, "#172033");
+  background.addColorStop(1, "#231b32");
+  ctx.fillStyle = background;
+  ctx.fillRect(0, 0, layout.canvasW, layout.canvasH);
+
+  ctx.save();
+  ctx.globalAlpha = 0.28;
+  ctx.strokeStyle = "#50d7ff";
+  ctx.lineWidth = 1;
+  const gridOffset = (time * 18) % 32;
+  for (let x = -gridOffset; x < layout.canvasW; x += 32) {
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, layout.canvasH);
+    ctx.stroke();
+  }
+  for (let y = -gridOffset; y < layout.canvasH; y += 32) {
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(layout.canvasW, y);
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  ctx.fillStyle = "rgba(3, 7, 16, 0.5)";
+  ctx.fillRect(layout.panelX, 0, layout.canvasW - layout.panelX, layout.canvasH);
+  ctx.fillStyle = "rgba(255, 255, 255, 0.86)";
+  ctx.font = "900 18px Inter, sans-serif";
+  ctx.fillText("Systems", layout.panelX + 22, 36);
+  ctx.font = "800 14px Inter, sans-serif";
+  ctx.fillStyle = "rgba(255, 255, 255, 0.66)";
+  ctx.fillText(`Turrets ${pixelTurrets.length}`, layout.panelX + 22, 66);
+  ctx.fillText(`Claim ${formatScore(pixelTerritory)}%`, layout.panelX + 22, 90);
+
+  ctx.save();
+  ctx.shadowBlur = 24;
+  ctx.shadowColor = "rgba(80, 215, 255, 0.42)";
+  ctx.fillStyle = "rgba(11, 16, 28, 0.92)";
+  ctx.strokeStyle = "rgba(168, 232, 255, 0.72)";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  roundedRectPath(layout.x - 3, layout.y - 3, layout.boardW + 6, layout.boardH + 6, 8);
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+
+  drawPixelTileGrid(layout);
+
+  ctx.save();
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.08)";
+  ctx.lineWidth = 1;
+  for (let column = 0; column <= pixelColumns; column += 6) {
+    const x = layout.x + column * layout.cellW;
+    ctx.beginPath();
+    ctx.moveTo(x, layout.y);
+    ctx.lineTo(x, layout.y + layout.boardH);
+    ctx.stroke();
+  }
+  for (let row = 0; row <= pixelRows; row += 6) {
+    const y = layout.y + row * layout.cellH;
+    ctx.beginPath();
+    ctx.moveTo(layout.x, y);
+    ctx.lineTo(layout.x + layout.boardW, y);
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  pixelShots.forEach((shot) => {
+    ctx.save();
+    ctx.shadowBlur = 14;
+    ctx.shadowColor = shot.color;
+    ctx.fillStyle = shot.color;
+    ctx.beginPath();
+    ctx.arc(shot.x, shot.y, 4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  });
+  pixelTurrets.forEach(drawPixelTurret);
+
+  if (state === "pixel-menu" || state === "pixel-options") {
+    ctx.fillStyle = "rgba(5, 9, 20, 0.48)";
+    ctx.fillRect(0, 0, layout.canvasW, layout.canvasH);
+  }
+}
+
 function roundedRectPath(x: number, y: number, rectWidth: number, rectHeight: number, radius: number) {
   const r = Math.min(radius, rectWidth / 2, rectHeight / 2);
   ctx.moveTo(x + r, y);
@@ -2416,7 +3043,7 @@ function setBridgeSound(enabled: boolean) {
   updateSoundButtons();
 }
 
-async function submitIssue(game: "jumpy-plane" | "shooting-snakes" | "glass-bridge", message: string) {
+async function submitIssue(game: "jumpy-plane" | "shooting-snakes" | "glass-bridge" | "pixel-wars", message: string) {
   const response = await fetch(`/api/issues/${game}`, {
     body: JSON.stringify({
       message,
@@ -2916,9 +3543,11 @@ function reset(nextState: GameState) {
   resetSnakeJoystick();
   readSnakeLocalLongest();
   readBridgeLocalScores();
+  readPixelLocalBest();
   renderHighScores();
   renderSnakeHighScores();
   renderBridgeHighScores();
+  renderPixelScores();
   score = 0;
   obstacles = [];
   bubbles = [];
@@ -2961,6 +3590,8 @@ function reset(nextState: GameState) {
   bridgeMenuPanel.hidden = true;
   bridgeOptionsPanel.hidden = true;
   bridgeDeadPanel.hidden = true;
+  pixelMenuPanel.hidden = true;
+  pixelOptionsPanel.hidden = true;
   reportPanel.hidden = true;
   snakeDeadPanel.hidden = true;
   snakeControls.hidden = true;
@@ -3767,6 +4398,7 @@ function update(dt: number) {
 
   updateEffects(dt);
   updateBridge(dt);
+  updatePixelWars(dt);
 
   if (state !== "running") {
     return;
@@ -3829,6 +4461,11 @@ function update(dt: number) {
 }
 
 function render(time: number) {
+  if (state === "pixel-menu" || state === "pixel-options" || state === "pixel-running") {
+    drawPixelWars(time);
+    return;
+  }
+
   if (state === "snake-menu" || state === "snake-options" || state === "snake-running" || state === "snake-dead") {
     drawSnakeGame(time);
     return;
@@ -3879,8 +4516,55 @@ function loop(now: number) {
   requestAnimationFrame(loop);
 }
 
+function canvasPointFromEvent(event: PointerEvent) {
+  const box = canvas.getBoundingClientRect();
+  return {
+    x: ((event.clientX - box.left) / box.width) * (canvas.width / dpr),
+    y: ((event.clientY - box.top) / box.height) * (canvas.height / dpr),
+  };
+}
+
+function updatePixelAimFromPointer(event: PointerEvent) {
+  const point = canvasPointFromEvent(event);
+  pixelAimX = point.x;
+  pixelAimY = point.y;
+}
+
+function startPixelAim(event: PointerEvent) {
+  event.preventDefault();
+  unlockAudio();
+  pixelAimActive = true;
+  pixelAimPointerId = event.pointerId;
+  canvas.setPointerCapture(event.pointerId);
+  updatePixelAimFromPointer(event);
+}
+
+function stopPixelAim(event: PointerEvent) {
+  if (event.pointerId !== pixelAimPointerId) {
+    return;
+  }
+  pixelAimActive = false;
+  pixelAimPointerId = null;
+}
+
 window.addEventListener("resize", resize);
 window.addEventListener("keydown", (event) => {
+  if (state === "pixel-running") {
+    const playerTurret = pixelTurrets.find((turret) => turret.isPlayer);
+    if (playerTurret && (event.code === "ArrowLeft" || event.code === "KeyA")) {
+      event.preventDefault();
+      pixelAimActive = false;
+      playerTurret.angle = clampPixelTurretAngle(playerTurret, playerTurret.angle - 0.12);
+      return;
+    }
+    if (playerTurret && (event.code === "ArrowRight" || event.code === "KeyD")) {
+      event.preventDefault();
+      pixelAimActive = false;
+      playerTurret.angle = clampPixelTurretAngle(playerTurret, playerTurret.angle + 0.12);
+      return;
+    }
+  }
+
   if (state === "bridge-running") {
     if (event.code === "ArrowLeft" || event.code === "KeyA") {
       event.preventDefault();
@@ -3938,12 +4622,13 @@ window.addEventListener("keydown", (event) => {
   }
 });
 canvas.addEventListener("pointerdown", (event) => {
+  if (state === "pixel-running") {
+    startPixelAim(event);
+    return;
+  }
+
   if (state === "bridge-running") {
-    const box = canvas.getBoundingClientRect();
-    const point = {
-      x: ((event.clientX - box.left) / box.width) * (canvas.width / dpr),
-      y: ((event.clientY - box.top) / box.height) * (canvas.height / dpr),
-    };
+    const point = canvasPointFromEvent(event);
     const panel = bridgePanelAtPoint(point.x, point.y);
     if (panel) {
       chooseBridgeSide(panel.side);
@@ -3952,6 +4637,20 @@ canvas.addEventListener("pointerdown", (event) => {
   }
 
   flap();
+});
+canvas.addEventListener("pointermove", (event) => {
+  if (state !== "pixel-running" || event.pointerId !== pixelAimPointerId) {
+    return;
+  }
+
+  event.preventDefault();
+  updatePixelAimFromPointer(event);
+});
+canvas.addEventListener("pointerup", stopPixelAim);
+canvas.addEventListener("pointercancel", stopPixelAim);
+canvas.addEventListener("lostpointercapture", () => {
+  pixelAimActive = false;
+  pixelAimPointerId = null;
 });
 startButton.addEventListener("click", flap);
 planeOptionsButton.addEventListener("click", showPlaneOptions);
@@ -3976,6 +4675,7 @@ selectPlaneButton.addEventListener("click", () => {
 });
 selectSnakeButton.addEventListener("click", showSnakeMenu);
 selectBridgeButton.addEventListener("click", showBridgeMenu);
+selectPixelButton.addEventListener("click", showPixelMenu);
 snakeOptionsButton.addEventListener("click", showSnakeOptions);
 snakeMenuBackButton.addEventListener("click", () => reset("platform"));
 snakeOptionsBackButton.addEventListener("click", showSnakeMenu);
@@ -3992,6 +4692,14 @@ bridgeSoundToggle.addEventListener("click", () => {
   setBridgeSound(!bridgeSoundEnabled);
 });
 bridgeReportIssueButton.addEventListener("click", () => showReportIssue("glass-bridge", "bridge-options"));
+pixelStartButton.addEventListener("click", startPixelWars);
+pixelOptionsButton.addEventListener("click", showPixelOptions);
+pixelMenuBackButton.addEventListener("click", () => reset("platform"));
+pixelOptionsBackButton.addEventListener("click", showPixelMenu);
+pixelReportIssueButton.addEventListener("click", () => showReportIssue("pixel-wars", "pixel-options"));
+pixelModeInput.addEventListener("change", syncPixelConfigFromInputs);
+pixelBotsInput.addEventListener("input", syncPixelConfigFromInputs);
+pixelHumansInput.addEventListener("input", syncPixelConfigFromInputs);
 issueCancelButton.addEventListener("click", returnFromReportIssue);
 issueForm.addEventListener("submit", (event) => {
   event.preventDefault();
@@ -4104,9 +4812,11 @@ document.addEventListener("fullscreenchange", () => {
 readLocalHighest();
 readSnakeLocalLongest();
 readBridgeLocalScores();
+readPixelLocalBest();
 renderHighScores();
 renderSnakeHighScores();
 renderBridgeHighScores();
+renderPixelScores();
 void loadServerHighScores();
 void loadServerSnakeHighScores();
 void loadServerBridgeHighScores();

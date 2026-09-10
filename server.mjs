@@ -16,6 +16,7 @@ const bridgeJackpotStorePath =
 const issueStorePaths = {
   "glass-bridge": process.env.GLASS_BRIDGE_ISSUE_STORE_PATH || resolve(__dirname, "data", "glass-bridge-issues.json"),
   "jumpy-plane": process.env.JUMPY_PLANE_ISSUE_STORE_PATH || resolve(__dirname, "data", "jumpy-plane-issues.json"),
+  "pixel-wars": process.env.PIXEL_WARS_ISSUE_STORE_PATH || resolve(__dirname, "data", "pixel-wars-issues.json"),
   "shooting-snakes": process.env.SHOOTING_SNAKES_ISSUE_STORE_PATH || resolve(__dirname, "data", "shooting-snakes-issues.json"),
 };
 const bridgeJackpotSeed = 20;
