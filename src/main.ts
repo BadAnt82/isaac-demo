@@ -1131,12 +1131,13 @@ function pixelShotStart(turret: PixelTurret, layout: PixelBoardLayout) {
 }
 
 function pixelSpawnAnchors(layout: PixelBoardLayout) {
-  const left = layout.x;
+  const inset = pixelShieldRadius + Math.max(layout.cellW, layout.cellH) * 0.5;
+  const left = layout.x + inset;
   const centerX = layout.x + layout.boardW / 2;
-  const right = layout.x + layout.boardW;
-  const top = layout.y;
+  const right = layout.x + layout.boardW - inset;
+  const top = layout.y + inset;
   const centerY = layout.y + layout.boardH / 2;
-  const bottom = layout.y + layout.boardH;
+  const bottom = layout.y + layout.boardH - inset;
   return [
     { x: centerX, y: bottom },
     { x: left, y: top },
@@ -1167,20 +1168,36 @@ function positionPixelTurrets() {
   pixelTurrets.forEach((turret, index) => setPixelTurretPosition(turret, index));
 }
 
+function pixelSeedCandidates(turret: PixelTurret, layout: PixelBoardLayout) {
+  const candidates: { distance: number; index: number }[] = [];
+  for (let row = 0; row < pixelRows; row += 1) {
+    for (let column = 0; column < pixelColumns; column += 1) {
+      const cellX = layout.x + column * layout.cellW + layout.cellW / 2;
+      const cellY = layout.y + row * layout.cellH + layout.cellH / 2;
+      const dx = cellX - turret.x;
+      const dy = cellY - turret.y;
+      candidates.push({
+        distance: dx * dx + dy * dy,
+        index: row * pixelColumns + column,
+      });
+    }
+  }
+  return candidates.sort((a, b) => a.distance - b.distance);
+}
+
 function seedPixelTurretTerritory() {
   const layout = pixelLayout();
-  pixelTurrets.forEach((turret) => {
-    for (let row = 0; row < pixelRows; row += 1) {
-      for (let column = 0; column < pixelColumns; column += 1) {
-        const cellX = layout.x + column * layout.cellW + layout.cellW / 2;
-        const cellY = layout.y + row * layout.cellH + layout.cellH / 2;
-        const dx = cellX - turret.x;
-        const dy = cellY - turret.y;
-        if (dx * dx + dy * dy <= pixelShieldRadius * pixelShieldRadius) {
-          pixelCells[row * pixelColumns + column] = turret.id;
-        }
-      }
-    }
+  const radiusSquared = pixelShieldRadius * pixelShieldRadius;
+  const seedLists = pixelTurrets.map((turret) => pixelSeedCandidates(turret, layout));
+  const seedCount = Math.max(
+    1,
+    ...seedLists.map((candidates) => candidates.filter((candidate) => candidate.distance <= radiusSquared).length),
+  );
+
+  pixelTurrets.forEach((turret, turretIndex) => {
+    seedLists[turretIndex].slice(0, seedCount).forEach((candidate) => {
+      pixelCells[candidate.index] = turret.id;
+    });
   });
 }
 
@@ -2585,24 +2602,80 @@ function drawPixelTurretHealth(turret: PixelTurret, layout: PixelBoardLayout) {
   ctx.restore();
 }
 
-function drawPixelTurret(turret: PixelTurret, layout: PixelBoardLayout) {
-  const radius = turret.isPlayer ? 8 : 7;
-  drawPixelTurretHealth(turret, layout);
+function pixelColorHue(color: string) {
+  const hex = color.replace("#", "");
+  if (hex.length !== 6) {
+    return 190;
+  }
+  const red = Number.parseInt(hex.slice(0, 2), 16) / 255;
+  const green = Number.parseInt(hex.slice(2, 4), 16) / 255;
+  const blue = Number.parseInt(hex.slice(4, 6), 16) / 255;
+  const max = Math.max(red, green, blue);
+  const min = Math.min(red, green, blue);
+  const delta = max - min;
+  if (delta === 0) {
+    return 190;
+  }
+  let hue = 0;
+  if (max === red) {
+    hue = ((green - blue) / delta) % 6;
+  } else if (max === green) {
+    hue = (blue - red) / delta + 2;
+  } else {
+    hue = (red - green) / delta + 4;
+  }
+  return (hue * 60 + 360) % 360;
+}
+
+function pixelShieldGlowColor(turret: PixelTurret, time: number, offset = 0, alpha = 1) {
+  const hue = (pixelColorHue(turret.color) + Math.sin(time * 1.6 + offset) * 28 + offset * 18 + 360) % 360;
+  return `hsla(${hue}, 92%, 66%, ${alpha})`;
+}
+
+function drawPixelShield(turret: PixelTurret, time: number) {
+  const shieldRatio = clampNumber(turret.shieldHealth / pixelShieldMaxHealth, 0, 1);
+  const direction = turret.rotateDirection || 1;
+  const rotation = time * 1.15 * direction;
+  const ringAlpha = turret.shieldHealth > 0 ? 0.84 : 0.18;
+
   ctx.save();
   ctx.translate(turret.x, turret.y);
-  ctx.globalAlpha = 0.13;
-  ctx.fillStyle = turret.color;
+  const glow = ctx.createRadialGradient(0, 0, pixelShieldRadius * 0.2, 0, 0, pixelShieldRadius * 1.22);
+  glow.addColorStop(0, pixelShieldGlowColor(turret, time, 0.3, 0.06 * shieldRatio));
+  glow.addColorStop(0.68, pixelShieldGlowColor(turret, time, 1.2, 0.14 * shieldRatio));
+  glow.addColorStop(1, pixelShieldGlowColor(turret, time, 2.1, 0));
+  ctx.fillStyle = glow;
   ctx.beginPath();
-  ctx.arc(0, 0, pixelShieldRadius, 0, Math.PI * 2);
+  ctx.arc(0, 0, pixelShieldRadius * 1.28, 0, Math.PI * 2);
   ctx.fill();
-  ctx.globalAlpha = 1;
-  ctx.strokeStyle = turret.shieldHealth > 0 ? "rgba(206, 244, 255, 0.72)" : "rgba(255, 255, 255, 0.16)";
-  ctx.lineWidth = 2;
-  ctx.setLineDash([4, 4]);
+
+  ctx.globalCompositeOperation = "lighter";
+  ctx.lineCap = "round";
+  ctx.shadowBlur = 14 + 10 * shieldRatio;
+  for (let arcIndex = 0; arcIndex < 3; arcIndex += 1) {
+    const start = rotation + arcIndex * ((Math.PI * 2) / 3);
+    const end = start + Math.PI * 0.76;
+    ctx.shadowColor = pixelShieldGlowColor(turret, time, arcIndex, 0.62 * ringAlpha);
+    ctx.strokeStyle = pixelShieldGlowColor(turret, time, arcIndex, ringAlpha);
+    ctx.lineWidth = 2.8;
+    ctx.beginPath();
+    ctx.arc(0, 0, pixelShieldRadius, start, end);
+    ctx.stroke();
+  }
+
+  ctx.shadowBlur = 6;
+  ctx.strokeStyle = pixelShieldGlowColor(turret, time, 4.4, 0.34 * ringAlpha);
+  ctx.lineWidth = 1;
   ctx.beginPath();
-  ctx.arc(0, 0, pixelShieldRadius, 0, Math.PI * 2);
+  ctx.arc(0, 0, pixelShieldRadius - 3, -rotation * 0.72, Math.PI * 2 - rotation * 0.72);
   ctx.stroke();
   ctx.restore();
+}
+
+function drawPixelTurret(turret: PixelTurret, layout: PixelBoardLayout, time: number) {
+  const radius = turret.isPlayer ? 8 : 7;
+  drawPixelTurretHealth(turret, layout);
+  drawPixelShield(turret, time);
 
   ctx.save();
   ctx.translate(turret.x, turret.y);
@@ -2713,7 +2786,7 @@ function drawPixelWars(time: number) {
     ctx.fill();
     ctx.restore();
   });
-  pixelTurrets.forEach((turret) => drawPixelTurret(turret, layout));
+  pixelTurrets.forEach((turret) => drawPixelTurret(turret, layout, time));
 
   if (state === "pixel-menu" || state === "pixel-options") {
     ctx.fillStyle = "rgba(5, 9, 20, 0.48)";
