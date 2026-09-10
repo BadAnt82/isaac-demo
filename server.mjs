@@ -7,6 +7,7 @@ import { WebSocket, WebSocketServer } from "ws";
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const distDir = resolve(__dirname, "dist");
 const storePath = process.env.SCORE_STORE_PATH || resolve(__dirname, "data", "high-scores.json");
+const snakeStorePath = process.env.SNAKE_SCORE_STORE_PATH || resolve(__dirname, "data", "snake-high-scores.json");
 const port = Number(process.env.PORT || 3000);
 const timeZone = process.env.SCORE_TIME_ZONE || "America/Los_Angeles";
 const snakeBoard = {
@@ -26,6 +27,7 @@ const snakeProjectiles = [];
 let nextSnakeId = 1;
 let nextSnakeOrbId = 1;
 let nextSnakeProjectileId = 1;
+let snakeRoomInterval = null;
 
 const contentTypes = {
   ".css": "text/css; charset=utf-8",
@@ -126,7 +128,10 @@ function respawnSnake(player) {
   player.nextDirection = spawn.direction;
   player.segments = spawn.segments;
   player.length = 3;
+  player.bestLength = 3;
+  player.orbsCollected = 0;
   player.score = 0;
+  player.shotBank = 0;
   player.shootCooldown = 0;
 }
 
@@ -189,7 +194,12 @@ function updateSnakePlayer(player) {
   );
   if (eatenIndex >= 0) {
     player.length += 1;
+    player.bestLength = Math.max(player.bestLength || 3, player.length);
+    player.orbsCollected += 1;
     player.score += 1;
+    if (player.orbsCollected % 10 === 0 && player.shotBank < 2) {
+      player.shotBank += 1;
+    }
     snakeOrbs.splice(eatenIndex, 1);
     spawnSnakeOrb();
   }
@@ -197,13 +207,14 @@ function updateSnakePlayer(player) {
 }
 
 function shootSnakeSegment(player) {
-  if (!player.alive || player.length <= 2 || player.shootCooldown > 0) {
+  if (!player.alive || player.length <= 2 || player.shootCooldown > 0 || player.shotBank <= 0) {
     return;
   }
 
   const direction = snakeDirections[player.direction];
   const head = player.segments[0];
   player.length -= 1;
+  player.shotBank -= 1;
   player.segments.pop();
   player.shootCooldown = 5;
   snakeProjectiles.push({
@@ -269,10 +280,13 @@ function snakeSnapshot() {
     orbs: snakeOrbs,
     players: Array.from(snakePlayers.values()).map((player) => ({
       alive: player.alive,
+      bestLength: player.bestLength || 3,
       color: player.color,
       id: player.id,
+      orbsCollected: player.orbsCollected || 0,
       score: player.score,
       segments: player.segments,
+      shotBank: player.shotBank || 0,
     })),
     projectiles: snakeProjectiles,
     type: "snake-state",
@@ -295,6 +309,25 @@ function tickSnakeRoom() {
   }
   updateSnakeProjectiles();
   broadcastSnakeState();
+}
+
+function startSnakeRoom() {
+  if (snakeRoomInterval) {
+    return;
+  }
+
+  snakeRoomInterval = setInterval(tickSnakeRoom, 115);
+}
+
+function stopSnakeRoomIfIdle() {
+  if (snakePlayers.size > 0 || !snakeRoomInterval) {
+    return;
+  }
+
+  clearInterval(snakeRoomInterval);
+  snakeRoomInterval = null;
+  snakeOrbs.length = 0;
+  snakeProjectiles.length = 0;
 }
 
 function todayKey() {
@@ -351,21 +384,21 @@ function isClaimableName(name) {
   return !name || name === "Unknown scorer";
 }
 
-function readScores() {
+function readScores(path = storePath) {
   try {
-    if (!existsSync(storePath)) {
+    if (!existsSync(path)) {
       return blankScores();
     }
 
-    return normalizeScores(JSON.parse(readFileSync(storePath, "utf8")));
+    return normalizeScores(JSON.parse(readFileSync(path, "utf8")));
   } catch {
     return blankScores();
   }
 }
 
-function writeScores(scores) {
-  mkdirSync(resolve(storePath, ".."), { recursive: true });
-  writeFileSync(storePath, `${JSON.stringify(scores, null, 2)}\n`);
+function writeScores(scores, path = storePath) {
+  mkdirSync(resolve(path, ".."), { recursive: true });
+  writeFileSync(path, `${JSON.stringify(scores, null, 2)}\n`);
 }
 
 function sendJson(response, status, body) {
@@ -393,44 +426,58 @@ function readRequestBody(request) {
 
 async function handleApi(request, response) {
   if (request.url === "/api/high-scores" && request.method === "GET") {
-    sendJson(response, 200, readScores());
+    sendJson(response, 200, readScores(storePath));
+    return true;
+  }
+
+  if (request.url === "/api/snake-high-scores" && request.method === "GET") {
+    sendJson(response, 200, readScores(snakeStorePath));
     return true;
   }
 
   if (request.url === "/api/high-scores" && request.method === "POST") {
-    try {
-      const body = JSON.parse(await readRequestBody(request));
-      const score = Number(body.score);
-      if (!Number.isFinite(score) || score < 0) {
-        sendJson(response, 400, { error: "Score must be a non-negative number." });
-        return true;
-      }
+    await handleScorePost(request, response, storePath);
+    return true;
+  }
 
-      const scores = readScores();
-      const name = cleanName(body.name);
-      const todayRecord = score > scores.todayHighest || (score === scores.todayHighest && isClaimableName(scores.todayName));
-      const allTimeRecord =
-        score > scores.allTimeHighest || (score === scores.allTimeHighest && isClaimableName(scores.allTimeName));
-
-      if (todayRecord) {
-        scores.todayHighest = score;
-        scores.todayName = name;
-      }
-
-      if (allTimeRecord) {
-        scores.allTimeHighest = score;
-        scores.allTimeName = name;
-      }
-
-      writeScores(scores);
-      sendJson(response, 200, { ...scores, todayRecord, allTimeRecord });
-    } catch {
-      sendJson(response, 400, { error: "Invalid score payload." });
-    }
+  if (request.url === "/api/snake-high-scores" && request.method === "POST") {
+    await handleScorePost(request, response, snakeStorePath);
     return true;
   }
 
   return false;
+}
+
+async function handleScorePost(request, response, path) {
+  try {
+    const body = JSON.parse(await readRequestBody(request));
+    const score = Number(body.score);
+    if (!Number.isFinite(score) || score < 0) {
+      sendJson(response, 400, { error: "Score must be a non-negative number." });
+      return;
+    }
+
+    const scores = readScores(path);
+    const name = cleanName(body.name);
+    const todayRecord = score > scores.todayHighest || (score === scores.todayHighest && isClaimableName(scores.todayName));
+    const allTimeRecord =
+      score > scores.allTimeHighest || (score === scores.allTimeHighest && isClaimableName(scores.allTimeName));
+
+    if (todayRecord) {
+      scores.todayHighest = score;
+      scores.todayName = name;
+    }
+
+    if (allTimeRecord) {
+      scores.allTimeHighest = score;
+      scores.allTimeName = name;
+    }
+
+    writeScores(scores, path);
+    sendJson(response, 200, { ...scores, todayRecord, allTimeRecord });
+  } catch {
+    sendJson(response, 400, { error: "Invalid score payload." });
+  }
 }
 
 function serveStatic(request, response) {
@@ -468,17 +515,21 @@ snakeServer.on("connection", (socket) => {
   nextSnakeId += 1;
   const player = {
     alive: false,
+    bestLength: 3,
     color: snakeColorFromId(id),
     direction: "right",
     id,
     length: 3,
     nextDirection: "right",
+    orbsCollected: 0,
     score: 0,
     segments: [],
+    shotBank: 0,
     shootCooldown: 0,
     socket,
   };
   snakePlayers.set(id, player);
+  startSnakeRoom();
   socket.send(JSON.stringify({ board: snakeBoard, id, type: "snake-welcome" }));
   socket.send(JSON.stringify(snakeSnapshot()));
 
@@ -510,11 +561,10 @@ snakeServer.on("connection", (socket) => {
   socket.on("close", () => {
     snakePlayers.delete(id);
     broadcastSnakeState();
+    stopSnakeRoomIfIdle();
   });
 });
 
-setInterval(tickSnakeRoom, 115);
-
 server.listen(port, "0.0.0.0", () => {
-  console.log(`Jumpy Plane and Snake listening on ${port}`);
+  console.log(`Bad Ant Games listening on ${port}`);
 });

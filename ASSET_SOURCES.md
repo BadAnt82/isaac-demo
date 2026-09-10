@@ -1,6 +1,6 @@
 # Asset Sources and Licenses
 
-The Isaac demo uses public-domain artwork hosted by Wikimedia Commons as obstacle imagery. The game vendors small thumbnails in `public/assets` so gameplay does not depend on external image requests at runtime. No secret credentials are used for asset loading.
+Bad Ant Games uses public-domain artwork hosted by Wikimedia Commons as obstacle imagery. The game vendors small thumbnails in `public/assets` so gameplay does not depend on external image requests at runtime. No secret credentials are used for asset loading.
 
 ## Obstacle Images
 

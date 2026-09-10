@@ -95,10 +95,13 @@ type SnakeProjectile = SnakePoint & {
 
 type SnakePlayer = {
   alive: boolean;
+  bestLength: number;
   color: string;
   id: string;
+  orbsCollected: number;
   score: number;
   segments: SnakePoint[];
+  shotBank: number;
 };
 
 type SnakeSnapshot = {
@@ -137,11 +140,17 @@ function requireCanvasContext(element: HTMLCanvasElement) {
 
 const canvas = requireElement<HTMLCanvasElement>("#game");
 const scoreEl = requireElement<HTMLElement>("#score");
+const scoreLabel = requireElement<HTMLElement>(".score-panel .label");
 const localHighEls = Array.from(document.querySelectorAll<HTMLElement>('[data-score="local"]'));
 const todayHighEls = Array.from(document.querySelectorAll<HTMLElement>('[data-score="today"]'));
 const serverHighEls = Array.from(document.querySelectorAll<HTMLElement>('[data-score="server"]'));
 const todayNameEls = Array.from(document.querySelectorAll<HTMLElement>('[data-score-name="today"]'));
 const serverNameEls = Array.from(document.querySelectorAll<HTMLElement>('[data-score-name="server"]'));
+const snakeLocalHighEls = Array.from(document.querySelectorAll<HTMLElement>('[data-snake-score="local"]'));
+const snakeTodayHighEls = Array.from(document.querySelectorAll<HTMLElement>('[data-snake-score="today"]'));
+const snakeServerHighEls = Array.from(document.querySelectorAll<HTMLElement>('[data-snake-score="server"]'));
+const snakeTodayNameEls = Array.from(document.querySelectorAll<HTMLElement>('[data-snake-score-name="today"]'));
+const snakeServerNameEls = Array.from(document.querySelectorAll<HTMLElement>('[data-snake-score-name="server"]'));
 const scorePanel = requireElement<HTMLElement>(".score-panel");
 const restartButton = requireElement<HTMLButtonElement>("#restart");
 const startButton = requireElement<HTMLButtonElement>("#start");
@@ -236,9 +245,18 @@ let snakeClientId = "";
 let snakeSnapshot: SnakeSnapshot | null = null;
 let snakeConnected = false;
 let snakeStartPending = false;
+let snakeLocalLongest = 3;
+let snakeTodayLongest = 0;
+let snakeServerLongest = 0;
+let snakeTodayLongName = "";
+let snakeServerLongName = "";
+let snakeBestThisRun = 3;
 
-const localHighScoreKey = "isaac-demo-high-score";
-const pendingScoreKey = "isaac-demo-pending-score";
+const localHighScoreKey = "badant-games-jumpy-plane-high-score";
+const pendingScoreKey = "badant-games-jumpy-plane-pending-score";
+const playerNameKey = "badant-games-player-name";
+const snakeLocalLongestKey = "badant-games-glow-snake-longest";
+const snakePendingScoreKey = "badant-games-glow-snake-pending-longest";
 const obstacleWidth = 96;
 const obstacleSpeed = 250;
 const spawnEvery = 1.42;
@@ -508,6 +526,11 @@ function connectSnakeSocket() {
 
     snakeSnapshot = message;
     const self = getLocalSnake();
+    if (self) {
+      snakeBestThisRun = Math.max(snakeBestThisRun, self.bestLength ?? 0, self.segments.length);
+      writeSnakeLocalLongest(snakeBestThisRun);
+      renderSnakeHighScores();
+    }
     if (state === "snake-running" && self && !self.alive) {
       showSnakeDead();
     }
@@ -541,7 +564,9 @@ function getLocalSnake() {
 
 function startSnakeGame(restart = false) {
   unlockAudio();
+  snakeBestThisRun = 3;
   state = "snake-running";
+  scoreLabel.textContent = "Length";
   overlay.hidden = true;
   overlay.classList.remove("is-platform");
   platformPanel.hidden = true;
@@ -566,6 +591,9 @@ function startSnakeGame(restart = false) {
 
 function showSnakeMenu() {
   leaveSnakeRoom();
+  readSnakeLocalLongest();
+  renderSnakeHighScores();
+  void loadServerSnakeHighScores();
   state = "snake-menu";
   scoreEl.textContent = "0";
   overlay.hidden = false;
@@ -583,6 +611,7 @@ function showSnakeMenu() {
 
 function showSnakeDead() {
   state = "snake-dead";
+  scoreLabel.textContent = "Longest";
   overlay.hidden = false;
   overlay.classList.remove("is-platform");
   platformPanel.hidden = true;
@@ -594,7 +623,13 @@ function showSnakeDead() {
   homeButton.hidden = false;
   snakeControls.hidden = true;
   const self = getLocalSnake();
-  snakeMessage.textContent = `Collected ${self?.score ?? 0}.`;
+  const finalLength = Math.max(3, snakeBestThisRun, self?.bestLength ?? 0, self?.segments.length ?? 0);
+  writeSnakeLocalLongest(finalLength);
+  renderSnakeHighScores();
+  void syncFinalSnakeScore(finalLength);
+  scoreEl.textContent = formatScore(finalLength);
+  snakeMessage.textContent = `Longest ${formatScore(finalLength)}.`;
+  updateSnakeShootButton();
   updateRollButton();
 }
 
@@ -604,7 +639,17 @@ function updateSnakeScore() {
   }
 
   const self = getLocalSnake();
-  scoreEl.textContent = `${self?.score ?? 0}`;
+  const length = Math.max(3, self?.segments.length ?? snakeBestThisRun);
+  scoreEl.textContent = formatScore(state === "snake-dead" ? Math.max(length, snakeBestThisRun) : length);
+  updateSnakeShootButton();
+}
+
+function updateSnakeShootButton() {
+  const self = getLocalSnake();
+  const shotBank = Math.max(0, Math.min(2, self?.shotBank ?? 0));
+  const canShoot = state === "snake-running" && Boolean(self?.alive) && shotBank > 0 && (self?.segments.length ?? 0) > 2;
+  snakeShootButton.textContent = `Shoot (${shotBank}/2)`;
+  snakeShootButton.disabled = !canShoot;
 }
 
 function setSnakeDirection(direction: SnakeDirection) {
@@ -618,8 +663,15 @@ function shootSnake() {
   if (state !== "snake-running") {
     return;
   }
+  const self = getLocalSnake();
+  if (!self || self.shotBank <= 0 || self.segments.length <= 2) {
+    updateSnakeShootButton();
+    return;
+  }
+
   playTone(180, 0.08, "square", 0.032, 0, 680);
   sendSnakeMessage({ type: "snake-shoot" });
+  updateSnakeShootButton();
 }
 
 function getSnakeBoard() {
@@ -796,6 +848,24 @@ function renderHighScores() {
   setText(serverNameEls, serverHighName || (serverHighest > 0 ? "Unknown scorer" : "No scorer yet"));
 }
 
+function readSnakeLocalLongest() {
+  const storedScore = Number(localStorage.getItem(snakeLocalLongestKey) || 3);
+  snakeLocalLongest = Number.isFinite(storedScore) ? Math.max(3, storedScore) : 3;
+}
+
+function writeSnakeLocalLongest(nextLength: number) {
+  snakeLocalLongest = Math.max(3, snakeLocalLongest, nextLength);
+  localStorage.setItem(snakeLocalLongestKey, `${snakeLocalLongest}`);
+}
+
+function renderSnakeHighScores() {
+  setText(snakeLocalHighEls, formatScore(Math.max(3, snakeLocalLongest)));
+  setText(snakeTodayHighEls, formatScore(Math.max(3, snakeTodayLongest)));
+  setText(snakeServerHighEls, formatScore(Math.max(3, snakeServerLongest)));
+  setText(snakeTodayNameEls, snakeTodayLongName || (snakeTodayLongest > 0 ? "Unknown scorer" : "No scorer yet"));
+  setText(snakeServerNameEls, snakeServerLongName || (snakeServerLongest > 0 ? "Unknown scorer" : "No scorer yet"));
+}
+
 async function loadServerHighScores() {
   try {
     const response = await fetch("/api/high-scores", { cache: "no-store" });
@@ -824,6 +894,14 @@ function applyServerHighScores(scores: HighScoreResponse) {
   renderHighScores();
 }
 
+function applyServerSnakeHighScores(scores: HighScoreResponse) {
+  snakeTodayLongest = Number(scores.todayHighest) || snakeTodayLongest;
+  snakeTodayLongName = typeof scores.todayName === "string" ? scores.todayName : snakeTodayLongName;
+  snakeServerLongest = Number(scores.allTimeHighest) || snakeServerLongest;
+  snakeServerLongName = typeof scores.allTimeName === "string" ? scores.allTimeName : snakeServerLongName;
+  renderSnakeHighScores();
+}
+
 async function submitServerHighScore(finalScore: number, name = "") {
   try {
     const response = await fetch("/api/high-scores", {
@@ -847,10 +925,56 @@ async function submitServerHighScore(finalScore: number, name = "") {
   }
 }
 
+async function loadServerSnakeHighScores() {
+  try {
+    const response = await fetch("/api/snake-high-scores", { cache: "no-store" });
+    if (!response.ok) {
+      return;
+    }
+
+    const scores = await response.json() as HighScoreResponse;
+    applyServerSnakeHighScores(scores);
+    void retryPendingServerSnakeScore();
+    void reconcileSnakeLocalHighScore();
+  } catch {
+    // Snake can still run locally if the score endpoint is unavailable.
+  }
+}
+
+async function submitServerSnakeHighScore(finalScore: number, name = "") {
+  try {
+    const response = await fetch("/api/snake-high-scores", {
+      body: JSON.stringify({ name, score: finalScore }),
+      cache: "no-store",
+      headers: { "Content-Type": "application/json" },
+      method: "POST",
+    });
+    if (!response.ok) {
+      return;
+    }
+
+    const scores = await response.json() as HighScoreResponse;
+    applyServerSnakeHighScores(scores);
+    if (Number(scores.todayHighest) >= finalScore || Number(scores.allTimeHighest) >= finalScore) {
+      localStorage.removeItem(snakePendingScoreKey);
+    }
+    return scores;
+  } catch {
+    // Ignore sync failures; the browser's longest snake still persists.
+  }
+}
+
 function rememberPendingServerScore(finalScore: number) {
   const pendingScore = Number(localStorage.getItem(pendingScoreKey) || 0);
   if (!Number.isFinite(pendingScore) || finalScore > pendingScore) {
     localStorage.setItem(pendingScoreKey, `${finalScore}`);
+  }
+}
+
+function rememberPendingServerSnakeScore(finalScore: number) {
+  const pendingScore = Number(localStorage.getItem(snakePendingScoreKey) || 0);
+  if (!Number.isFinite(pendingScore) || finalScore > pendingScore) {
+    localStorage.setItem(snakePendingScoreKey, `${finalScore}`);
   }
 }
 
@@ -861,6 +985,13 @@ async function retryPendingServerScore() {
   }
 }
 
+async function retryPendingServerSnakeScore() {
+  const pendingScore = Number(localStorage.getItem(snakePendingScoreKey) || 0);
+  if (Number.isFinite(pendingScore) && pendingScore > 0) {
+    await submitServerSnakeHighScore(pendingScore);
+  }
+}
+
 async function reconcileLocalHighScore() {
   if (localHighest > todayHighest || localHighest > serverHighest) {
     rememberPendingServerScore(localHighest);
@@ -868,9 +999,20 @@ async function reconcileLocalHighScore() {
   }
 }
 
-function askForRecordName(finalScore: number, recordLabels: string[]) {
-  recordMessage.textContent = `You set ${recordLabels.join(" and ")} with ${formatScore(finalScore)} points.`;
-  recordNameInput.value = localStorage.getItem("isaac-demo-player-name") || "";
+async function reconcileSnakeLocalHighScore() {
+  if (localStorage.getItem(snakeLocalLongestKey) === null) {
+    return;
+  }
+
+  if (snakeLocalLongest > snakeTodayLongest || snakeLocalLongest > snakeServerLongest) {
+    rememberPendingServerSnakeScore(snakeLocalLongest);
+    await submitServerSnakeHighScore(snakeLocalLongest);
+  }
+}
+
+function askForRecordName(finalScore: number, recordLabels: string[], unitLabel = "points") {
+  recordMessage.textContent = `You set ${recordLabels.join(" and ")} with ${formatScore(finalScore)} ${unitLabel}.`;
+  recordNameInput.value = localStorage.getItem(playerNameKey) || "";
   recordDialog.hidden = false;
   recordNameInput.focus();
 
@@ -902,6 +1044,29 @@ async function syncFinalScore(finalScore: number) {
   await submitServerHighScore(finalScore, name);
 }
 
+async function syncFinalSnakeScore(finalScore: number) {
+  rememberPendingServerSnakeScore(finalScore);
+  const result = await submitServerSnakeHighScore(finalScore);
+  if (!result) {
+    return;
+  }
+
+  const recordLabels: string[] = [];
+  if (result.todayRecord) {
+    recordLabels.push("today's longest snake");
+  }
+  if (result.allTimeRecord) {
+    recordLabels.push("the server longest snake");
+  }
+
+  if (recordLabels.length === 0) {
+    return;
+  }
+
+  const name = await askForRecordName(finalScore, recordLabels, "segments");
+  await submitServerSnakeHighScore(finalScore, name);
+}
+
 function addScore(points: number) {
   score += points;
   scoreEl.textContent = formatScore(score);
@@ -917,7 +1082,9 @@ function updateRollButton() {
 
 function reset(nextState: GameState) {
   readLocalHighest();
+  readSnakeLocalLongest();
   renderHighScores();
+  renderSnakeHighScores();
   score = 0;
   obstacles = [];
   bubbles = [];
@@ -942,6 +1109,7 @@ function reset(nextState: GameState) {
   enemyPlane.y = height * 0.36;
   enemyPlane.bob = 0;
   state = nextState;
+  scoreLabel.textContent = "Score";
   scoreEl.textContent = formatScore(score);
   scorePanel.hidden = nextState !== "running";
   homeButton.hidden = nextState === "platform";
@@ -955,6 +1123,7 @@ function reset(nextState: GameState) {
   snakeMenuPanel.hidden = true;
   snakeDeadPanel.hidden = true;
   snakeControls.hidden = true;
+  updateSnakeShootButton();
   updateRollButton();
 }
 
@@ -1934,7 +2103,7 @@ recordForm.addEventListener("submit", (event) => {
   event.preventDefault();
   const name = recordNameInput.value.trim();
   if (name) {
-    localStorage.setItem("isaac-demo-player-name", name);
+    localStorage.setItem(playerNameKey, name);
   }
   recordDialog.hidden = true;
   pendingRecordName?.(name);
@@ -1945,8 +2114,11 @@ document.addEventListener("fullscreenchange", () => {
   resize();
 });
 readLocalHighest();
+readSnakeLocalLongest();
 renderHighScores();
+renderSnakeHighScores();
 void loadServerHighScores();
+void loadServerSnakeHighScores();
 resize();
 updateFullscreenButton();
 reset("platform");
