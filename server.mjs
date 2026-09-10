@@ -22,6 +22,9 @@ const snakeBoard = {
 const targetSnakeOrbCount = 54;
 const maxSnakeBotCount = 10;
 const maxSnakeShotBank = 5;
+const snakeProjectileRangeCells = 72;
+const snakeProjectileSpeedCells = 4;
+const snakeShotRecoilTicks = 4;
 const snakeBotRespawnTicks = 26;
 const snakeBotPersonalities = [
   { decisionMax: 5, decisionMin: 2, doubleShotChance: 0.018, mistakeChance: 0.04, randomSafeChance: 0.24, shootChance: 0.012 },
@@ -185,6 +188,7 @@ function respawnSnake(player) {
   player.score = 0;
   player.shotBank = 0;
   player.shootCooldown = 0;
+  player.shotRecoilTicks = 0;
   if (player.personality) {
     resetSnakeBotDecision(player);
   }
@@ -234,6 +238,7 @@ function createSnakeBot() {
     segments: [],
     shotBank: 0,
     shootCooldown: 0,
+    shotRecoilTicks: 0,
   };
   respawnSnake(bot);
   return bot;
@@ -403,6 +408,10 @@ function updateSnakePlayer(player) {
 
   player.shootCooldown = Math.max(0, player.shootCooldown - 1);
   player.direction = player.nextDirection;
+  if (player.shotRecoilTicks > 0) {
+    player.shotRecoilTicks -= 1;
+    return;
+  }
 
   const head = nextSnakeHead(player, player.direction);
 
@@ -457,6 +466,7 @@ function shootSnakeSegment(player, options = {}) {
   if (!skipCooldown) {
     player.shootCooldown = 5;
   }
+  player.shotRecoilTicks = Math.max(player.shotRecoilTicks || 0, snakeShotRecoilTicks);
   snakeProjectiles.push({
     color: player.color,
     distance: 0,
@@ -471,56 +481,68 @@ function shootSnakeSegment(player, options = {}) {
   return true;
 }
 
-function updateSnakeProjectiles() {
-  for (let index = snakeProjectiles.length - 1; index >= 0; index -= 1) {
-    const projectile = snakeProjectiles[index];
-    projectile.x += projectile.dx * snakeBoard.cellSize * 2;
-    projectile.y += projectile.dy * snakeBoard.cellSize * 2;
-    projectile.distance += snakeBoard.cellSize * 2;
-
-    if (
-      projectile.x < 0 ||
-      projectile.x > snakeBoard.width ||
-      projectile.y < 0 ||
-      projectile.y > snakeBoard.height ||
-      projectile.distance > snakeBoard.cellSize * 44
-    ) {
-      snakeProjectiles.splice(index, 1);
+function snakeProjectileHit(projectile) {
+  for (const player of allSnakes()) {
+    if (!player.alive || player.id === projectile.ownerId) {
       continue;
     }
 
-    let hit = false;
-    for (const player of allSnakes()) {
-      if (!player.alive || player.id === projectile.ownerId) {
-        continue;
-      }
+    const head = player.segments[0];
+    if (
+      head &&
+      Math.abs(head.x - projectile.x) <= snakeBoard.cellSize * 0.5 &&
+      Math.abs(head.y - projectile.y) <= snakeBoard.cellSize * 0.5
+    ) {
+      destroySnake(player);
+      return true;
+    }
 
-      const head = player.segments[0];
-      if (
-        head &&
-        Math.abs(head.x - projectile.x) <= snakeBoard.cellSize * 0.5 &&
-        Math.abs(head.y - projectile.y) <= snakeBoard.cellSize * 0.5
-      ) {
-        destroySnake(player);
-        hit = true;
+    if (
+      player.segments.slice(1).some(
+        (segment) =>
+          Math.abs(segment.x - projectile.x) <= snakeBoard.cellSize * 0.5 &&
+          Math.abs(segment.y - projectile.y) <= snakeBoard.cellSize * 0.5,
+      )
+    ) {
+      player.length -= 1;
+      trimSnake(player);
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function updateSnakeProjectiles() {
+  for (let index = snakeProjectiles.length - 1; index >= 0; index -= 1) {
+    const projectile = snakeProjectiles[index];
+    let removeProjectile = snakeProjectileHit(projectile);
+    for (let step = 0; step < snakeProjectileSpeedCells; step += 1) {
+      if (removeProjectile) {
         break;
       }
 
+      projectile.x += projectile.dx * snakeBoard.cellSize;
+      projectile.y += projectile.dy * snakeBoard.cellSize;
+      projectile.distance += snakeBoard.cellSize;
       if (
-        player.segments.slice(1).some(
-          (segment) =>
-            Math.abs(segment.x - projectile.x) <= snakeBoard.cellSize * 0.5 &&
-            Math.abs(segment.y - projectile.y) <= snakeBoard.cellSize * 0.5,
-        )
+        projectile.x < 0 ||
+        projectile.x > snakeBoard.width ||
+        projectile.y < 0 ||
+        projectile.y > snakeBoard.height ||
+        projectile.distance > snakeBoard.cellSize * snakeProjectileRangeCells
       ) {
-        player.length -= 1;
-        trimSnake(player);
-        hit = true;
+        removeProjectile = true;
+        break;
+      }
+
+      if (snakeProjectileHit(projectile)) {
+        removeProjectile = true;
         break;
       }
     }
 
-    if (hit) {
+    if (removeProjectile) {
       snakeProjectiles.splice(index, 1);
     }
   }
@@ -845,6 +867,7 @@ snakeServer.on("connection", (socket) => {
     segments: [],
     shotBank: 0,
     shootCooldown: 0,
+    shotRecoilTicks: 0,
     socket,
   };
   snakePlayers.set(id, player);

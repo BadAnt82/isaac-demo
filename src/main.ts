@@ -4,6 +4,7 @@ type GameState =
   | "platform"
   | "ready"
   | "plane-options"
+  | "report-issue"
   | "running"
   | "bubble-crash"
   | "ended"
@@ -170,9 +171,6 @@ const planeMenuBackButton = requireElement<HTMLButtonElement>("#plane-menu-back"
 const planeOptionsBackButton = requireElement<HTMLButtonElement>("#plane-options-back");
 const planeSoundToggle = requireElement<HTMLButtonElement>("#plane-sound-toggle");
 const planeReportIssueButton = requireElement<HTMLButtonElement>("#plane-report-issue");
-const planeIssueForm = requireElement<HTMLFormElement>("#plane-issue-form");
-const planeIssueText = requireElement<HTMLTextAreaElement>("#plane-issue-text");
-const planeIssueStatus = requireElement<HTMLElement>("#plane-issue-status");
 const selectPlaneButton = requireElement<HTMLButtonElement>("#select-plane");
 const selectSnakeButton = requireElement<HTMLButtonElement>("#select-snake");
 const homeButton = requireElement<HTMLButtonElement>("#home");
@@ -201,9 +199,11 @@ const snakeMenuBackButton = requireElement<HTMLButtonElement>("#snake-menu-back"
 const snakeOptionsBackButton = requireElement<HTMLButtonElement>("#snake-options-back");
 const snakeSoundToggle = requireElement<HTMLButtonElement>("#snake-sound-toggle");
 const snakeReportIssueButton = requireElement<HTMLButtonElement>("#snake-report-issue");
-const snakeIssueForm = requireElement<HTMLFormElement>("#snake-issue-form");
-const snakeIssueText = requireElement<HTMLTextAreaElement>("#snake-issue-text");
-const snakeIssueStatus = requireElement<HTMLElement>("#snake-issue-status");
+const reportPanel = requireElement<HTMLElement>("#report-panel");
+const issueForm = requireElement<HTMLFormElement>("#issue-form");
+const issueText = requireElement<HTMLTextAreaElement>("#issue-text");
+const issueCancelButton = requireElement<HTMLButtonElement>("#issue-cancel");
+const issueStatus = requireElement<HTMLElement>("#issue-status");
 const snakeMessage = requireElement<HTMLElement>("#snake-message");
 const crashMessage = requireElement<HTMLElement>("#crash-message");
 const recordDialog = requireElement<HTMLElement>("#record-dialog");
@@ -286,6 +286,8 @@ let snakeLastShotBank = 0;
 let snakeJoystickPointerId: number | null = null;
 let snakeJoystickPulseTimer = 0;
 let lastSnakeShootTime = 0;
+let reportGame: "jumpy-plane" | "shooting-snakes" = "jumpy-plane";
+let reportReturnState: "plane-options" | "snake-options" = "plane-options";
 let snakeLocalLongest = 3;
 let snakeTodayLongest = 0;
 let snakeServerLongest = 0;
@@ -707,13 +709,14 @@ function showPlaneOptions() {
   crashPanel.hidden = true;
   snakeMenuPanel.hidden = true;
   snakeOptionsPanel.hidden = true;
+  reportPanel.hidden = true;
   snakeDeadPanel.hidden = true;
   scorePanel.hidden = true;
   homeButton.hidden = false;
   startButton.hidden = true;
   restartButton.hidden = true;
   snakeControls.hidden = true;
-  hideIssueForms();
+  issueStatus.textContent = "";
   updateSoundButtons();
   updateRollButton();
 }
@@ -740,6 +743,7 @@ function startSnakeGame(restart = false) {
   crashPanel.hidden = true;
   snakeMenuPanel.hidden = true;
   snakeOptionsPanel.hidden = true;
+  reportPanel.hidden = true;
   snakeDeadPanel.hidden = true;
   scorePanel.hidden = true;
   homeButton.hidden = false;
@@ -777,6 +781,7 @@ function showSnakeMenu() {
   crashPanel.hidden = true;
   snakeMenuPanel.hidden = false;
   snakeOptionsPanel.hidden = true;
+  reportPanel.hidden = true;
   snakeDeadPanel.hidden = true;
   scorePanel.hidden = true;
   homeButton.hidden = false;
@@ -797,13 +802,48 @@ function showSnakeOptions() {
   crashPanel.hidden = true;
   snakeMenuPanel.hidden = true;
   snakeOptionsPanel.hidden = false;
+  reportPanel.hidden = true;
   snakeDeadPanel.hidden = true;
   scorePanel.hidden = true;
   homeButton.hidden = false;
   snakeControls.hidden = true;
-  hideIssueForms();
+  issueStatus.textContent = "";
   updateSoundButtons();
   updateRollButton();
+}
+
+function showReportIssue(game: "jumpy-plane" | "shooting-snakes", returnState: "plane-options" | "snake-options") {
+  reportGame = game;
+  reportReturnState = returnState;
+  leaveSnakeRoom();
+  setSnakeLayout(false);
+  resetSnakeJoystick();
+  state = "report-issue";
+  overlay.hidden = false;
+  overlay.classList.remove("is-platform");
+  platformPanel.hidden = true;
+  gameMenuPanel.hidden = true;
+  planeOptionsPanel.hidden = true;
+  crashPanel.hidden = true;
+  snakeMenuPanel.hidden = true;
+  snakeOptionsPanel.hidden = true;
+  reportPanel.hidden = false;
+  snakeDeadPanel.hidden = true;
+  scorePanel.hidden = true;
+  homeButton.hidden = false;
+  snakeControls.hidden = true;
+  issueText.value = "";
+  issueStatus.textContent = "";
+  issueText.focus();
+  updateRollButton();
+}
+
+function returnFromReportIssue() {
+  if (reportReturnState === "snake-options") {
+    showSnakeOptions();
+  } else {
+    showPlaneOptions();
+  }
 }
 
 function showSnakeDead() {
@@ -820,6 +860,7 @@ function showSnakeDead() {
   crashPanel.hidden = true;
   snakeMenuPanel.hidden = true;
   snakeOptionsPanel.hidden = true;
+  reportPanel.hidden = true;
   snakeDeadPanel.hidden = false;
   scorePanel.hidden = false;
   homeButton.hidden = false;
@@ -1140,25 +1181,6 @@ function updateSoundButtons() {
   planeSoundToggle.setAttribute("aria-pressed", `${planeSoundEnabled}`);
   snakeSoundToggle.textContent = snakeSoundEnabled ? "Sound on" : "Sound off";
   snakeSoundToggle.setAttribute("aria-pressed", `${snakeSoundEnabled}`);
-}
-
-function hideIssueForms() {
-  planeIssueForm.hidden = true;
-  planeIssueStatus.textContent = "";
-  snakeIssueForm.hidden = true;
-  snakeIssueStatus.textContent = "";
-}
-
-function showPlaneIssueForm() {
-  planeIssueForm.hidden = false;
-  planeIssueStatus.textContent = "";
-  planeIssueText.focus();
-}
-
-function showSnakeIssueForm() {
-  snakeIssueForm.hidden = false;
-  snakeIssueStatus.textContent = "";
-  snakeIssueText.focus();
 }
 
 function setPlaneSound(enabled: boolean) {
@@ -1487,6 +1509,7 @@ function reset(nextState: GameState) {
   crashPanel.hidden = true;
   snakeMenuPanel.hidden = true;
   snakeOptionsPanel.hidden = true;
+  reportPanel.hidden = true;
   snakeDeadPanel.hidden = true;
   snakeControls.hidden = true;
   updateSoundButtons();
@@ -2221,6 +2244,7 @@ function endGame() {
   crashPanel.hidden = false;
   snakeMenuPanel.hidden = true;
   snakeOptionsPanel.hidden = true;
+  reportPanel.hidden = true;
   snakeDeadPanel.hidden = true;
   crashPanel.querySelector("h1")!.textContent = "You Crashed";
   crashMessage.textContent = `Score ${formatScore(score)}.`;
@@ -2439,29 +2463,7 @@ planeSoundToggle.addEventListener("click", () => {
   unlockAudio();
   setPlaneSound(!planeSoundEnabled);
 });
-planeReportIssueButton.addEventListener("click", showPlaneIssueForm);
-planeIssueForm.addEventListener("submit", (event) => {
-  event.preventDefault();
-  const message = planeIssueText.value.trim();
-  if (!message) {
-    planeIssueStatus.textContent = "Add a short note first.";
-    return;
-  }
-
-  planeIssueStatus.textContent = "Sending...";
-  void submitIssue("jumpy-plane", message)
-    .then(() => {
-      planeIssueText.value = "";
-      planeIssueStatus.textContent = "Issue saved.";
-      window.setTimeout(() => {
-        planeIssueForm.hidden = true;
-        planeIssueStatus.textContent = "";
-      }, 900);
-    })
-    .catch(() => {
-      planeIssueStatus.textContent = "Issue did not save.";
-    });
-});
+planeReportIssueButton.addEventListener("click", () => showReportIssue("jumpy-plane", "plane-options"));
 restartButton.addEventListener("click", () => {
   unlockAudio();
   reset("running");
@@ -2482,27 +2484,27 @@ snakeSoundToggle.addEventListener("click", () => {
   unlockAudio();
   setSnakeSound(!snakeSoundEnabled);
 });
-snakeReportIssueButton.addEventListener("click", showSnakeIssueForm);
-snakeIssueForm.addEventListener("submit", (event) => {
+snakeReportIssueButton.addEventListener("click", () => showReportIssue("shooting-snakes", "snake-options"));
+issueCancelButton.addEventListener("click", returnFromReportIssue);
+issueForm.addEventListener("submit", (event) => {
   event.preventDefault();
-  const message = snakeIssueText.value.trim();
+  const message = issueText.value.trim();
   if (!message) {
-    snakeIssueStatus.textContent = "Add a short note first.";
+    issueStatus.textContent = "Add a short note first.";
     return;
   }
 
-  snakeIssueStatus.textContent = "Sending...";
-  void submitIssue("shooting-snakes", message)
+  issueStatus.textContent = "Sending...";
+  void submitIssue(reportGame, message)
     .then(() => {
-      snakeIssueText.value = "";
-      snakeIssueStatus.textContent = "Issue saved.";
+      issueText.value = "";
+      issueStatus.textContent = "Issue saved.";
       window.setTimeout(() => {
-        snakeIssueForm.hidden = true;
-        snakeIssueStatus.textContent = "";
+        returnFromReportIssue();
       }, 900);
     })
     .catch(() => {
-      snakeIssueStatus.textContent = "Issue did not save.";
+      issueStatus.textContent = "Issue did not save.";
     });
 });
 snakeStartButton.addEventListener("click", () => {
