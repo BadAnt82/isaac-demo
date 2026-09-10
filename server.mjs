@@ -17,6 +17,7 @@ const snakeBoard = {
 };
 const targetSnakeOrbCount = 54;
 const maxSnakeBotCount = 10;
+const maxSnakeShotBank = 5;
 const snakeBotRespawnTicks = 26;
 const snakeBotPersonalities = [
   { decisionMax: 5, decisionMin: 2, doubleShotChance: 0.018, mistakeChance: 0.04, randomSafeChance: 0.24, shootChance: 0.012 },
@@ -59,8 +60,21 @@ function snakeColorFromId(id) {
   return `hsl(${hue} 82% 58%)`;
 }
 
+const fallbackSnakeOrbColors = Array.from({ length: maxSnakeBotCount }, (_, index) => snakeColorFromId(`snake-${index + 1}`));
+
 function snakeOrbColor() {
-  return `hsl(${Math.floor(Math.random() * 360)} 96% 64%)`;
+  const colors = [...new Set(allSnakes().map((player) => player.color))];
+  const palette = colors.length > 0 ? colors : fallbackSnakeOrbColors;
+  const colorCounts = new Map(palette.map((color) => [color, 0]));
+
+  for (const orb of snakeOrbs) {
+    colorCounts.set(orb.color, (colorCounts.get(orb.color) || 0) + 1);
+  }
+
+  const lowestCount = Math.min(...palette.map((color) => colorCounts.get(color) || 0));
+  const balancedChoices = palette.filter((color) => (colorCounts.get(color) || 0) <= lowestCount + 1);
+  const choices = Math.random() < 0.82 ? balancedChoices : palette;
+  return randomItem(choices);
 }
 
 function randomInt(min, max) {
@@ -139,9 +153,9 @@ function findSnakeSpawn() {
   };
 }
 
-function spawnSnakeOrb(x = randomGridCoordinate(snakeBoard.width), y = randomGridCoordinate(snakeBoard.height)) {
+function spawnSnakeOrb(x = randomGridCoordinate(snakeBoard.width), y = randomGridCoordinate(snakeBoard.height), color = snakeOrbColor()) {
   snakeOrbs.push({
-    color: snakeOrbColor(),
+    color,
     id: `orb-${nextSnakeOrbId}`,
     x,
     y,
@@ -184,7 +198,7 @@ function destroySnake(player) {
   const drops = Math.floor(player.segments.length * 0.5);
   for (let index = 0; index < drops; index += 1) {
     const segment = player.segments[Math.floor((index / Math.max(1, drops)) * player.segments.length)];
-    spawnSnakeOrb(segment.x, segment.y);
+    spawnSnakeOrb(segment.x, segment.y, player.color);
   }
 }
 
@@ -248,11 +262,23 @@ function ensureSnakeBots() {
   }
 }
 
-function nearestSnakeOrb(head) {
+function nearestSnakeOrb(head, player = null) {
   let target = null;
   let targetDistance = Infinity;
   for (const orb of snakeOrbs) {
-    const distance = Math.abs(orb.x - head.x) + Math.abs(orb.y - head.y);
+    let distance = Math.abs(orb.x - head.x) + Math.abs(orb.y - head.y);
+    if (player) {
+      const matchesPlayer = orb.color === player.color;
+      if (matchesPlayer && player.shotBank < maxSnakeShotBank) {
+        distance *= player.shotBank <= 1 ? 0.68 : 0.88;
+      }
+      if (!matchesPlayer && player.length <= 5) {
+        distance *= 0.72;
+      }
+      if (matchesPlayer && player.shotBank >= maxSnakeShotBank) {
+        distance *= 1.35;
+      }
+    }
     if (distance < targetDistance) {
       target = orb;
       targetDistance = distance;
@@ -295,7 +321,7 @@ function chooseSnakeBotDirection(bot) {
   }
   resetSnakeBotDecision(bot);
 
-  const target = nearestSnakeOrb(bot.segments[0]);
+  const target = nearestSnakeOrb(bot.segments[0], bot);
   const directionNames = Object.keys(snakeDirections);
   const candidates = directionNames
     .map((direction) => {
@@ -397,12 +423,14 @@ function updateSnakePlayer(player) {
     (orb) => Math.abs(orb.x - head.x) < snakeBoard.cellSize && Math.abs(orb.y - head.y) < snakeBoard.cellSize,
   );
   if (eatenIndex >= 0) {
-    player.length += 1;
-    player.bestLength = Math.max(player.bestLength || 3, player.length);
+    const eatenOrb = snakeOrbs[eatenIndex];
     player.orbsCollected += 1;
     player.score += 1;
-    if (player.orbsCollected % 10 === 0 && player.shotBank < 2) {
-      player.shotBank += 1;
+    if (eatenOrb.color === player.color) {
+      player.shotBank = Math.min(maxSnakeShotBank, player.shotBank + 1);
+    } else {
+      player.length += 1;
+      player.bestLength = Math.max(player.bestLength || 3, player.length);
     }
     snakeOrbs.splice(eatenIndex, 1);
     spawnSnakeOrb();
@@ -523,8 +551,8 @@ function broadcastSnakeState() {
 }
 
 function tickSnakeRoom() {
-  seedSnakeOrbs();
   ensureSnakeBots();
+  seedSnakeOrbs();
   for (const bot of snakeBots.values()) {
     updateSnakeBot(bot);
   }

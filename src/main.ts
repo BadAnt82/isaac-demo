@@ -289,6 +289,7 @@ const snakeFallbackBoard = {
   height: 1920,
   width: 2880,
 };
+const maxSnakeShotBank = 5;
 
 type FullscreenFrame = HTMLElement & {
   webkitRequestFullscreen?: () => Promise<void> | void;
@@ -660,9 +661,9 @@ function updateSnakeScore() {
 
 function updateSnakeShootButton() {
   const self = getLocalSnake();
-  const shotBank = Math.max(0, Math.min(2, self?.shotBank ?? 0));
+  const shotBank = Math.max(0, Math.min(maxSnakeShotBank, self?.shotBank ?? 0));
   const canShoot = state === "snake-running" && Boolean(self?.alive) && shotBank > 0 && (self?.segments.length ?? 0) > 2;
-  snakeShootButton.textContent = `Shoot (${shotBank}/2)`;
+  snakeShootButton.textContent = `Shoot (${shotBank}/${maxSnakeShotBank})`;
   snakeShootButton.disabled = !canShoot;
 }
 
