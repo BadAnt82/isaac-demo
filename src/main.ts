@@ -176,10 +176,6 @@ let todayHighName = "";
 let serverHighName = "";
 let pendingRecordName: ((name: string) => void) | null = null;
 let audioContext: AudioContext | null = null;
-let propellerOscillator: OscillatorNode | null = null;
-let propellerGain: GainNode | null = null;
-let propellerPulse: OscillatorNode | null = null;
-let propellerPulseGain: GainNode | null = null;
 
 const localHighScoreKey = "isaac-demo-high-score";
 const pendingScoreKey = "isaac-demo-pending-score";
@@ -379,48 +375,6 @@ function playNoiseBurst(duration: number, volume: number, delay = 0) {
   source.start(start);
 }
 
-function startPropellerSound() {
-  const context = getAudioContext();
-  if (!context || propellerOscillator) {
-    return;
-  }
-
-  propellerOscillator = context.createOscillator();
-  propellerGain = context.createGain();
-  propellerPulse = context.createOscillator();
-  propellerPulseGain = context.createGain();
-
-  propellerOscillator.type = "sawtooth";
-  propellerOscillator.frequency.value = 58;
-  propellerPulse.type = "sine";
-  propellerPulse.frequency.value = 11;
-  propellerPulseGain.gain.value = 9;
-  propellerGain.gain.value = 0.018;
-
-  propellerPulse.connect(propellerPulseGain);
-  propellerPulseGain.connect(propellerOscillator.frequency);
-  propellerOscillator.connect(propellerGain);
-  propellerGain.connect(context.destination);
-  propellerPulse.start();
-  propellerOscillator.start();
-}
-
-function stopPropellerSound() {
-  const context = audioContext;
-  if (!context || !propellerOscillator || !propellerGain || !propellerPulse) {
-    return;
-  }
-
-  const stopAt = context.currentTime + 0.08;
-  propellerGain.gain.exponentialRampToValueAtTime(0.0001, stopAt);
-  propellerOscillator.stop(stopAt);
-  propellerPulse.stop(stopAt);
-  propellerOscillator = null;
-  propellerGain = null;
-  propellerPulse = null;
-  propellerPulseGain = null;
-}
-
 function playBubbleShootSound() {
   playTone(360, 0.12, "square", 0.025, 0, 760);
   playTone(840, 0.06, "triangle", 0.018, 0.05, 520);
@@ -429,6 +383,12 @@ function playBubbleShootSound() {
 function playBubblePopSound() {
   playTone(780, 0.07, "sine", 0.038, 0, 1140);
   playTone(420, 0.09, "triangle", 0.026, 0.035, 220);
+}
+
+function playRollSound() {
+  playTone(520, 0.11, "sine", 0.04, 0, 820);
+  playTone(820, 0.12, "triangle", 0.034, 0.08, 460);
+  playTone(440, 0.13, "sine", 0.032, 0.17, 720);
 }
 
 function playCrashFallSound() {
@@ -637,11 +597,6 @@ function reset(nextState: GameState) {
   platformPanel.hidden = nextState !== "platform";
   gameMenuPanel.hidden = nextState !== "ready";
   crashPanel.hidden = true;
-  if (nextState === "running") {
-    startPropellerSound();
-  } else {
-    stopPropellerSound();
-  }
   updateRollButton();
 }
 
@@ -1096,6 +1051,7 @@ function roll() {
     return;
   }
 
+  playRollSound();
   rollTimer = rollDuration;
   if (freeRollAvailable) {
     freeRollAvailable = false;
@@ -1197,7 +1153,6 @@ function startCeilingCrash() {
 
 function startRandomCrash(options: { downward?: boolean; lift?: boolean } = {}) {
   const motions: CrashMotion[] = ["spin", "flip", "spiral"];
-  stopPropellerSound();
   playCrashFallSound();
   state = "bubble-crash";
   crashTimer = 0;
@@ -1342,7 +1297,6 @@ function explodePlane() {
 }
 
 function endGame() {
-  stopPropellerSound();
   writeLocalHighest(score);
   renderHighScores();
   void syncFinalScore(score);
@@ -1570,14 +1524,6 @@ document.addEventListener("fullscreenchange", () => {
   updateFullscreenButton();
   resize();
 });
-document.addEventListener("visibilitychange", () => {
-  if (document.hidden) {
-    stopPropellerSound();
-  } else if (state === "running") {
-    startPropellerSound();
-  }
-});
-
 readLocalHighest();
 renderHighScores();
 void loadServerHighScores();
