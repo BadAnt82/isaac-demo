@@ -20,6 +20,7 @@ const snakeBoard = {
   width: 2880,
 };
 const targetSnakeOrbCount = 54;
+const maxSnakeOrbCount = 84;
 const maxSnakeBotCount = 10;
 const maxSnakeShotBank = 5;
 const snakeProjectileRangeCells = 72;
@@ -161,6 +162,10 @@ function findSnakeSpawn() {
 }
 
 function spawnSnakeOrb(x = randomGridCoordinate(snakeBoard.width), y = randomGridCoordinate(snakeBoard.height), color = snakeOrbColor()) {
+  if (snakeOrbs.length >= maxSnakeOrbCount) {
+    return false;
+  }
+
   snakeOrbs.push({
     color,
     id: `orb-${nextSnakeOrbId}`,
@@ -168,11 +173,14 @@ function spawnSnakeOrb(x = randomGridCoordinate(snakeBoard.width), y = randomGri
     y,
   });
   nextSnakeOrbId += 1;
+  return true;
 }
 
 function seedSnakeOrbs() {
   while (snakeOrbs.length < targetSnakeOrbCount) {
-    spawnSnakeOrb();
+    if (!spawnSnakeOrb()) {
+      break;
+    }
   }
 }
 
