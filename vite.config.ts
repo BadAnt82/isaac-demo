@@ -2,6 +2,6 @@ import { defineConfig } from "vite";
 
 export default defineConfig({
   preview: {
-    allowedHosts: ["games.badantproductions.com"],
+    allowedHosts: ["isaac.badantproductions.com"],
   },
 });
