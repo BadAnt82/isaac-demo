@@ -388,6 +388,11 @@ function playBubblePopSound() {
   playTone(420, 0.09, "triangle", 0.026, 0.035, 220);
 }
 
+function playFlapSound() {
+  playTone(210, 0.055, "triangle", 0.026, 0, 520);
+  playTone(1220, 0.045, "sine", 0.018, 0.035, 760);
+}
+
 function playRollSound() {
   playTone(520, 0.11, "sine", 0.04, 0, 820);
   playTone(820, 0.12, "triangle", 0.034, 0.08, 460);
@@ -612,6 +617,7 @@ function flap() {
   }
 
   if (state === "running") {
+    playFlapSound();
     plane.velocity = getLift();
   }
 }
