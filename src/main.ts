@@ -218,7 +218,7 @@ type PixelTurret = {
   arc: number;
   color: string;
   fireCooldown: number;
-  fireBoostTimer: number;
+  fireSpeedBoosts: number;
   fireInterval: number;
   homeAngle: number;
   id: PixelOwner;
@@ -669,7 +669,6 @@ const pixelRunnerSpeed = 156;
 const pixelRunnerJumpDuration = 0.46;
 const pixelRunnerDuckDuration = 0.44;
 const pixelReelSpinDuration = 0.72;
-const pixelClockBoostDuration = 12;
 const pixelBombShotAward = 4;
 const pixelOwnerColors: Partial<Record<PixelOwner, string>> & { neutral: string; player: string } = {
   neutral: "#606773",
@@ -1330,7 +1329,7 @@ function createPixelTurret(id: PixelOwner, isPlayer: boolean): PixelTurret {
     arc: Math.PI * 0.4,
     color,
     fireCooldown: Math.random() * pixelBaseFireInterval,
-    fireBoostTimer: 0,
+    fireSpeedBoosts: 0,
     fireInterval: pixelBaseFireInterval,
     homeAngle: isPlayer ? -Math.PI / 2 : Math.PI / 2,
     id,
@@ -1458,8 +1457,8 @@ function pixelApplySlotPrize(prize: PixelPrize) {
     return;
   }
   if (prize === "clock") {
-    playerTurret.fireBoostTimer = Math.max(playerTurret.fireBoostTimer, pixelClockBoostDuration);
-    pixelRunnerMessage = "Clock boost";
+    playerTurret.fireSpeedBoosts += 1;
+    pixelRunnerMessage = `Speed +${playerTurret.fireSpeedBoosts}`;
   } else if (prize === "bomb") {
     playerTurret.bombShots += pixelBombShotAward;
     pixelRunnerMessage = `Bomb shots +${pixelBombShotAward}`;
@@ -1476,8 +1475,8 @@ function pixelResolveReelMatch() {
   const [left, center, right] = pixelRunnerLanes.map((lane) => pixelReels[lane].prize);
   if (left === center && center === right) {
     pixelApplySlotPrize(left);
-    pixelReelMatchReady = false;
     pixelSpinAllReels(true);
+  } else {
     pixelReelMatchReady = false;
   }
 }
@@ -2793,7 +2792,7 @@ function explodePixelCells(index: number, owner: PixelOwner) {
 }
 
 function pixelEffectiveFireInterval(turret: PixelTurret) {
-  return turret.fireInterval * (turret.fireBoostTimer > 0 ? 0.75 : 1);
+  return turret.fireInterval / (1 + turret.fireSpeedBoosts * 0.25);
 }
 
 function firePixelShot(turret: PixelTurret) {
@@ -2856,7 +2855,6 @@ function updatePixelWars(dt: number) {
 
   positionPixelTurrets();
   pixelTurrets.forEach((turret) => {
-    turret.fireBoostTimer = Math.max(0, turret.fireBoostTimer - dt);
     steerPixelTurret(turret, dt);
     turret.fireCooldown -= dt;
     if (turret.fireCooldown <= 0) {
@@ -3198,9 +3196,9 @@ function drawPixelSlot(runner: PixelRunnerLayout, time: number) {
   ctx.fillStyle = "rgba(255, 255, 255, 0.62)";
   ctx.textAlign = "left";
   const playerTurret = pixelTurrets.find((turret) => turret.isPlayer);
-  const fireBoost = playerTurret?.fireBoostTimer ?? 0;
+  const fireBoost = playerTurret?.fireSpeedBoosts ?? 0;
   const bombShots = playerTurret?.bombShots ?? 0;
-  const message = pixelRunnerMessageTimer > 0 ? pixelRunnerMessage : `Clock ${fireBoost.toFixed(0)}s  Bomb ${bombShots}`;
+  const message = pixelRunnerMessageTimer > 0 ? pixelRunnerMessage : `Speed +${fireBoost}  Bomb ${bombShots}`;
   ctx.fillText(message, runner.slotX, runner.slotY + runner.slotH + 30);
   ctx.restore();
 }
