@@ -2202,6 +2202,18 @@ function drawBridgeGame(time: number) {
     const w = panel.w;
     const h = panel.h;
     const scale = Math.max(0.72, 1 - panel.row * 0.045);
+    if (panel.side === "left" && panel.pathIndex >= 0) {
+      ctx.save();
+      ctx.textAlign = "right";
+      ctx.textBaseline = "middle";
+      ctx.fillStyle = isCurrent ? "#ffd85a" : isTraversed ? "#84ffb5" : "rgba(217, 248, 255, 0.8)";
+      ctx.font = `900 ${Math.max(12, h * 0.28)}px Inter, sans-serif`;
+      ctx.shadowColor = "rgba(0, 0, 0, 0.55)";
+      ctx.shadowBlur = 8;
+      ctx.fillText(`${panel.pathIndex + 1}`, x - Math.max(10, 14 * scale), y + h * 0.5);
+      ctx.restore();
+    }
+
     const glass = ctx.createLinearGradient(x, y, x + w, y + h);
     glass.addColorStop(0, "rgba(255, 255, 255, 0.78)");
     glass.addColorStop(0.45, tint);
@@ -2316,7 +2328,7 @@ function drawBridgeGame(time: number) {
 
   ctx.fillStyle = "rgba(255, 255, 255, 0.92)";
   ctx.font = "900 18px Inter, sans-serif";
-  ctx.fillText(`Tiles ${formatScore(bridgeTiles)}`, 18, 34);
+  ctx.fillText(`Traversed ${formatScore(bridgeTiles)}`, 18, 34);
   ctx.fillText(`Points ${formatScore(bridgePoints)}`, 18, 60);
   ctx.textAlign = "right";
   ctx.fillText(`Jackpot ${formatScore(bridgeJackpot)}`, canvasWidth - 18, 34);
