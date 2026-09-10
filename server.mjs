@@ -873,6 +873,11 @@ async function handleApi(request, response) {
     return true;
   }
 
+  if (request.url === "/api/glass-bridge-jackpot-contribution" && request.method === "POST") {
+    handleBridgeJackpotContribution(response);
+    return true;
+  }
+
   if (url.pathname.startsWith("/api/issues/") && request.method === "POST") {
     const game = decodeURIComponent(url.pathname.replace("/api/issues/", ""));
     await handleIssuePost(request, response, game);
@@ -893,6 +898,18 @@ function handleBridgeJackpotSpin(response) {
     award,
     contributed: 1,
     hit,
+    jackpot: nextValue,
+    odds: bridgeJackpotHitOdds,
+    seed: bridgeJackpotSeed,
+  });
+}
+
+function handleBridgeJackpotContribution(response) {
+  const current = readBridgeJackpot();
+  const nextValue = current.value + 1;
+  writeBridgeJackpot({ value: nextValue });
+  sendJson(response, 200, {
+    contributed: 1,
     jackpot: nextValue,
     odds: bridgeJackpotHitOdds,
     seed: bridgeJackpotSeed,

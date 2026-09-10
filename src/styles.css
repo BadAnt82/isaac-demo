@@ -957,9 +957,9 @@ body.fullscreen-fallback-active {
   right: max(14px, env(safe-area-inset-right));
   bottom: max(14px, env(safe-area-inset-bottom));
   left: auto;
-  width: min(220px, 31vw);
+  width: min(360px, 44vw);
   display: grid;
-  grid-template-columns: 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   justify-content: center;
   gap: 10px;
 }
@@ -1098,15 +1098,15 @@ body.fullscreen-fallback-active {
     right: 12px;
     bottom: 12px;
     left: auto;
-    width: min(164px, 32vw);
-    grid-template-columns: 1fr;
+    width: min(310px, 54vw);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 6px;
   }
 
   .bridge-controls button {
     min-height: 46px;
-    padding: 0 10px;
-    font-size: 0.82rem;
+    padding: 0 8px;
+    font-size: 0.72rem;
   }
 
   .overlay {

@@ -139,11 +139,20 @@ type SnakeWelcome = {
 };
 
 type BridgeSide = "left" | "right";
+type BridgeOperation = "+" | "-" | "x" | "/";
 
 type BridgeWheelOutcome = {
   color?: string;
   label: string;
   apply: (points: number) => number;
+  weight: number;
+};
+
+type BridgeHintOutcome = {
+  color?: string;
+  kind: "freebie" | "math";
+  label: string;
+  operation?: BridgeOperation;
   weight: number;
 };
 
@@ -162,7 +171,13 @@ type BridgeJackpotSpinResponse = BridgeJackpotResponse & {
 type BridgePuzzle = {
   answers: Record<BridgeSide, number>;
   correctSide: BridgeSide;
+  operation: BridgeOperation;
   prompt: string;
+};
+
+type BridgeHint = {
+  kind: "freebie" | "math";
+  pathIndex: number;
 };
 
 type BridgePanelRect = {
@@ -268,6 +283,7 @@ const bridgeOptionsBackButton = requireElement<HTMLButtonElement>("#bridge-optio
 const bridgeSoundToggle = requireElement<HTMLButtonElement>("#bridge-sound-toggle");
 const bridgeReportIssueButton = requireElement<HTMLButtonElement>("#bridge-report-issue");
 const bridgeControls = requireElement<HTMLElement>("#bridge-controls");
+const bridgeHintSpinButton = requireElement<HTMLButtonElement>("#bridge-hint-spin");
 const bridgeSpinButton = requireElement<HTMLButtonElement>("#bridge-spin");
 const reportPanel = requireElement<HTMLElement>("#report-panel");
 const issueForm = requireElement<HTMLFormElement>("#issue-form");
@@ -379,6 +395,7 @@ let bridgeSafePath: BridgeSide[] = [];
 let bridgeStep = 0;
 let bridgeTiles = 0;
 let bridgePoints = 0;
+let bridgeHint: BridgeHint | null = null;
 let bridgeBrokenSide: BridgeSide | null = null;
 let bridgePlayerSide: BridgeSide | null = null;
 let bridgeStandingSide: BridgeSide | null = null;
@@ -400,6 +417,15 @@ let bridgeFallTimer = 0;
 let bridgeJackpot = 20;
 let bridgeWheelJackpotValue = 20;
 let bridgeJackpotOdds = 20;
+let bridgeHintWheelLabel = "Hint";
+let bridgeHintWheelTimer = 0;
+let bridgeHintWheelSpinTimer = 0;
+let bridgeHintWheelAngle = 0;
+let bridgeHintWheelStartAngle = 0;
+let bridgeHintWheelTargetAngle = 0;
+let bridgePendingHintOutcome: BridgeHintOutcome | null = null;
+let bridgeHintWheelRequesting = false;
+let bridgeHintWheelSpinSequence = 0;
 
 const localHighScoreKey = "badant-games-jumpy-plane-high-score";
 const oldLocalHighScoreKeys = ["isaac-demo-high-score"];
@@ -455,17 +481,27 @@ const bridgeWheelPreSpinDuration = 0.62;
 const bridgeWheelPreSpinSpeed = Math.PI * 9;
 const bridgeWheelSpinDuration = 1.25;
 const bridgeNormalWheelOutcomes: BridgeWheelOutcome[] = [
-  { label: "+1", apply: (points) => points + 1, weight: 4 },
-  { label: "+3", apply: (points) => points + 3, weight: 3 },
-  { label: "-1", apply: (points) => points - 1, weight: 3 },
-  { label: "-2", apply: (points) => points - 2, weight: 3 },
-  { label: "x2", apply: (points) => points * 2, weight: 3 },
-  { label: "/2", apply: (points) => Math.floor(points / 2), weight: 3 },
+  { label: "+1", apply: (points) => points + 1, weight: 1 },
+  { label: "+3", apply: (points) => points + 3, weight: 1 },
+  { label: "-1", apply: (points) => points - 1, weight: 1 },
+  { label: "-2", apply: (points) => points - 2, weight: 1 },
+  { label: "x2", apply: (points) => points * 2, weight: 1 },
+  { label: "/2", apply: (points) => Math.floor(points / 2), weight: 1 },
 ];
 const bridgeJackpotSegmentIndex = 0;
 const bridgeWheelSegments: BridgeWheelOutcome[] = [
   { color: "rgba(255, 95, 118, 0.94)", label: "JP", apply: (points) => points, weight: 1 },
-  ...bridgeNormalWheelOutcomes,
+  ...Array.from({ length: 19 }, (_, index) => bridgeNormalWheelOutcomes[index % bridgeNormalWheelOutcomes.length]),
+];
+const bridgeHintWheelSegments: BridgeHintOutcome[] = [
+  { color: "rgba(107, 255, 174, 0.9)", kind: "freebie", label: "Free", weight: 2 },
+  { kind: "math", label: "Add", operation: "+", weight: 3 },
+  { kind: "math", label: "Sub", operation: "-", weight: 3 },
+  { kind: "math", label: "Times", operation: "x", weight: 3 },
+  { kind: "math", label: "Divide", operation: "/", weight: 2 },
+  { kind: "math", label: "Add", operation: "+", weight: 3 },
+  { kind: "math", label: "Sub", operation: "-", weight: 3 },
+  { kind: "math", label: "Times", operation: "x", weight: 1 },
 ];
 let planeSoundEnabled = localStorage.getItem(planeSoundKey) !== "off";
 let snakeSoundEnabled = localStorage.getItem(snakeSoundKey) !== "off";
@@ -1146,28 +1182,36 @@ function delay(milliseconds: number) {
   });
 }
 
-function bridgePuzzleTier(pathIndex: number) {
-  if (pathIndex < 5) {
+function bridgePuzzleDifficulty() {
+  return bridgeTiles * 1.45 + bridgePoints * 0.85;
+}
+
+function bridgePuzzleTier(difficulty: number) {
+  if (difficulty < 5) {
     return 0;
   }
-  if (pathIndex < 12) {
+  if (difficulty < 13) {
     return 1;
   }
-  if (pathIndex < 22) {
+  if (difficulty < 25) {
     return 2;
   }
   return 3;
 }
 
-function generateBridgePuzzle(correctSide: BridgeSide, pathIndex: number): BridgePuzzle {
-  const tier = bridgePuzzleTier(pathIndex);
-  const operationsByTier = [
+function generateBridgePuzzle(
+  correctSide: BridgeSide,
+  difficulty: number,
+  forcedOperation?: BridgeOperation,
+): BridgePuzzle {
+  const tier = bridgePuzzleTier(difficulty);
+  const operationsByTier: BridgeOperation[][] = [
     ["+", "-", "+"],
     ["+", "-", "x"],
     ["+", "-", "x", "/"],
     ["+", "-", "x", "/", "x"],
   ];
-  const operation = randomChoice(operationsByTier[tier]);
+  const operation = forcedOperation ?? randomChoice(operationsByTier[tier]);
   let left = randomInteger(1, tier === 0 ? 10 : tier === 1 ? 18 : tier === 2 ? 30 : 48);
   let right = randomInteger(1, tier === 0 ? 10 : tier === 1 ? 18 : tier === 2 ? 30 : 48);
   let answer = 0;
@@ -1207,6 +1251,7 @@ function generateBridgePuzzle(correctSide: BridgeSide, pathIndex: number): Bridg
       right: correctSide === "right" ? answer : wrongAnswer,
     },
     correctSide,
+    operation,
     prompt,
   };
 }
@@ -1219,30 +1264,42 @@ function ensureBridgeRows(count: number) {
   }
 }
 
-function bridgeWheelTotalWeight() {
-  return bridgeWheelSegments.reduce((total, segment) => total + segment.weight, 0);
+function wheelTotalWeight(segments: { weight: number }[]) {
+  return segments.reduce((total, segment) => total + segment.weight, 0);
 }
 
-function bridgeWheelSegmentBounds(index: number) {
-  const totalWeight = bridgeWheelTotalWeight();
-  const startWeight = bridgeWheelSegments.slice(0, index).reduce((total, segment) => total + segment.weight, 0);
+function wheelSegmentBounds(segments: { weight: number }[], index: number) {
+  const totalWeight = wheelTotalWeight(segments);
+  const startWeight = segments.slice(0, index).reduce((total, segment) => total + segment.weight, 0);
   const start = (Math.PI * 2 * startWeight) / totalWeight;
-  const end = start + (Math.PI * 2 * bridgeWheelSegments[index].weight) / totalWeight;
+  const end = start + (Math.PI * 2 * segments[index].weight) / totalWeight;
   return { center: start + (end - start) / 2, end, start };
 }
 
-function randomBridgeNormalWheelIndex() {
-  const normalSegments = bridgeWheelSegments.slice(1);
-  const totalWeight = normalSegments.reduce((total, segment) => total + segment.weight, 0);
+function randomWeightedSegmentIndex(segments: { weight: number }[], firstIndex = 0) {
+  const weightedSegments = segments.slice(firstIndex);
+  const totalWeight = wheelTotalWeight(weightedSegments);
   let roll = Math.random() * totalWeight;
-  for (let index = 0; index < normalSegments.length; index += 1) {
-    roll -= normalSegments[index].weight;
+  for (let index = 0; index < weightedSegments.length; index += 1) {
+    roll -= weightedSegments[index].weight;
     if (roll <= 0) {
-      return index + 1;
+      return index + firstIndex;
     }
   }
 
-  return bridgeWheelSegments.length - 1;
+  return segments.length - 1;
+}
+
+function randomBridgeNormalWheelIndex() {
+  return randomWeightedSegmentIndex(bridgeWheelSegments, 1);
+}
+
+function wheelLandingTargetAngle(currentAngle: number, segments: { weight: number }[], outcomeIndex: number) {
+  const segmentBounds = wheelSegmentBounds(segments, outcomeIndex);
+  const targetAngle = -Math.PI / 2 - segmentBounds.center;
+  const fullTurn = Math.PI * 2;
+  const catchUpTurns = Math.ceil((currentAngle - targetAngle) / fullTurn);
+  return targetAngle + (catchUpTurns + 4) * fullTurn;
 }
 
 function resetBridgeRun() {
@@ -1251,6 +1308,7 @@ function resetBridgeRun() {
   bridgeStep = 0;
   bridgeTiles = 0;
   bridgePoints = 0;
+  bridgeHint = null;
   bridgeBrokenSide = null;
   bridgePlayerSide = null;
   bridgeStandingSide = null;
@@ -1267,20 +1325,40 @@ function resetBridgeRun() {
   bridgePendingWheelOutcome = null;
   bridgeWheelRequesting = false;
   bridgeWheelSpinSequence += 1;
+  bridgeHintWheelLabel = "Hint";
+  bridgeHintWheelTimer = 0;
+  bridgeHintWheelSpinTimer = 0;
+  bridgeHintWheelAngle = 0;
+  bridgeHintWheelStartAngle = 0;
+  bridgeHintWheelTargetAngle = 0;
+  bridgePendingHintOutcome = null;
+  bridgeHintWheelRequesting = false;
+  bridgeHintWheelSpinSequence += 1;
   bridgeFallTimer = 0;
   ensureBridgeRows(bridgeVisibleRows + 3);
 }
 
-function updateBridgeControls() {
-  const bridgeBusy =
+function bridgeWheelBusy() {
+  return (
     bridgeFallTimer > 0 ||
     bridgeJumpTimer > 0 ||
     bridgeSuccessTimer > 0 ||
     bridgeScrollTimer > 0 ||
     bridgeWheelRequesting ||
-    bridgeWheelSpinTimer > 0;
-  bridgeSpinButton.disabled = state !== "bridge-running" || bridgeBusy || bridgePoints < bridgeWheelCost;
-  bridgeSpinButton.textContent = bridgePoints >= bridgeWheelCost ? "Spin wheel (-1)" : "Need 1 point";
+    bridgeWheelSpinTimer > 0 ||
+    bridgeHintWheelRequesting ||
+    bridgeHintWheelSpinTimer > 0
+  );
+}
+
+function updateBridgeControls() {
+  const bridgeBusy = bridgeWheelBusy();
+  const hasPoints = bridgePoints >= bridgeWheelCost;
+  const hintUsed = bridgeHint?.pathIndex === bridgeStep;
+  bridgeHintSpinButton.disabled = state !== "bridge-running" || bridgeBusy || !hasPoints || hintUsed;
+  bridgeHintSpinButton.textContent = !hasPoints ? "Need 1 point" : hintUsed ? "Hint used" : "Hint wheel (-1)";
+  bridgeSpinButton.disabled = state !== "bridge-running" || bridgeBusy || !hasPoints;
+  bridgeSpinButton.textContent = hasPoints ? "Point wheel (-1)" : "Need 1 point";
 }
 
 function updateBridgeScore() {
@@ -1353,15 +1431,7 @@ function startBridgeGame() {
 }
 
 function chooseBridgeSide(side: BridgeSide) {
-  if (
-    state !== "bridge-running" ||
-    bridgeFallTimer > 0 ||
-    bridgeJumpTimer > 0 ||
-    bridgeSuccessTimer > 0 ||
-    bridgeScrollTimer > 0 ||
-    bridgeWheelRequesting ||
-    bridgeWheelSpinTimer > 0
-  ) {
+  if (state !== "bridge-running" || bridgeWheelBusy()) {
     return;
   }
 
@@ -1403,16 +1473,7 @@ function resolveBridgeChoice() {
 }
 
 async function spinBridgeWheel() {
-  if (
-    state !== "bridge-running" ||
-    bridgeFallTimer > 0 ||
-    bridgeJumpTimer > 0 ||
-    bridgeSuccessTimer > 0 ||
-    bridgeScrollTimer > 0 ||
-    bridgeWheelRequesting ||
-    bridgeWheelSpinTimer > 0 ||
-    bridgePoints < bridgeWheelCost
-  ) {
+  if (state !== "bridge-running" || bridgeWheelBusy() || bridgePoints < bridgeWheelCost) {
     return;
   }
 
@@ -1455,16 +1516,69 @@ async function spinBridgeWheel() {
         weight: bridgeWheelSegments[bridgeJackpotSegmentIndex].weight,
       }
     : bridgeWheelSegments[outcomeIndex];
-  const segmentBounds = bridgeWheelSegmentBounds(outcomeIndex);
   bridgePendingWheelOutcome = outcome;
   bridgeWheelStartAngle = bridgeWheelAngle;
-  const targetAngle = -Math.PI / 2 - segmentBounds.center;
-  const fullTurn = Math.PI * 2;
-  const catchUpTurns = Math.ceil((bridgeWheelAngle - targetAngle) / fullTurn);
-  bridgeWheelTargetAngle = targetAngle + (catchUpTurns + 4) * fullTurn;
+  bridgeWheelTargetAngle = wheelLandingTargetAngle(bridgeWheelAngle, bridgeWheelSegments, outcomeIndex);
   bridgeWheelLabel = "Spinning";
   bridgeWheelTimer = bridgeWheelSpinDuration;
   bridgeWheelSpinTimer = bridgeWheelSpinDuration;
+  updateBridgeScore();
+}
+
+async function spinBridgeHintWheel() {
+  if (
+    state !== "bridge-running" ||
+    bridgeWheelBusy() ||
+    bridgePoints < bridgeWheelCost ||
+    bridgeHint?.pathIndex === bridgeStep
+  ) {
+    return;
+  }
+
+  unlockAudio();
+  const difficulty = bridgePuzzleDifficulty();
+  bridgePoints -= bridgeWheelCost;
+  bridgeHintWheelRequesting = true;
+  bridgeHintWheelLabel = "Spinning";
+  const spinSequence = ++bridgeHintWheelSpinSequence;
+  playBridgeWheelSound();
+  updateBridgeScore();
+
+  const [jackpotContribution] = await Promise.all([
+    submitBridgeJackpotContribution(),
+    delay(bridgeWheelPreSpinDuration * 1000),
+  ]);
+  if (spinSequence !== bridgeHintWheelSpinSequence || state !== "bridge-running") {
+    return;
+  }
+
+  bridgeHintWheelRequesting = false;
+  if (!jackpotContribution) {
+    bridgePoints += bridgeWheelCost;
+    bridgeHintWheelLabel = "Offline";
+    bridgeHintWheelTimer = 1.4;
+    updateBridgeScore();
+    return;
+  }
+
+  const outcomeIndex = randomWeightedSegmentIndex(bridgeHintWheelSegments);
+  bridgePendingHintOutcome = bridgeHintWheelSegments[outcomeIndex];
+  if (bridgePendingHintOutcome.kind === "math" && bridgePendingHintOutcome.operation) {
+    bridgePuzzles[bridgeStep] = generateBridgePuzzle(
+      bridgeSafePath[bridgeStep],
+      difficulty,
+      bridgePendingHintOutcome.operation,
+    );
+  }
+  bridgeHintWheelStartAngle = bridgeHintWheelAngle;
+  bridgeHintWheelTargetAngle = wheelLandingTargetAngle(
+    bridgeHintWheelAngle,
+    bridgeHintWheelSegments,
+    outcomeIndex,
+  );
+  bridgeHintWheelLabel = "Spinning";
+  bridgeHintWheelTimer = bridgeWheelSpinDuration;
+  bridgeHintWheelSpinTimer = bridgeWheelSpinDuration;
   updateBridgeScore();
 }
 
@@ -1480,6 +1594,10 @@ function updateBridge(dt: number) {
   if (bridgeWheelRequesting && bridgeWheelSpinTimer <= 0) {
     bridgeWheelAngle = (bridgeWheelAngle + bridgeWheelPreSpinSpeed * dt) % (Math.PI * 2);
   }
+  bridgeHintWheelTimer = Math.max(0, bridgeHintWheelTimer - dt);
+  if (bridgeHintWheelRequesting && bridgeHintWheelSpinTimer <= 0) {
+    bridgeHintWheelAngle = (bridgeHintWheelAngle + bridgeWheelPreSpinSpeed * dt) % (Math.PI * 2);
+  }
   if (bridgeWheelSpinTimer > 0) {
     bridgeWheelSpinTimer = Math.max(0, bridgeWheelSpinTimer - dt);
     const progress = 1 - bridgeWheelSpinTimer / bridgeWheelSpinDuration;
@@ -1491,6 +1609,21 @@ function updateBridge(dt: number) {
       bridgeWheelLabel = bridgePendingWheelOutcome.label;
       bridgePendingWheelOutcome = null;
       bridgeWheelTimer = 1.4;
+      updateBridgeScore();
+    }
+  }
+  if (bridgeHintWheelSpinTimer > 0) {
+    bridgeHintWheelSpinTimer = Math.max(0, bridgeHintWheelSpinTimer - dt);
+    const progress = 1 - bridgeHintWheelSpinTimer / bridgeWheelSpinDuration;
+    const eased = 1 - (1 - progress) ** 3;
+    bridgeHintWheelAngle =
+      bridgeHintWheelStartAngle + (bridgeHintWheelTargetAngle - bridgeHintWheelStartAngle) * eased;
+    if (bridgeHintWheelSpinTimer <= 0 && bridgePendingHintOutcome) {
+      bridgeHintWheelAngle = bridgeHintWheelTargetAngle;
+      bridgeHint = { kind: bridgePendingHintOutcome.kind, pathIndex: bridgeStep };
+      bridgeHintWheelLabel = bridgePendingHintOutcome.label;
+      bridgePendingHintOutcome = null;
+      bridgeHintWheelTimer = 1.4;
       updateBridgeScore();
     }
   }
@@ -1868,6 +2001,55 @@ function bridgePanelAtPoint(x: number, y: number) {
   );
 }
 
+function drawBridgeWheelFace<T extends { color?: string; label: string; weight: number }>(
+  segments: T[],
+  angle: number,
+  centerX: number,
+  centerY: number,
+  radius: number,
+  isPointWheel: boolean,
+  labelLines: (segment: T, index: number) => string[],
+) {
+  ctx.save();
+  ctx.translate(centerX, centerY);
+  ctx.rotate(angle);
+  segments.forEach((segment, index) => {
+    const { center, end, start } = wheelSegmentBounds(segments, index);
+    ctx.fillStyle =
+      segment.color ?? (index % 2 === 0 ? "rgba(127, 223, 255, 0.82)" : "rgba(255, 216, 90, 0.86)");
+    ctx.strokeStyle = "rgba(8, 18, 32, 0.72)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.arc(0, 0, radius, start, end);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    const lines = labelLines(segment, index);
+    ctx.save();
+    ctx.rotate(center);
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = index === bridgeJackpotSegmentIndex && isPointWheel ? "#ffffff" : "#10253d";
+    ctx.font = `900 ${Math.max(8, radius * (segments.length > 12 ? 0.11 : 0.15))}px Inter, sans-serif`;
+    lines.forEach((line, lineIndex) => {
+      const offset = (lineIndex - (lines.length - 1) / 2) * Math.max(10, radius * 0.12);
+      ctx.fillText(line, radius * 0.66, offset);
+    });
+    ctx.restore();
+  });
+  ctx.restore();
+
+  ctx.fillStyle = "#ff5f76";
+  ctx.beginPath();
+  ctx.moveTo(centerX, centerY - radius - 6);
+  ctx.lineTo(centerX - 8, centerY - radius - 20);
+  ctx.lineTo(centerX + 8, centerY - radius - 20);
+  ctx.closePath();
+  ctx.fill();
+}
+
 function drawBridgeWheelPanel(canvasHeight: number, areas: BridgeAreas) {
   ctx.fillStyle = "rgba(4, 10, 20, 0.74)";
   ctx.fillRect(areas.wheelX, 0, areas.wheelWidth, canvasHeight);
@@ -1879,68 +2061,43 @@ function drawBridgeWheelPanel(canvasHeight: number, areas: BridgeAreas) {
   ctx.stroke();
 
   const centerX = areas.wheelX + areas.wheelWidth / 2;
-  const centerY = canvasHeight * 0.33;
-  const radius = Math.min(96, areas.wheelWidth * 0.34, canvasHeight * 0.2);
+  const radius = Math.min(64, areas.wheelWidth * 0.28, canvasHeight * 0.12);
+  const pointWheelY = Math.max(radius + 36, canvasHeight * 0.2);
+  const hintWheelY = Math.max(pointWheelY + radius * 2 + 54, canvasHeight * 0.5);
 
-  ctx.save();
-  ctx.translate(centerX, centerY);
-  ctx.rotate(bridgeWheelAngle);
-  bridgeWheelSegments.forEach((outcome, index) => {
-    const { center, end, start } = bridgeWheelSegmentBounds(index);
-    ctx.fillStyle =
-      outcome.color ?? (index % 2 === 0 ? "rgba(127, 223, 255, 0.82)" : "rgba(255, 216, 90, 0.86)");
-    ctx.strokeStyle = "rgba(8, 18, 32, 0.72)";
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(0, 0);
-    ctx.arc(0, 0, radius, start, end);
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
-
-    ctx.save();
-    ctx.rotate(center);
-    ctx.fillStyle = "#10253d";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    if (index === bridgeJackpotSegmentIndex) {
-      ctx.fillStyle = "#ffffff";
-      ctx.font = `900 ${Math.max(8, radius * 0.1)}px Inter, sans-serif`;
-      ctx.fillText("JP", radius * 0.7, -6);
-      ctx.fillText(formatScore(bridgeWheelJackpotValue), radius * 0.7, 6);
-    } else {
-      ctx.font = `900 ${Math.max(13, radius * 0.18)}px Inter, sans-serif`;
-      ctx.fillText(outcome.label, radius * 0.62, 0);
-    }
-    ctx.restore();
-  });
-  ctx.restore();
-
-  ctx.fillStyle = "#ff5f76";
-  ctx.beginPath();
-  ctx.moveTo(centerX, centerY - radius - 8);
-  ctx.lineTo(centerX - 10, centerY - radius - 26);
-  ctx.lineTo(centerX + 10, centerY - radius - 26);
-  ctx.closePath();
-  ctx.fill();
+  drawBridgeWheelFace(bridgeWheelSegments, bridgeWheelAngle, centerX, pointWheelY, radius, true, (outcome, index) =>
+    index === bridgeJackpotSegmentIndex ? ["JP", formatScore(bridgeWheelJackpotValue)] : [outcome.label],
+  );
+  drawBridgeWheelFace(bridgeHintWheelSegments, bridgeHintWheelAngle, centerX, hintWheelY, radius, false, (outcome) => [
+    outcome.label,
+  ]);
 
   ctx.fillStyle = "rgba(255, 255, 255, 0.94)";
-  ctx.font = "900 18px Inter, sans-serif";
   ctx.textAlign = "center";
   ctx.textBaseline = "alphabetic";
-  ctx.fillText("Wheel", centerX, Math.max(26, centerY - radius - 42));
-  ctx.font = "900 24px Inter, sans-serif";
+  ctx.font = "900 15px Inter, sans-serif";
+  ctx.fillText("Point Wheel", centerX, Math.max(22, pointWheelY - radius - 28));
+  ctx.font = "900 17px Inter, sans-serif";
   ctx.fillText(
     bridgeWheelRequesting || bridgeWheelSpinTimer > 0 ? "Spinning" : bridgeWheelLabel,
     centerX,
-    centerY + radius + 38,
+    pointWheelY + radius + 24,
+  );
+  ctx.font = "900 15px Inter, sans-serif";
+  ctx.fillText("Hint Wheel", centerX, hintWheelY - radius - 22);
+  ctx.font = "900 17px Inter, sans-serif";
+  ctx.fillText(
+    bridgeHintWheelRequesting || bridgeHintWheelSpinTimer > 0 ? "Spinning" : bridgeHintWheelLabel,
+    centerX,
+    hintWheelY + radius + 24,
   );
   ctx.fillStyle = "#afefff";
   ctx.font = "800 11px Inter, sans-serif";
-  ctx.fillText(`Jackpot odds 1 in ${formatScore(bridgeJackpotOdds)}`, centerX, centerY + radius + 60);
+  ctx.fillText(`Jackpot odds 1 in ${formatScore(bridgeJackpotOdds)}`, centerX, pointWheelY + radius + 42);
 
   const puzzle = bridgePuzzles[bridgeStep];
-  const promptY = Math.min(canvasHeight - 112, centerY + radius + 78);
+  const activeHint = bridgeHint?.pathIndex === bridgeStep ? bridgeHint : null;
+  const promptY = Math.min(canvasHeight - 106, hintWheelY + radius + 44);
   ctx.fillStyle = "rgba(213, 245, 255, 0.12)";
   ctx.strokeStyle = "rgba(205, 249, 255, 0.32)";
   ctx.lineWidth = 1;
@@ -1951,13 +2108,13 @@ function drawBridgeWheelPanel(canvasHeight: number, areas: BridgeAreas) {
 
   ctx.fillStyle = "#d9f8ff";
   ctx.font = "900 12px Inter, sans-serif";
-  ctx.fillText("Solve", centerX, promptY + 23);
+  ctx.fillText(activeHint ? "Hint" : "Choice", centerX, promptY + 23);
   ctx.fillStyle = "#ffffff";
-  ctx.font = "900 22px Inter, sans-serif";
-  ctx.fillText(`${puzzle?.prompt ?? "?"} = ?`, centerX, promptY + 54);
+  ctx.font = activeHint?.kind === "math" ? "900 22px Inter, sans-serif" : "900 16px Inter, sans-serif";
+  ctx.fillText(activeHint?.kind === "math" ? `${puzzle?.prompt ?? "?"} = ?` : "Pick a glass tile", centerX, promptY + 54);
   ctx.fillStyle = "#afefff";
   ctx.font = "800 12px Inter, sans-serif";
-  ctx.fillText("Tap answer A or B", centerX, promptY + 78);
+  ctx.fillText(activeHint?.kind === "freebie" ? "Safe tile is glowing" : "Tap left or right glass", centerX, promptY + 78);
   ctx.textAlign = "left";
 }
 
@@ -2013,6 +2170,9 @@ function drawBridgeGame(time: number) {
     const isJumpTarget = panel.pathIndex === bridgeStep && bridgeJumpTimer > 0 && bridgePlayerSide === panel.side;
     const isTraversed = panel.row === -1 && panel.pathIndex === bridgeStep - 1 && bridgeStandingSide === panel.side;
     const isCurrent = panel.row === 0;
+    const activeHint = bridgeHint?.pathIndex === panel.pathIndex ? bridgeHint : null;
+    const isFreebieSafe =
+      isCurrent && activeHint?.kind === "freebie" && bridgeSafePath[panel.pathIndex] === panel.side;
     const tint = "rgba(196, 242, 255, 0.34)";
     const x = panel.x;
     const y = panel.y;
@@ -2027,6 +2187,8 @@ function drawBridgeGame(time: number) {
       ? "rgba(255, 95, 118, 0.22)"
       : isLanded
         ? "rgba(85, 255, 150, 0.58)"
+        : isFreebieSafe
+          ? "rgba(85, 255, 150, 0.46)"
         : isTraversed
           ? "rgba(85, 255, 150, 0.36)"
           : glass;
@@ -2034,6 +2196,8 @@ function drawBridgeGame(time: number) {
       ? "rgba(255, 95, 118, 0.95)"
       : isLanded
         ? "rgba(85, 255, 150, 0.98)"
+        : isFreebieSafe
+          ? "rgba(85, 255, 150, 0.98)"
         : isTraversed
           ? "rgba(85, 255, 150, 0.76)"
           : isJumpTarget
@@ -2054,7 +2218,7 @@ function drawBridgeGame(time: number) {
     ctx.lineTo(x + w - 18 * scale, y + h * 0.12);
     ctx.stroke();
 
-    if (isCurrent && puzzle) {
+    if (isCurrent && activeHint?.kind === "math" && puzzle) {
       const choiceLabel = panel.side === "left" ? "A" : "B";
       ctx.fillStyle = isBroken ? "#ffe0e5" : isLanded ? "#072817" : "#10253d";
       ctx.textAlign = "center";
@@ -2464,6 +2628,24 @@ async function submitBridgeJackpotSpin() {
     const spin = await response.json() as BridgeJackpotSpinResponse;
     applyBridgeJackpot(spin);
     return spin;
+  } catch {
+    return null;
+  }
+}
+
+async function submitBridgeJackpotContribution() {
+  try {
+    const response = await fetch("/api/glass-bridge-jackpot-contribution", {
+      cache: "no-store",
+      method: "POST",
+    });
+    if (!response.ok) {
+      return null;
+    }
+
+    const contribution = await response.json() as BridgeJackpotResponse;
+    applyBridgeJackpot(contribution);
+    return contribution;
   } catch {
     return null;
   }
@@ -3689,6 +3871,11 @@ window.addEventListener("keydown", (event) => {
       void spinBridgeWheel();
       return;
     }
+    if (event.code === "KeyH") {
+      event.preventDefault();
+      void spinBridgeHintWheel();
+      return;
+    }
   }
 
   if (state === "snake-running") {
@@ -3809,6 +3996,9 @@ snakeRestartButton.addEventListener("click", () => {
 });
 bridgeStartButton.addEventListener("click", startBridgeGame);
 bridgeRestartButton.addEventListener("click", startBridgeGame);
+bridgeHintSpinButton.addEventListener("click", () => {
+  void spinBridgeHintWheel();
+});
 bridgeSpinButton.addEventListener("click", () => {
   void spinBridgeWheel();
 });
