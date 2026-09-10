@@ -1081,6 +1081,23 @@ body.fullscreen-fallback-active {
   opacity: 0.52;
 }
 
+.pixel-rotate-notice {
+  position: absolute;
+  z-index: 13;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(5, 9, 20, 0.92);
+  color: #f7fbff;
+  font-size: clamp(1.7rem, 8vw, 3.5rem);
+  font-weight: 900;
+  text-align: center;
+}
+
+.pixel-rotate-notice[hidden] {
+  display: none;
+}
+
 @media (max-width: 700px) {
   body {
     overflow: hidden;

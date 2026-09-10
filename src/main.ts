@@ -347,6 +347,7 @@ const pixelModeInput = requireElement<HTMLSelectElement>("#pixel-mode");
 const pixelBotsInput = requireElement<HTMLInputElement>("#pixel-bots");
 const pixelHumansInput = requireElement<HTMLInputElement>("#pixel-humans");
 const pixelMenuTurrets = requireElement<HTMLElement>("#pixel-menu-turrets");
+const pixelRotateNotice = requireElement<HTMLElement>("#pixel-rotate-notice");
 const reportPanel = requireElement<HTMLElement>("#report-panel");
 const issueForm = requireElement<HTMLFormElement>("#issue-form");
 const issueText = requireElement<HTMLTextAreaElement>("#issue-text");
@@ -654,6 +655,7 @@ function resize() {
   if (state === "pixel-running") {
     positionPixelTurrets();
   }
+  updatePixelOrientationGate();
   updateFullscreenButton();
 }
 
@@ -1035,6 +1037,15 @@ function renderPixelScores() {
   pixelMenuTurrets.textContent = `${pixelHumanSlots + pixelBotCount}`;
 }
 
+function isPixelMobilePortrait() {
+  return window.matchMedia("(hover: none) and (pointer: coarse)").matches && window.innerHeight > window.innerWidth;
+}
+
+function updatePixelOrientationGate() {
+  const pixelState = state === "pixel-menu" || state === "pixel-options" || state === "pixel-running";
+  pixelRotateNotice.hidden = !(pixelState && isPixelMobilePortrait());
+}
+
 function syncPixelConfigFromInputs() {
   pixelMode = pixelModeInput.value === "multi" ? "multi" : "single";
   pixelHumanSlots =
@@ -1149,7 +1160,7 @@ function setPixelTurretPosition(turret: PixelTurret, index: number) {
   const centered = Math.abs(turret.x - centerX) < 1 && Math.abs(turret.y - centerY) < 1;
   turret.homeAngle = centered ? -Math.PI / 2 : Math.atan2(centerY - turret.y, centerX - turret.x);
   turret.arc = centered ? Math.PI : turret.isPlayer ? Math.PI / 2 : Math.PI * 0.42;
-  turret.angle = clampPixelTurretAngle(turret, turret.angle || turret.homeAngle);
+  turret.angle = clampPixelTurretAngle(turret, Number.isFinite(turret.angle) ? turret.angle : turret.homeAngle);
 }
 
 function positionPixelTurrets() {
@@ -1213,6 +1224,11 @@ function updatePixelScore() {
 
 function startPixelWars() {
   unlockAudio();
+  if (isPixelMobilePortrait()) {
+    state = "pixel-menu";
+    updatePixelOrientationGate();
+    return;
+  }
   leaveSnakeRoom();
   setSnakeLayout(false);
   resetSnakeJoystick();
@@ -1240,6 +1256,7 @@ function startPixelWars() {
   snakeControls.hidden = true;
   bridgeControls.hidden = true;
   updateRollButton();
+  updatePixelOrientationGate();
 }
 
 function showPixelMenu() {
@@ -1271,6 +1288,7 @@ function showPixelMenu() {
   snakeControls.hidden = true;
   bridgeControls.hidden = true;
   updateRollButton();
+  updatePixelOrientationGate();
 }
 
 function showPixelOptions() {
@@ -1299,6 +1317,7 @@ function showPixelOptions() {
   bridgeControls.hidden = true;
   issueStatus.textContent = "";
   updateRollButton();
+  updatePixelOrientationGate();
 }
 
 function showPlaneOptions() {
@@ -2430,44 +2449,14 @@ function steerPixelTurret(turret: PixelTurret, dt: number) {
     return;
   }
 
-  if (!turret.isPlayer) {
-    turret.aiTargetTimer -= dt;
-    if (turret.aiTargetTimer <= 0) {
-      const layout = pixelLayout();
-      const targetOwner = Math.random() < 0.68 ? "neutral" : "player";
-      const targetIndexes = pixelCells
-        .map((owner, index) => ({ index, owner }))
-        .filter((cell) => cell.owner === targetOwner || (targetOwner !== "neutral" && cell.owner !== turret.id));
-      const choice = targetIndexes[Math.floor(Math.random() * targetIndexes.length)]?.index ?? Math.floor(Math.random() * pixelCells.length);
-      const column = choice % pixelColumns;
-      const row = Math.floor(choice / pixelColumns);
-      const targetX = layout.x + column * layout.cellW + layout.cellW / 2;
-      const targetY = layout.y + row * layout.cellH + layout.cellH / 2;
-      const targetAngle = clampPixelTurretAngle(turret, Math.atan2(targetY - turret.y, targetX - turret.x));
-      const delta = normalizeAngle(targetAngle - turret.angle);
-      turret.rotateDirection = delta >= 0 ? 1 : -1;
-      turret.aiTargetTimer = 0.35 + Math.random() * 1.1;
-      turret.angle = clampPixelTurretAngle(
-        turret,
-        turret.angle + clampNumber(delta, -turret.rotateSpeed * dt * 3, turret.rotateSpeed * dt * 3),
-      );
-      return;
-    }
-  }
-
   turret.angle = clampPixelTurretAngle(turret, turret.angle + turret.rotateDirection * turret.rotateSpeed * dt);
-  if (!pixelRayIntersectsBoard(turret)) {
-    turret.rotateDirection *= -1;
-    turret.angle = clampPixelTurretAngle(turret, turret.homeAngle);
-    return;
-  }
   if (Math.abs(normalizeAngle(turret.angle - turret.homeAngle)) > turret.arc * 0.98) {
     turret.rotateDirection *= -1;
   }
 }
 
 function updatePixelWars(dt: number) {
-  if (state !== "pixel-running") {
+  if (state !== "pixel-running" || isPixelMobilePortrait()) {
     return;
   }
 
@@ -4517,6 +4506,8 @@ async function toggleFullscreen() {
 }
 
 function update(dt: number) {
+  updatePixelOrientationGate();
+
   if (state === "bubble-crash") {
     updateBubbleCrash(dt);
     updateRollButton();
@@ -4675,6 +4666,10 @@ function stopPixelAim(event: PointerEvent) {
 }
 
 window.addEventListener("resize", resize);
+window.addEventListener("orientationchange", () => {
+  resize();
+  updatePixelOrientationGate();
+});
 window.addEventListener("keydown", (event) => {
   if (state === "pixel-running") {
     const playerTurret = pixelTurrets.find((turret) => turret.isPlayer);
