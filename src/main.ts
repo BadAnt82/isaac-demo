@@ -1,6 +1,6 @@
 import "./styles.css";
 
-type GameState = "platform" | "ready" | "running" | "bubble-crash" | "ended";
+type GameState = "platform" | "ready" | "running" | "bubble-crash" | "ended" | "snake-menu" | "snake-running" | "snake-dead";
 
 type Obstacle = {
   x: number;
@@ -76,6 +76,49 @@ type HighScoreResponse = {
   allTimeRecord?: boolean;
 };
 
+type SnakeDirection = "up" | "down" | "left" | "right";
+
+type SnakePoint = {
+  x: number;
+  y: number;
+};
+
+type SnakeOrb = SnakePoint & {
+  color: string;
+  id: string;
+};
+
+type SnakeProjectile = SnakePoint & {
+  color: string;
+  id: string;
+};
+
+type SnakePlayer = {
+  alive: boolean;
+  color: string;
+  id: string;
+  score: number;
+  segments: SnakePoint[];
+};
+
+type SnakeSnapshot = {
+  board: {
+    cellSize: number;
+    height: number;
+    width: number;
+  };
+  orbs: SnakeOrb[];
+  players: SnakePlayer[];
+  projectiles: SnakeProjectile[];
+  type: "snake-state";
+};
+
+type SnakeWelcome = {
+  board: SnakeSnapshot["board"];
+  id: string;
+  type: "snake-welcome";
+};
+
 function requireElement<T extends Element>(selector: string) {
   const element = document.querySelector<T>(selector);
   if (!element) {
@@ -103,14 +146,22 @@ const scorePanel = requireElement<HTMLElement>(".score-panel");
 const restartButton = requireElement<HTMLButtonElement>("#restart");
 const startButton = requireElement<HTMLButtonElement>("#start");
 const selectPlaneButton = requireElement<HTMLButtonElement>("#select-plane");
+const selectSnakeButton = requireElement<HTMLButtonElement>("#select-snake");
 const homeButton = requireElement<HTMLButtonElement>("#home");
 const fullscreenButton = requireElement<HTMLButtonElement>("#fullscreen");
 const rollButton = requireElement<HTMLElement>("#roll");
+const snakeControls = requireElement<HTMLElement>("#snake-controls");
+const snakeStartButton = requireElement<HTMLButtonElement>("#snake-start");
+const snakeRestartButton = requireElement<HTMLButtonElement>("#snake-restart");
+const snakeShootButton = requireElement<HTMLButtonElement>("#snake-shoot");
 const gameFrame = requireElement<HTMLElement>(".game-frame");
 const overlay = requireElement<HTMLElement>("#overlay");
 const platformPanel = requireElement<HTMLElement>("#platform-panel");
 const gameMenuPanel = requireElement<HTMLElement>("#game-menu-panel");
 const crashPanel = requireElement<HTMLElement>("#crash-panel");
+const snakeMenuPanel = requireElement<HTMLElement>("#snake-menu-panel");
+const snakeDeadPanel = requireElement<HTMLElement>("#snake-dead-panel");
+const snakeMessage = requireElement<HTMLElement>("#snake-message");
 const crashMessage = requireElement<HTMLElement>("#crash-message");
 const recordDialog = requireElement<HTMLElement>("#record-dialog");
 const recordForm = requireElement<HTMLFormElement>(".record-card");
@@ -179,6 +230,12 @@ let todayHighName = "";
 let serverHighName = "";
 let pendingRecordName: ((name: string) => void) | null = null;
 let audioContext: AudioContext | null = null;
+let snakeSocket: WebSocket | null = null;
+let snakeReconnectTimer = 0;
+let snakeClientId = "";
+let snakeSnapshot: SnakeSnapshot | null = null;
+let snakeConnected = false;
+let snakeStartPending = false;
 
 const localHighScoreKey = "isaac-demo-high-score";
 const pendingScoreKey = "isaac-demo-pending-score";
@@ -204,6 +261,11 @@ const compactGravity = 820;
 const compactLift = -360;
 const obstacleEdgeOverflow = 72;
 const ceilingSpikeDepth = 26;
+const snakeFallbackBoard = {
+  cellSize: 24,
+  height: 1920,
+  width: 2880,
+};
 
 type FullscreenFrame = HTMLElement & {
   webkitRequestFullscreen?: () => Promise<void> | void;
@@ -413,6 +475,290 @@ function playExplosionSound() {
   playTone(240, 0.12, "square", 0.036, 0.03, 70);
 }
 
+function getSnakeSocketUrl() {
+  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+  return `${protocol}//${window.location.host}/snake`;
+}
+
+function sendSnakeMessage(message: Record<string, unknown>) {
+  if (snakeSocket?.readyState === WebSocket.OPEN) {
+    snakeSocket.send(JSON.stringify(message));
+  }
+}
+
+function connectSnakeSocket() {
+  if (snakeSocket && (snakeSocket.readyState === WebSocket.OPEN || snakeSocket.readyState === WebSocket.CONNECTING)) {
+    return;
+  }
+
+  snakeSocket = new WebSocket(getSnakeSocketUrl());
+  snakeSocket.addEventListener("open", () => {
+    snakeConnected = true;
+    if (snakeStartPending) {
+      snakeStartPending = false;
+      sendSnakeMessage({ type: "snake-start" });
+    }
+  });
+  snakeSocket.addEventListener("message", (event) => {
+    const message = JSON.parse(event.data as string) as SnakeSnapshot | SnakeWelcome;
+    if (message.type === "snake-welcome") {
+      snakeClientId = message.id;
+      return;
+    }
+
+    snakeSnapshot = message;
+    const self = getLocalSnake();
+    if (state === "snake-running" && self && !self.alive) {
+      showSnakeDead();
+    }
+    updateSnakeScore();
+  });
+  snakeSocket.addEventListener("close", () => {
+    snakeConnected = false;
+    snakeSocket = null;
+    if (state === "snake-running" || state === "snake-dead") {
+      window.clearTimeout(snakeReconnectTimer);
+      snakeReconnectTimer = window.setTimeout(connectSnakeSocket, 900);
+    }
+  });
+}
+
+function leaveSnakeRoom() {
+  window.clearTimeout(snakeReconnectTimer);
+  snakeStartPending = false;
+  snakeConnected = false;
+  snakeClientId = "";
+  snakeSnapshot = null;
+  if (snakeSocket) {
+    snakeSocket.close();
+    snakeSocket = null;
+  }
+}
+
+function getLocalSnake() {
+  return snakeSnapshot?.players.find((player) => player.id === snakeClientId);
+}
+
+function startSnakeGame(restart = false) {
+  unlockAudio();
+  state = "snake-running";
+  overlay.hidden = true;
+  overlay.classList.remove("is-platform");
+  platformPanel.hidden = true;
+  gameMenuPanel.hidden = true;
+  crashPanel.hidden = true;
+  snakeMenuPanel.hidden = true;
+  snakeDeadPanel.hidden = true;
+  scorePanel.hidden = false;
+  homeButton.hidden = false;
+  startButton.hidden = true;
+  restartButton.hidden = true;
+  snakeControls.hidden = false;
+  updateRollButton();
+  connectSnakeSocket();
+  if (snakeSocket?.readyState === WebSocket.OPEN) {
+    sendSnakeMessage({ type: restart ? "snake-restart" : "snake-start" });
+  } else {
+    snakeStartPending = true;
+  }
+  updateSnakeScore();
+}
+
+function showSnakeMenu() {
+  leaveSnakeRoom();
+  state = "snake-menu";
+  scoreEl.textContent = "0";
+  overlay.hidden = false;
+  overlay.classList.remove("is-platform");
+  platformPanel.hidden = true;
+  gameMenuPanel.hidden = true;
+  crashPanel.hidden = true;
+  snakeMenuPanel.hidden = false;
+  snakeDeadPanel.hidden = true;
+  scorePanel.hidden = true;
+  homeButton.hidden = false;
+  snakeControls.hidden = true;
+  updateRollButton();
+}
+
+function showSnakeDead() {
+  state = "snake-dead";
+  overlay.hidden = false;
+  overlay.classList.remove("is-platform");
+  platformPanel.hidden = true;
+  gameMenuPanel.hidden = true;
+  crashPanel.hidden = true;
+  snakeMenuPanel.hidden = true;
+  snakeDeadPanel.hidden = false;
+  scorePanel.hidden = false;
+  homeButton.hidden = false;
+  snakeControls.hidden = true;
+  const self = getLocalSnake();
+  snakeMessage.textContent = `Collected ${self?.score ?? 0}.`;
+  updateRollButton();
+}
+
+function updateSnakeScore() {
+  if (state !== "snake-running" && state !== "snake-dead") {
+    return;
+  }
+
+  const self = getLocalSnake();
+  scoreEl.textContent = `${self?.score ?? 0}`;
+}
+
+function setSnakeDirection(direction: SnakeDirection) {
+  if (state !== "snake-running") {
+    return;
+  }
+  sendSnakeMessage({ direction, type: "snake-direction" });
+}
+
+function shootSnake() {
+  if (state !== "snake-running") {
+    return;
+  }
+  playTone(180, 0.08, "square", 0.032, 0, 680);
+  sendSnakeMessage({ type: "snake-shoot" });
+}
+
+function getSnakeBoard() {
+  return snakeSnapshot?.board ?? snakeFallbackBoard;
+}
+
+function snakeCamera(viewWidth: number, viewHeight: number) {
+  const board = getSnakeBoard();
+  const self = getLocalSnake();
+  const head = self?.segments[0] ?? { x: board.width * 0.5, y: board.height * 0.5 };
+  return {
+    x: Math.max(0, Math.min(board.width - viewWidth, head.x - viewWidth * 0.5)),
+    y: Math.max(0, Math.min(board.height - viewHeight, head.y - viewHeight * 0.5)),
+  };
+}
+
+function drawSnakeBackground(camera: SnakePoint, viewWidth: number, viewHeight: number, time: number) {
+  const board = getSnakeBoard();
+  const gradient = ctx.createLinearGradient(0, 0, viewWidth, viewHeight);
+  gradient.addColorStop(0, "#071421");
+  gradient.addColorStop(0.55, "#102b30");
+  gradient.addColorStop(1, "#180d2c");
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, viewWidth, viewHeight);
+
+  ctx.save();
+  ctx.translate(-camera.x, -camera.y);
+  ctx.strokeStyle = "rgba(127, 255, 216, 0.14)";
+  ctx.lineWidth = 1;
+  const grid = board.cellSize * 2;
+  const startX = Math.floor(camera.x / grid) * grid;
+  const startY = Math.floor(camera.y / grid) * grid;
+  for (let x = startX; x < camera.x + viewWidth + grid; x += grid) {
+    ctx.beginPath();
+    ctx.moveTo(x, camera.y);
+    ctx.lineTo(x, camera.y + viewHeight);
+    ctx.stroke();
+  }
+  for (let y = startY; y < camera.y + viewHeight + grid; y += grid) {
+    ctx.beginPath();
+    ctx.moveTo(camera.x, y);
+    ctx.lineTo(camera.x + viewWidth, y);
+    ctx.stroke();
+  }
+
+  ctx.strokeStyle = `hsla(${(time * 24) % 360}, 100%, 72%, 0.9)`;
+  ctx.lineWidth = 8;
+  ctx.strokeRect(0, 0, board.width, board.height);
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.26)";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(4, 4, board.width - 8, board.height - 8);
+  ctx.restore();
+}
+
+function drawSnakeOrb(orb: SnakeOrb, camera: SnakePoint, time: number) {
+  const pulse = 1 + Math.sin(time * 5 + orb.x * 0.01) * 0.18;
+  ctx.save();
+  ctx.translate(orb.x - camera.x, orb.y - camera.y);
+  const gradient = ctx.createRadialGradient(0, 0, 2, 0, 0, 18 * pulse);
+  gradient.addColorStop(0, "#ffffff");
+  gradient.addColorStop(0.35, orb.color);
+  gradient.addColorStop(1, "rgba(255, 255, 255, 0)");
+  ctx.fillStyle = gradient;
+  ctx.beginPath();
+  ctx.arc(0, 0, 18 * pulse, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = orb.color;
+  ctx.beginPath();
+  ctx.arc(0, 0, 6 * pulse, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawSnakePlayer(player: SnakePlayer, camera: SnakePoint) {
+  player.segments.forEach((segment, index) => {
+    const radius = Math.max(8, 14 - index * 0.12);
+    ctx.save();
+    ctx.translate(segment.x - camera.x, segment.y - camera.y);
+    ctx.shadowBlur = player.id === snakeClientId ? 16 : 10;
+    ctx.shadowColor = player.color;
+    ctx.fillStyle = index === 0 ? "#f8fff9" : player.color;
+    ctx.strokeStyle = player.color;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, radius * (index === 0 ? 1.16 : 1), radius, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    if (index === 0) {
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = "#10202a";
+      ctx.beginPath();
+      ctx.arc(4, -4, 2.5, 0, Math.PI * 2);
+      ctx.arc(4, 4, 2.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  });
+}
+
+function drawSnakeProjectile(projectile: SnakeProjectile, camera: SnakePoint) {
+  ctx.save();
+  ctx.translate(projectile.x - camera.x, projectile.y - camera.y);
+  ctx.shadowBlur = 18;
+  ctx.shadowColor = projectile.color;
+  ctx.fillStyle = projectile.color;
+  ctx.beginPath();
+  ctx.arc(0, 0, 7, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawSnakeGame(time: number) {
+  const viewWidth = canvas.width / dpr;
+  const viewHeight = canvas.height / dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const camera = snakeCamera(viewWidth, viewHeight);
+  drawSnakeBackground(camera, viewWidth, viewHeight, time);
+
+  const inView = (point: SnakePoint, margin = 60) =>
+    point.x >= camera.x - margin &&
+    point.x <= camera.x + viewWidth + margin &&
+    point.y >= camera.y - margin &&
+    point.y <= camera.y + viewHeight + margin;
+
+  snakeSnapshot?.orbs.filter((orb) => inView(orb)).forEach((orb) => drawSnakeOrb(orb, camera, time));
+  snakeSnapshot?.projectiles
+    .filter((projectile) => inView(projectile))
+    .forEach((projectile) => drawSnakeProjectile(projectile, camera));
+  snakeSnapshot?.players
+    .filter((player) => player.alive && player.segments.some((segment) => inView(segment, 120)))
+    .forEach((player) => drawSnakePlayer(player, camera));
+
+  if (state === "snake-running" && !snakeConnected) {
+    ctx.fillStyle = "rgba(255, 255, 255, 0.82)";
+    ctx.font = "800 18px Inter, sans-serif";
+    ctx.fillText("Connecting...", 18, 30);
+  }
+}
+
 function drawViewportBackground(canvasWidth: number, canvasHeight: number) {
   const wall = ctx.createLinearGradient(0, 0, 0, canvasHeight);
   wall.addColorStop(0, "#cdbf9f");
@@ -606,6 +952,9 @@ function reset(nextState: GameState) {
   platformPanel.hidden = nextState !== "platform";
   gameMenuPanel.hidden = nextState !== "ready";
   crashPanel.hidden = true;
+  snakeMenuPanel.hidden = true;
+  snakeDeadPanel.hidden = true;
+  snakeControls.hidden = true;
   updateRollButton();
 }
 
@@ -1461,6 +1810,11 @@ function update(dt: number) {
 }
 
 function render(time: number) {
+  if (state === "snake-menu" || state === "snake-running" || state === "snake-dead") {
+    drawSnakeGame(time);
+    return;
+  }
+
   const canvasWidth = canvas.width / dpr;
   const canvasHeight = canvas.height / dpr;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -1503,6 +1857,30 @@ function loop(now: number) {
 
 window.addEventListener("resize", resize);
 window.addEventListener("keydown", (event) => {
+  if (state === "snake-running") {
+    const directionByKey: Partial<Record<string, SnakeDirection>> = {
+      ArrowDown: "down",
+      ArrowLeft: "left",
+      ArrowRight: "right",
+      ArrowUp: "up",
+      KeyA: "left",
+      KeyD: "right",
+      KeyS: "down",
+      KeyW: "up",
+    };
+    const direction = directionByKey[event.code];
+    if (direction) {
+      event.preventDefault();
+      setSnakeDirection(direction);
+      return;
+    }
+    if (event.code === "Space") {
+      event.preventDefault();
+      shootSnake();
+      return;
+    }
+  }
+
   if (event.code === "Space") {
     event.preventDefault();
     flap();
@@ -1519,14 +1897,32 @@ restartButton.addEventListener("click", () => {
   reset("running");
 });
 homeButton.addEventListener("click", () => {
+  leaveSnakeRoom();
   reset("platform");
 });
 selectPlaneButton.addEventListener("click", () => {
+  leaveSnakeRoom();
   reset("ready");
+});
+selectSnakeButton.addEventListener("click", showSnakeMenu);
+snakeStartButton.addEventListener("click", () => {
+  startSnakeGame();
+});
+snakeRestartButton.addEventListener("click", () => {
+  startSnakeGame(true);
 });
 fullscreenButton.addEventListener("click", () => {
   void toggleFullscreen();
 });
+document.querySelectorAll<HTMLButtonElement>("[data-snake-direction]").forEach((button) => {
+  button.addEventListener("click", () => {
+    const direction = button.dataset.snakeDirection as SnakeDirection | undefined;
+    if (direction) {
+      setSnakeDirection(direction);
+    }
+  });
+});
+snakeShootButton.addEventListener("click", shootSnake);
 rollButton.addEventListener("click", roll);
 rollButton.addEventListener("keydown", (event) => {
   if (event.code === "Enter" || event.code === "Space") {

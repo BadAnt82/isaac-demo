@@ -55,6 +55,18 @@
                   </dl>
                 </span>
               </button>
+              <button id="select-snake" class="game-tile snake-tile" type="button" aria-label="Open Glow Snake">
+                <span class="tile-snake" aria-hidden="true">
+                  <span></span>
+                  <span></span>
+                  <span></span>
+                  <span></span>
+                </span>
+                <span class="tile-details">
+                  <strong>Glow Snake</strong>
+                  <span class="tile-meta">Live Arena</span>
+                </span>
+              </button>
             </div>
           </div>
           <div id="game-menu-panel" class="overlay-panel game-menu-panel" hidden>
@@ -98,6 +110,24 @@
             </dl>
             <button id="restart" type="button" hidden>Restart</button>
           </div>
+          <div id="snake-menu-panel" class="overlay-panel snake-menu-panel" hidden>
+            <h1>Glow Snake</h1>
+            <button id="snake-start" type="button">Start</button>
+          </div>
+          <div id="snake-dead-panel" class="overlay-panel snake-dead-panel" hidden>
+            <h1>Destroyed</h1>
+            <p id="snake-message">Segments scattered.</p>
+            <button id="snake-restart" type="button">Restart</button>
+          </div>
+        </div>
+        <div id="snake-controls" class="snake-controls" hidden>
+          <div class="snake-pad">
+            <button type="button" data-snake-direction="up" aria-label="Move up">Up</button>
+            <button type="button" data-snake-direction="left" aria-label="Move left">Left</button>
+            <button type="button" data-snake-direction="down" aria-label="Move down">Down</button>
+            <button type="button" data-snake-direction="right" aria-label="Move right">Right</button>
+          </div>
+          <button id="snake-shoot" class="snake-shoot" type="button">Shoot</button>
         </div>
         <div id="record-dialog" class="record-dialog" hidden role="dialog" aria-modal="true" aria-labelledby="record-title">
           <form class="record-card">
