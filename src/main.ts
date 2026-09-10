@@ -296,6 +296,7 @@ let snakeServerLongName = "";
 let snakeBestThisRun = 3;
 
 const localHighScoreKey = "badant-games-jumpy-plane-high-score";
+const oldLocalHighScoreKeys = ["isaac-demo-high-score"];
 const pendingScoreKey = "badant-games-jumpy-plane-pending-score";
 const playerNameKey = "badant-games-player-name";
 const oldSnakeLocalLongestKey = "badant-games-glow-snake-longest";
@@ -1160,14 +1161,44 @@ function formatScore(value: number) {
   return Number.isInteger(value) ? `${value}` : value.toFixed(1);
 }
 
+function readStoredNumber(key: string, fallback = 0) {
+  try {
+    const storedValue = localStorage.getItem(key);
+    const storedNumber = storedValue === null ? fallback : Number(storedValue);
+    return Number.isFinite(storedNumber) ? storedNumber : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function writeStoredNumber(key: string, value: number) {
+  try {
+    localStorage.setItem(key, `${value}`);
+  } catch {
+    // Local scores are best-effort on browsers that restrict storage.
+  }
+}
+
+function readStoredPlaneHighest() {
+  return Math.max(
+    0,
+    readStoredNumber(localHighScoreKey),
+    readStoredNumber(pendingScoreKey),
+    ...oldLocalHighScoreKeys.map((key) => readStoredNumber(key)),
+  );
+}
+
 function readLocalHighest() {
-  const storedScore = Number(localStorage.getItem(localHighScoreKey) || 0);
-  localHighest = Number.isFinite(storedScore) ? storedScore : 0;
+  const storedScore = readStoredPlaneHighest();
+  localHighest = Math.max(localHighest, storedScore);
+  if (storedScore > 0) {
+    writeStoredNumber(localHighScoreKey, localHighest);
+  }
 }
 
 function writeLocalHighest(nextScore: number) {
-  localHighest = Math.max(localHighest, nextScore);
-  localStorage.setItem(localHighScoreKey, `${localHighest}`);
+  localHighest = Math.max(localHighest, readStoredPlaneHighest(), nextScore);
+  writeStoredNumber(localHighScoreKey, localHighest);
 }
 
 function setText(elements: HTMLElement[], text: string) {
