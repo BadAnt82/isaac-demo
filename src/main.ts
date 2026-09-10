@@ -63,6 +63,8 @@ type PlaneDebris = {
 
 type CrashMotion = "spin" | "flip" | "spiral";
 
+type RollStyle = "forward" | "backward" | "sideways";
+
 type CollisionResult = "none" | "ceiling" | "floor" | "obstacle" | "bubble";
 
 type HighScoreResponse = {
@@ -162,6 +164,7 @@ let smokePuffs: SmokePuff[] = [];
 let planeDebris: PlaneDebris[] = [];
 let compactPlayfield = false;
 let rollTimer = 0;
+let rollStyle: RollStyle = "forward";
 let freeRollAvailable = true;
 let crashTimer = 0;
 let smokeTimer = 0;
@@ -574,6 +577,7 @@ function reset(nextState: GameState) {
   spawnTimer = 0.45;
   bubbleTimer = compactPlayfield ? 1.45 : 1;
   rollTimer = 0;
+  rollStyle = "forward";
   freeRollAvailable = true;
   crashTimer = 0;
   smokeTimer = 0;
@@ -803,10 +807,11 @@ function drawPlaneBody(
   cockpitColor: string,
   direction: 1 | -1,
   scale = 1,
+  verticalScale = 1,
 ) {
   ctx.save();
   ctx.translate(x, y);
-  ctx.scale(direction * scale, scale);
+  ctx.scale(direction * scale, scale * verticalScale);
   ctx.rotate(rotation);
 
   ctx.fillStyle = "rgba(30, 38, 50, 0.18)";
@@ -881,7 +886,17 @@ function drawPlaneBody(
 
 function drawPlane() {
   const rollProgress = rollTimer > 0 ? 1 - rollTimer / rollDuration : 0;
-  const rollRotation = rollTimer > 0 ? Math.PI * 2 * rollProgress : 0;
+  let rollRotation = 0;
+  let rollVerticalScale = 1;
+  if (rollTimer > 0) {
+    if (rollStyle === "sideways") {
+      rollRotation = Math.sin(rollProgress * Math.PI * 2) * 0.18;
+      rollVerticalScale = Math.cos(rollProgress * Math.PI * 2);
+    } else {
+      const direction = rollStyle === "backward" ? -1 : 1;
+      rollRotation = Math.PI * 2 * rollProgress * direction;
+    }
+  }
   if (crashExploded) {
     return;
   }
@@ -896,6 +911,7 @@ function drawPlane() {
     "#6fc8ff",
     1,
     getPlaneScale(),
+    rollVerticalScale,
   );
 }
 
@@ -1052,6 +1068,8 @@ function roll() {
   }
 
   playRollSound();
+  const rollChoice = Math.random();
+  rollStyle = rollChoice < 0.42 ? "forward" : rollChoice < 0.84 ? "backward" : "sideways";
   rollTimer = rollDuration;
   if (freeRollAvailable) {
     freeRollAvailable = false;
