@@ -28,6 +28,10 @@ const snakeBoard = {
   height: 1920,
   width: 2880,
 };
+const pixelBoard = {
+  columns: 54,
+  rows: 36,
+};
 const targetSnakeOrbCount = 54;
 const maxSnakeOrbCount = 132;
 const maxSnakeBotCount = 10;
@@ -64,6 +68,33 @@ let snakeIdleResetTimer = null;
 let lastSnakeRandomOrbSpawnAt = 0;
 const pixelMaxPlayers = 9;
 const pixelLobbyTtlMs = 30 * 60 * 1000;
+const pixelTickMs = 50;
+const pixelBaseFireInterval = 1;
+const pixelShotSpeed = 34;
+const pixelShotLife = 2.2;
+const pixelShieldMaxHealth = 100;
+const pixelShieldDamage = 10;
+const pixelRespawnSeconds = 10;
+const pixelBombShotAward = 4;
+const pixelOwnerColors = {
+  "bot-1": "#ffd84d",
+  "bot-2": "#f45dff",
+  "bot-3": "#31e6ff",
+  "bot-4": "#ff7f50",
+  "bot-5": "#9cff57",
+  "bot-6": "#b794ff",
+  "bot-7": "#ff6f91",
+  "bot-8": "#7afcff",
+  "human-1": "#ff4d6d",
+  "human-2": "#36f0a4",
+  "human-3": "#5aa7ff",
+  "human-4": "#ffd166",
+  "human-5": "#c77dff",
+  "human-6": "#f77f00",
+  "human-7": "#06d6a0",
+  "human-8": "#ef476f",
+  "human-9": "#a3ff12",
+};
 
 const contentTypes = {
   ".css": "text/css; charset=utf-8",
@@ -678,6 +709,430 @@ function stopSnakeRoomIfIdle() {
   }, snakeIdleResetDelayMs);
 }
 
+function pixelSpawnAnchors() {
+  const insetX = 0.08;
+  const insetY = 0.12;
+  return [
+    { xRatio: 0.5, yRatio: 1 },
+    { xRatio: insetX, yRatio: insetY },
+    { xRatio: 0.5, yRatio: 0 },
+    { xRatio: 1 - insetX, yRatio: insetY },
+    { xRatio: 1, yRatio: 0.5 },
+    { xRatio: 1 - insetX, yRatio: 1 - insetY },
+    { xRatio: insetX, yRatio: 1 - insetY },
+    { xRatio: 0, yRatio: 0.5 },
+    { xRatio: 0.5, yRatio: 0.5 },
+  ];
+}
+
+function pixelHomeAngleForPoint(x, y) {
+  return Math.atan2(pixelBoard.rows / 2 - y, pixelBoard.columns / 2 - x);
+}
+
+function createPixelTurret(id, index, isBot = false) {
+  const anchor = pixelSpawnAnchors()[index % pixelMaxPlayers];
+  const x = anchor.xRatio * pixelBoard.columns;
+  const y = anchor.yRatio * pixelBoard.rows;
+  const homeAngle = pixelHomeAngleForPoint(x, y);
+  return {
+    angle: homeAngle,
+    arc: Math.PI * 0.44,
+    bombShots: 0,
+    color: pixelOwnerColors[id] || "#ffffff",
+    eliminated: false,
+    fireCooldown: Math.random() * pixelBaseFireInterval,
+    fireSpeedBoosts: 0,
+    homeAngle,
+    id,
+    isBot,
+    respawnPending: false,
+    respawnTimer: 0,
+    rotateDirection: Math.random() < 0.5 ? -1 : 1,
+    rotateSpeed: isBot ? 0.55 + Math.random() * 0.45 : 0.75,
+    shieldHealth: pixelShieldMaxHealth,
+    socket: null,
+    x,
+    xRatio: anchor.xRatio,
+    y,
+    yRatio: anchor.yRatio,
+  };
+}
+
+function createPixelMatch(lobby) {
+  const turrets = [];
+  for (let index = 0; index < lobby.humanPlayers; index += 1) {
+    turrets.push(createPixelTurret(`human-${index + 1}`, index, false));
+  }
+  for (let index = 0; index < lobby.aiBots; index += 1) {
+    turrets.push(createPixelTurret(`bot-${index + 1}`, lobby.humanPlayers + index, true));
+  }
+
+  const match = {
+    cells: Array.from({ length: pixelBoard.columns * pixelBoard.rows }, () => "neutral"),
+    interval: null,
+    lobby,
+    nextShotId: 1,
+    shots: [],
+    turrets,
+  };
+  const seedCount = pixelStartingSeedCount();
+  turrets.forEach((turret) => seedPixelTurret(match, turret, seedCount));
+  return match;
+}
+
+function pixelCellIndexAt(x, y) {
+  const column = Math.floor(x);
+  const row = Math.floor(y);
+  if (column < 0 || column >= pixelBoard.columns || row < 0 || row >= pixelBoard.rows) {
+    return -1;
+  }
+  return row * pixelBoard.columns + column;
+}
+
+function pixelSeedCandidates(turret) {
+  const candidates = [];
+  for (let row = 0; row < pixelBoard.rows; row += 1) {
+    for (let column = 0; column < pixelBoard.columns; column += 1) {
+      const x = column + 0.5;
+      const y = row + 0.5;
+      const dx = x - turret.x;
+      const dy = y - turret.y;
+      candidates.push({ distance: dx * dx + dy * dy, index: row * pixelBoard.columns + column });
+    }
+  }
+  return candidates.sort((a, b) => a.distance - b.distance);
+}
+
+function pixelStartingSeedCount() {
+  const sideReference = { x: pixelBoard.columns / 2, y: pixelBoard.rows };
+  const radiusSquared = 2.7 * 2.7;
+  return Math.max(3, pixelSeedCandidates(sideReference).filter((candidate) => candidate.distance <= radiusSquared).length);
+}
+
+function seedPixelTurret(match, turret, seedCount = pixelStartingSeedCount()) {
+  pixelSeedCandidates(turret)
+    .slice(0, seedCount)
+    .forEach((candidate) => {
+      match.cells[candidate.index] = turret.id;
+    });
+}
+
+function pixelOwnedCellCount(match, owner) {
+  return match.cells.reduce((total, currentOwner) => total + (currentOwner === owner ? 1 : 0), 0);
+}
+
+function pixelTurretIsActive(turret) {
+  return !turret.eliminated && !turret.respawnPending && turret.respawnTimer <= 0 && turret.shieldHealth > 0;
+}
+
+function clampPixelAngle(turret, angle) {
+  let delta = angle - turret.homeAngle;
+  while (delta > Math.PI) {
+    delta -= Math.PI * 2;
+  }
+  while (delta < -Math.PI) {
+    delta += Math.PI * 2;
+  }
+  delta = Math.max(-turret.arc, Math.min(turret.arc, delta));
+  let result = turret.homeAngle + delta;
+  while (result > Math.PI) {
+    result -= Math.PI * 2;
+  }
+  while (result < -Math.PI) {
+    result += Math.PI * 2;
+  }
+  return result;
+}
+
+function pixelPaintCell(match, index, owner) {
+  if (index < 0 || index >= match.cells.length) {
+    return;
+  }
+  const currentOwner = match.cells[index];
+  if (currentOwner === "neutral") {
+    match.cells[index] = owner;
+  } else if (currentOwner !== owner) {
+    match.cells[index] = "neutral";
+  }
+}
+
+function pixelExplodeCells(match, index, owner) {
+  const centerColumn = index % pixelBoard.columns;
+  const centerRow = Math.floor(index / pixelBoard.columns);
+  for (let rowOffset = -1; rowOffset <= 1; rowOffset += 1) {
+    for (let columnOffset = -1; columnOffset <= 1; columnOffset += 1) {
+      const row = centerRow + rowOffset;
+      const column = centerColumn + columnOffset;
+      if (row >= 0 && row < pixelBoard.rows && column >= 0 && column < pixelBoard.columns) {
+        pixelPaintCell(match, row * pixelBoard.columns + column, owner);
+      }
+    }
+  }
+}
+
+function pixelEffectiveFireInterval(turret) {
+  return pixelBaseFireInterval / (1 + turret.fireSpeedBoosts * 0.25);
+}
+
+function pixelRayIntersectsBoard(turret, angle = turret.angle) {
+  const dx = Math.cos(angle);
+  const dy = Math.sin(angle);
+  const targets = [
+    dx !== 0 ? -turret.x / dx : Number.POSITIVE_INFINITY,
+    dx !== 0 ? (pixelBoard.columns - turret.x) / dx : Number.POSITIVE_INFINITY,
+    dy !== 0 ? -turret.y / dy : Number.POSITIVE_INFINITY,
+    dy !== 0 ? (pixelBoard.rows - turret.y) / dy : Number.POSITIVE_INFINITY,
+  ].filter((value) => Number.isFinite(value) && value > 0.001);
+  return targets.some((distance) => {
+    const x = turret.x + dx * distance;
+    const y = turret.y + dy * distance;
+    return x >= 0 && x <= pixelBoard.columns && y >= 0 && y <= pixelBoard.rows;
+  });
+}
+
+function firePixelShot(match, turret) {
+  if (!pixelTurretIsActive(turret) || !pixelRayIntersectsBoard(turret)) {
+    return;
+  }
+  const dx = Math.cos(turret.angle);
+  const dy = Math.sin(turret.angle);
+  const isBomb = turret.bombShots > 0;
+  if (isBomb) {
+    turret.bombShots -= 1;
+  }
+  match.shots.push({
+    color: turret.color,
+    id: `px-shot-${match.nextShotId++}`,
+    kind: isBomb ? "bomb" : "normal",
+    lastCell: -1,
+    life: pixelShotLife,
+    owner: turret.id,
+    vx: dx * pixelShotSpeed,
+    vy: dy * pixelShotSpeed,
+    x: Math.max(0.02, Math.min(pixelBoard.columns - 0.02, turret.x + dx * 1.8)),
+    y: Math.max(0.02, Math.min(pixelBoard.rows - 0.02, turret.y + dy * 1.8)),
+  });
+}
+
+function knockOutPixelTurret(match, turret) {
+  if (turret.eliminated || turret.respawnPending || turret.respawnTimer > 0) {
+    return;
+  }
+  turret.shieldHealth = 0;
+  turret.respawnPending = true;
+  turret.respawnTimer = 0;
+  turret.fireCooldown = pixelBaseFireInterval;
+}
+
+function eliminatePixelTurret(turret) {
+  turret.eliminated = true;
+  turret.respawnPending = false;
+  turret.respawnTimer = 0;
+  turret.shieldHealth = 0;
+}
+
+function updatePixelRespawnEliminations(match) {
+  match.turrets.forEach((turret) => {
+    if (
+      !turret.eliminated &&
+      (turret.respawnPending || turret.respawnTimer > 0) &&
+      pixelOwnedCellCount(match, turret.id) <= 0
+    ) {
+      eliminatePixelTurret(turret);
+    }
+  });
+}
+
+function queuePixelRespawn(match, turret, xRatio, yRatio) {
+  if (turret.eliminated || !turret.respawnPending || pixelOwnedCellCount(match, turret.id) <= 0) {
+    if (pixelOwnedCellCount(match, turret.id) <= 0) {
+      eliminatePixelTurret(turret);
+    }
+    return;
+  }
+  turret.xRatio = Math.max(0, Math.min(1, Number(xRatio)));
+  turret.yRatio = Math.max(0, Math.min(1, Number(yRatio)));
+  turret.x = turret.xRatio * pixelBoard.columns;
+  turret.y = turret.yRatio * pixelBoard.rows;
+  turret.homeAngle = pixelHomeAngleForPoint(turret.x, turret.y);
+  turret.angle = clampPixelAngle(turret, turret.angle);
+  turret.respawnPending = false;
+  turret.respawnTimer = pixelRespawnSeconds;
+}
+
+function respawnPixelTurret(match, turret) {
+  if (turret.eliminated || turret.respawnPending || turret.respawnTimer > 0) {
+    return;
+  }
+  if (pixelOwnedCellCount(match, turret.id) <= 0) {
+    eliminatePixelTurret(turret);
+    return;
+  }
+  turret.shieldHealth = pixelShieldMaxHealth;
+  turret.fireCooldown = 0.35;
+  seedPixelTurret(match, turret);
+}
+
+function updatePixelRespawns(match, dt) {
+  match.turrets.forEach((turret) => {
+    if (turret.eliminated || turret.respawnPending || turret.respawnTimer <= 0) {
+      return;
+    }
+    turret.respawnTimer = Math.max(0, turret.respawnTimer - dt);
+    if (turret.respawnTimer <= 0) {
+      respawnPixelTurret(match, turret);
+    }
+  });
+}
+
+function updatePixelTurretAim(turret, dt) {
+  if (!turret.isBot) {
+    return;
+  }
+  turret.angle = clampPixelAngle(turret, turret.angle + turret.rotateDirection * turret.rotateSpeed * dt);
+  let delta = turret.angle - turret.homeAngle;
+  while (delta > Math.PI) {
+    delta -= Math.PI * 2;
+  }
+  while (delta < -Math.PI) {
+    delta += Math.PI * 2;
+  }
+  if (Math.abs(delta) > turret.arc * 0.97) {
+    turret.rotateDirection *= -1;
+  }
+}
+
+function updatePixelShots(match, dt) {
+  for (let index = match.shots.length - 1; index >= 0; index -= 1) {
+    const shot = match.shots[index];
+    shot.x += shot.vx * dt;
+    shot.y += shot.vy * dt;
+    shot.life -= dt;
+
+    let hit = false;
+    for (const turret of match.turrets) {
+      if (turret.id === shot.owner || !pixelTurretIsActive(turret)) {
+        continue;
+      }
+      const dx = shot.x - turret.x;
+      const dy = shot.y - turret.y;
+      if (dx * dx + dy * dy <= 2.15 * 2.15) {
+        turret.shieldHealth = Math.max(0, turret.shieldHealth - (shot.kind === "bomb" ? pixelShieldDamage * 3 : pixelShieldDamage));
+        if (turret.shieldHealth <= 0) {
+          knockOutPixelTurret(match, turret);
+        }
+        hit = true;
+        break;
+      }
+    }
+    if (hit) {
+      match.shots.splice(index, 1);
+      continue;
+    }
+
+    const cellIndex = pixelCellIndexAt(shot.x, shot.y);
+    if (cellIndex !== -1 && cellIndex !== shot.lastCell) {
+      shot.lastCell = cellIndex;
+      if (match.cells[cellIndex] !== shot.owner) {
+        if (shot.kind === "bomb") {
+          pixelExplodeCells(match, cellIndex, shot.owner);
+        } else {
+          pixelPaintCell(match, cellIndex, shot.owner);
+        }
+        match.shots.splice(index, 1);
+        continue;
+      }
+    }
+
+    const outside = shot.x < 0 || shot.x > pixelBoard.columns || shot.y < 0 || shot.y > pixelBoard.rows;
+    if (shot.life <= 0 || outside) {
+      match.shots.splice(index, 1);
+    }
+  }
+}
+
+function tickPixelMatch(match) {
+  const dt = pixelTickMs / 1000;
+  updatePixelRespawnEliminations(match);
+  updatePixelRespawns(match, dt);
+  match.turrets.forEach((turret) => {
+    if (!pixelTurretIsActive(turret)) {
+      return;
+    }
+    updatePixelTurretAim(turret, dt);
+    turret.fireCooldown -= dt;
+    if (turret.fireCooldown <= 0) {
+      firePixelShot(match, turret);
+      turret.fireCooldown = pixelEffectiveFireInterval(turret) * (0.82 + Math.random() * 0.36);
+    }
+  });
+  updatePixelShots(match, dt);
+  updatePixelRespawnEliminations(match);
+  broadcastPixelMatch(match);
+}
+
+function pixelMatchSnapshot(match) {
+  return {
+    board: pixelBoard,
+    cells: match.cells,
+    lobby: publicPixelLobby(match.lobby),
+    shots: match.shots.map((shot) => ({
+      color: shot.color,
+      id: shot.id,
+      kind: shot.kind,
+      owner: shot.owner,
+      xRatio: shot.x / pixelBoard.columns,
+      yRatio: shot.y / pixelBoard.rows,
+    })),
+    turrets: match.turrets.map((turret) => ({
+      angle: turret.angle,
+      bombShots: turret.bombShots,
+      color: turret.color,
+      eliminated: turret.eliminated,
+      fireSpeedBoosts: turret.fireSpeedBoosts,
+      id: turret.id,
+      isBot: turret.isBot,
+      respawnPending: turret.respawnPending,
+      respawnTimer: turret.respawnTimer,
+      shieldHealth: turret.shieldHealth,
+      xRatio: turret.xRatio,
+      yRatio: turret.yRatio,
+    })),
+    type: "pixel-wars-state",
+  };
+}
+
+function broadcastPixelMatch(match) {
+  const message = JSON.stringify(pixelMatchSnapshot(match));
+  match.turrets.forEach((turret) => {
+    if (turret.socket?.readyState === WebSocket.OPEN) {
+      turret.socket.send(message);
+    }
+  });
+}
+
+function startPixelMatch(match) {
+  if (!match.interval) {
+    match.interval = setInterval(() => tickPixelMatch(match), pixelTickMs);
+  }
+}
+
+function activePixelSocketCount(match) {
+  return match.turrets.filter((turret) => !turret.isBot && turret.socket?.readyState === WebSocket.OPEN).length;
+}
+
+function stopPixelMatchIfIdle(lobby) {
+  if (!lobby.match || activePixelSocketCount(lobby.match) > 0) {
+    return;
+  }
+  if (lobby.match.interval) {
+    clearInterval(lobby.match.interval);
+  }
+  lobby.match = null;
+  lobby.playerCount = 0;
+  lobby.updatedAt = Date.now();
+}
+
 function todayKey() {
   return new Intl.DateTimeFormat("en-CA", {
     day: "2-digit",
@@ -837,20 +1292,24 @@ function clampInteger(value, min, max) {
 function prunePixelLobbies() {
   const now = Date.now();
   for (const [id, lobby] of pixelLobbies) {
-    if (now - lobby.updatedAt > pixelLobbyTtlMs || lobby.playerCount >= lobby.humanPlayers) {
+    if (now - lobby.updatedAt > pixelLobbyTtlMs && (!lobby.match || activePixelSocketCount(lobby.match) === 0)) {
+      if (lobby.match?.interval) {
+        clearInterval(lobby.match.interval);
+      }
       pixelLobbies.delete(id);
     }
   }
 }
 
 function publicPixelLobby(lobby) {
+  const playerCount = lobby.match ? activePixelSocketCount(lobby.match) : lobby.playerCount;
   return {
     aiBots: lobby.aiBots,
     createdAt: lobby.createdAt,
     humanPlayers: lobby.humanPlayers,
     id: lobby.id,
-    playerCount: lobby.playerCount,
-    status: lobby.playerCount >= lobby.humanPlayers ? "full" : "waiting",
+    playerCount,
+    status: playerCount >= lobby.humanPlayers ? "full" : "waiting",
   };
 }
 
@@ -874,12 +1333,11 @@ async function handlePixelLobbyCreate(request, response) {
       createdAt: now,
       humanPlayers,
       id,
-      playerCount: 1,
+      match: null,
+      playerCount: 0,
       updatedAt: Date.now(),
     };
-    if (lobby.playerCount < lobby.humanPlayers) {
-      pixelLobbies.set(id, lobby);
-    }
+    pixelLobbies.set(id, lobby);
     sendJson(response, 201, { lobby: publicPixelLobby(lobby) });
   } catch {
     sendJson(response, 400, { error: "Invalid Pixel Wars lobby payload." });
@@ -899,11 +1357,7 @@ function handlePixelLobbyJoin(response, lobbyId) {
     return;
   }
 
-  lobby.playerCount += 1;
   lobby.updatedAt = Date.now();
-  if (lobby.playerCount >= lobby.humanPlayers) {
-    pixelLobbies.delete(lobbyId);
-  }
   sendJson(response, 200, { lobby: publicPixelLobby(lobby) });
 }
 
@@ -1110,7 +1564,25 @@ const server = createServer(async (request, response) => {
   serveStatic(request, response);
 });
 
-const snakeServer = new WebSocketServer({ path: "/snake", server });
+const snakeServer = new WebSocketServer({ noServer: true });
+const pixelServer = new WebSocketServer({ noServer: true });
+
+server.on("upgrade", (request, socket, head) => {
+  const url = new URL(request.url || "/", "http://localhost");
+  if (url.pathname === "/snake") {
+    snakeServer.handleUpgrade(request, socket, head, (ws) => {
+      snakeServer.emit("connection", ws, request);
+    });
+    return;
+  }
+  if (url.pathname === "/pixel-wars") {
+    pixelServer.handleUpgrade(request, socket, head, (ws) => {
+      pixelServer.emit("connection", ws, request);
+    });
+    return;
+  }
+  socket.destroy();
+});
 
 snakeServer.on("connection", (socket) => {
   const id = `snake-${nextSnakeId}`;
@@ -1167,6 +1639,83 @@ snakeServer.on("connection", (socket) => {
     snakePlayers.delete(id);
     broadcastSnakeState();
     stopSnakeRoomIfIdle();
+  });
+});
+
+pixelServer.on("connection", (socket) => {
+  let lobby = null;
+  let match = null;
+  let turret = null;
+
+  socket.on("message", (data) => {
+    let message;
+    try {
+      message = JSON.parse(data.toString());
+    } catch {
+      return;
+    }
+
+    if (!turret) {
+      if (message.type !== "pixel-join" || typeof message.lobbyId !== "string") {
+        socket.close(1008, "Join required");
+        return;
+      }
+
+      prunePixelLobbies();
+      lobby = pixelLobbies.get(message.lobbyId);
+      if (!lobby) {
+        socket.close(1008, "Lobby not found");
+        return;
+      }
+      if (!lobby.match) {
+        lobby.match = createPixelMatch(lobby);
+      }
+      match = lobby.match;
+      turret = match.turrets.find((candidate) => !candidate.isBot && !candidate.socket);
+      if (!turret) {
+        socket.close(1008, "Lobby full");
+        return;
+      }
+      turret.socket = socket;
+      lobby.playerCount = activePixelSocketCount(match);
+      lobby.updatedAt = Date.now();
+      socket.send(JSON.stringify({ board: pixelBoard, id: turret.id, lobby: publicPixelLobby(lobby), type: "pixel-wars-welcome" }));
+      socket.send(JSON.stringify(pixelMatchSnapshot(match)));
+      startPixelMatch(match);
+      broadcastPixelMatch(match);
+      return;
+    }
+
+    if (message.type === "pixel-aim" && Number.isFinite(message.angle)) {
+      turret.angle = clampPixelAngle(turret, Number(message.angle));
+      return;
+    }
+
+    if (message.type === "pixel-respawn") {
+      queuePixelRespawn(match, turret, message.xRatio, message.yRatio);
+      broadcastPixelMatch(match);
+      return;
+    }
+
+    if (message.type === "pixel-prize") {
+      if (message.prize === "clock") {
+        turret.fireSpeedBoosts += 1;
+      } else if (message.prize === "bomb") {
+        turret.bombShots += pixelBombShotAward;
+      }
+      broadcastPixelMatch(match);
+    }
+  });
+
+  socket.on("close", () => {
+    if (turret?.socket === socket) {
+      turret.socket = null;
+    }
+    if (lobby && match) {
+      lobby.playerCount = activePixelSocketCount(match);
+      lobby.updatedAt = Date.now();
+      stopPixelMatchIfIdle(lobby);
+    }
   });
 });
 

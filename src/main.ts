@@ -321,6 +321,49 @@ type PixelLobby = {
   status: "waiting" | "full";
 };
 
+type PixelRemoteTurret = {
+  angle: number;
+  bombShots: number;
+  color: string;
+  eliminated: boolean;
+  fireSpeedBoosts: number;
+  id: string;
+  isBot: boolean;
+  respawnPending: boolean;
+  respawnTimer: number;
+  shieldHealth: number;
+  xRatio: number;
+  yRatio: number;
+};
+
+type PixelRemoteShot = {
+  color: string;
+  id: string;
+  kind: PixelShot["kind"];
+  owner: string;
+  xRatio: number;
+  yRatio: number;
+};
+
+type PixelWarsSnapshot = {
+  board: {
+    columns: number;
+    rows: number;
+  };
+  cells: string[];
+  lobby: PixelLobby;
+  shots: PixelRemoteShot[];
+  turrets: PixelRemoteTurret[];
+  type: "pixel-wars-state";
+};
+
+type PixelWarsWelcome = {
+  board: PixelWarsSnapshot["board"];
+  id: string;
+  lobby: PixelLobby;
+  type: "pixel-wars-welcome";
+};
+
 function requireElement<T extends Element>(selector: string) {
   const element = document.querySelector<T>(selector);
   if (!element) {
@@ -605,6 +648,10 @@ let pixelMatchMessage = "";
 let pixelLobbies: PixelLobby[] = [];
 let pixelJoinedLobbyId = "";
 let pixelLobbyLoading = false;
+let pixelSocket: WebSocket | null = null;
+let pixelClientId = "";
+let pixelRemoteSnapshot: PixelWarsSnapshot | null = null;
+let pixelConnected = false;
 let pixelReelMatchReady = false;
 let pixelReels: Record<PixelLane, PixelReel> = {
   center: { finalPrize: "blank", prize: "blank", spinTimer: 0 },
@@ -1115,6 +1162,138 @@ function leaveSnakeRoom() {
   }
 }
 
+function getPixelSocketUrl() {
+  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+  return `${protocol}//${window.location.host}/pixel-wars`;
+}
+
+function sendPixelMessage(message: Record<string, unknown>) {
+  if (pixelSocket?.readyState === WebSocket.OPEN) {
+    pixelSocket.send(JSON.stringify(message));
+  }
+}
+
+function applyPixelSnapshot(snapshot: PixelWarsSnapshot) {
+  pixelRemoteSnapshot = snapshot;
+  const humanIds = snapshot.turrets.filter((turret) => !turret.isBot).map((turret) => turret.id);
+  const ownerMap = new Map<string, PixelOwner>();
+  let otherHumanIndex = 1;
+  humanIds.forEach((id) => {
+    const remoteTurret = snapshot.turrets.find((turret) => turret.id === id);
+    if (id === pixelClientId) {
+      ownerMap.set(id, "player");
+      pixelOwnerColors.player = remoteTurret?.color ?? pixelOwnerColors.player;
+    } else {
+      const localOwner = `human-${otherHumanIndex}` as PixelOwner;
+      ownerMap.set(id, localOwner);
+      if (remoteTurret?.color) {
+        pixelOwnerColors[localOwner] = remoteTurret.color;
+      }
+      otherHumanIndex += 1;
+    }
+  });
+  snapshot.turrets
+    .filter((turret) => turret.isBot)
+    .forEach((turret) => {
+      const localOwner = turret.id as PixelOwner;
+      ownerMap.set(turret.id, localOwner);
+      pixelOwnerColors[localOwner] = turret.color;
+    });
+
+  const layout = pixelLayout();
+  pixelCells = snapshot.cells.map((owner) => (owner === "neutral" ? "neutral" : (ownerMap.get(owner) ?? "neutral")));
+  pixelTurrets = snapshot.turrets.map((remoteTurret) => {
+    const id = ownerMap.get(remoteTurret.id) ?? "neutral";
+    const x = layout.x + remoteTurret.xRatio * layout.boardW;
+    const y = layout.y + remoteTurret.yRatio * layout.boardH;
+    const homeAngle = Math.atan2(layout.y + layout.boardH / 2 - y, layout.x + layout.boardW / 2 - x);
+    return {
+      aiTargetTimer: 0,
+      angle: remoteTurret.angle,
+      arc: Math.PI * 0.5,
+      bombShots: remoteTurret.bombShots,
+      color: remoteTurret.color,
+      eliminated: remoteTurret.eliminated,
+      fireCooldown: 0,
+      fireInterval: pixelBaseFireInterval,
+      fireSpeedBoosts: remoteTurret.fireSpeedBoosts,
+      homeAngle,
+      id,
+      isPlayer: remoteTurret.id === pixelClientId,
+      respawnDelay: 0,
+      respawnPending: remoteTurret.respawnPending,
+      respawnTimer: remoteTurret.respawnTimer,
+      rotateDirection: 1,
+      rotateSpeed: 0,
+      shieldHealth: remoteTurret.shieldHealth,
+      spawnXRatio: remoteTurret.xRatio,
+      spawnYRatio: remoteTurret.yRatio,
+      x,
+      y,
+    };
+  });
+  pixelShots = snapshot.shots.map((shot) => ({
+    color: shot.color,
+    kind: shot.kind,
+    lastCell: -1,
+    life: 1,
+    owner: ownerMap.get(shot.owner) ?? "neutral",
+    vx: 0,
+    vy: 0,
+    x: layout.x + shot.xRatio * layout.boardW,
+    y: layout.y + shot.yRatio * layout.boardH,
+  }));
+  pixelHumanSlots = snapshot.lobby.humanPlayers;
+  pixelBotCount = snapshot.lobby.aiBots;
+  updatePixelScore();
+  const self = snapshot.turrets.find((turret) => turret.id === pixelClientId);
+  if (self?.eliminated) {
+    pixelMatchOver = true;
+    pixelMatchMessage = "You were eliminated";
+  }
+}
+
+function connectPixelWarsSocket() {
+  if (!pixelJoinedLobbyId || (pixelSocket && (pixelSocket.readyState === WebSocket.OPEN || pixelSocket.readyState === WebSocket.CONNECTING))) {
+    return;
+  }
+
+  pixelSocket = new WebSocket(getPixelSocketUrl());
+  pixelSocket.addEventListener("open", () => {
+    pixelConnected = true;
+    sendPixelMessage({ lobbyId: pixelJoinedLobbyId, type: "pixel-join" });
+    pixelRunnerMessage = "Connected";
+    pixelRunnerMessageTimer = 1;
+  });
+  pixelSocket.addEventListener("message", (event) => {
+    const message = JSON.parse(event.data as string) as PixelWarsSnapshot | PixelWarsWelcome;
+    if (message.type === "pixel-wars-welcome") {
+      pixelClientId = message.id;
+      pixelLobbyStatus.textContent = `Joined game ${message.lobby.id.slice(-4).toUpperCase()}.`;
+      return;
+    }
+    applyPixelSnapshot(message);
+  });
+  pixelSocket.addEventListener("close", () => {
+    pixelConnected = false;
+    pixelSocket = null;
+    if (state === "pixel-running" && pixelMode === "multi" && !pixelMatchOver) {
+      pixelRunnerMessage = "Disconnected";
+      pixelRunnerMessageTimer = 2;
+    }
+  });
+}
+
+function leavePixelWarsNetwork() {
+  pixelClientId = "";
+  pixelConnected = false;
+  pixelRemoteSnapshot = null;
+  if (pixelSocket) {
+    pixelSocket.close();
+    pixelSocket = null;
+  }
+}
+
 function getLocalSnake() {
   return snakeSnapshot?.players.find((player) => player.id === snakeClientId);
 }
@@ -1165,6 +1344,7 @@ function setPixelMenuView(view: "choice" | "single" | "lobby") {
   pixelLobbyPanel.hidden = view !== "lobby";
   pixelStartButton.hidden = view !== "single";
   pixelCreateLobbyButton.hidden = view !== "lobby";
+  pixelMenuBackButton.textContent = view === "choice" ? "Back to games" : "Back";
   if (view === "choice") {
     pixelLobbyStatus.textContent = "";
   }
@@ -1341,6 +1521,15 @@ function showPixelLobby() {
   syncPixelConfigFromInputs();
   setPixelMenuView("lobby");
   void loadPixelLobbies();
+}
+
+function handlePixelMenuBack() {
+  if (!pixelModeChoice.hidden) {
+    reset("platform");
+    return;
+  }
+  leavePixelWarsNetwork();
+  setPixelMenuView("choice");
 }
 
 function pixelLayout(): PixelBoardLayout {
@@ -1826,6 +2015,12 @@ function pixelApplySlotPrize(prize: PixelPrize) {
   if (!playerTurret) {
     return;
   }
+  if (pixelMode === "multi") {
+    sendPixelMessage({ prize, type: "pixel-prize" });
+    pixelRunnerMessage = prize === "clock" ? "Speed sent" : prize === "bomb" ? "Bomb sent" : "Dud match";
+    pixelRunnerMessageTimer = 1.6;
+    return;
+  }
   if (prize === "clock") {
     playerTurret.fireSpeedBoosts += 1;
     pixelRunnerMessage = `Speed +${playerTurret.fireSpeedBoosts}`;
@@ -1972,7 +2167,24 @@ function startPixelWars() {
   leaveSnakeRoom();
   setSnakeLayout(false);
   resetSnakeJoystick();
-  resetPixelWars();
+  if (pixelMode === "multi") {
+    if (!pixelJoinedLobbyId) {
+      showPixelLobby();
+      pixelLobbyStatus.textContent = "Create or join a game first.";
+      return;
+    }
+    resetPixelRunner();
+    pixelCells = Array.from({ length: pixelColumns * pixelRows }, () => "neutral");
+    pixelShots = [];
+    pixelTurrets = [];
+    pixelTerritory = 0;
+    pixelMatchOver = false;
+    pixelMatchMessage = "";
+    connectPixelWarsSocket();
+  } else {
+    leavePixelWarsNetwork();
+    resetPixelWars();
+  }
   state = "pixel-running";
   overlay.hidden = true;
   overlay.classList.remove("is-platform");
@@ -2001,6 +2213,7 @@ function startPixelWars() {
 
 function showPixelMenu() {
   leaveSnakeRoom();
+  leavePixelWarsNetwork();
   setSnakeLayout(false);
   resetSnakeJoystick();
   readPixelLocalBest();
@@ -3231,6 +3444,23 @@ function steerPixelTurret(turret: PixelTurret, dt: number) {
 
 function updatePixelWars(dt: number) {
   if (state !== "pixel-running" || isWideGameMobilePortrait()) {
+    return;
+  }
+
+  if (pixelMode === "multi") {
+    if (!pixelRemoteSnapshot) {
+      pixelRunnerMessage = pixelConnected ? "Waiting for match" : "Connecting";
+      pixelRunnerMessageTimer = 0.3;
+      updatePixelReels(dt);
+      return;
+    }
+    const playerTurret = pixelTurrets.find((turret) => turret.isPlayer);
+    if (playerTurret && pixelTurretIsActive(playerTurret)) {
+      updatePixelRunner(dt);
+    } else {
+      pixelRunnerMessageTimer = Math.max(0, pixelRunnerMessageTimer - dt);
+      updatePixelReels(dt);
+    }
     return;
   }
 
@@ -6036,6 +6266,17 @@ function handlePixelRespawnPointer(x: number, y: number) {
     return false;
   }
 
+  if (pixelMode === "multi") {
+    sendPixelMessage({
+      type: "pixel-respawn",
+      xRatio: clampNumber((point.x - layout.x) / layout.boardW, 0, 1),
+      yRatio: clampNumber((point.y - layout.y) / layout.boardH, 0, 1),
+    });
+    pixelRunnerMessage = "Respawning";
+    pixelRunnerMessageTimer = 1.4;
+    return true;
+  }
+
   queuePixelRespawn(playerTurret, point.x, point.y, layout);
   return true;
 }
@@ -6044,6 +6285,12 @@ function updatePixelAimFromPointer(event: PointerEvent) {
   const point = canvasPointFromEvent(event);
   pixelAimX = point.x;
   pixelAimY = point.y;
+  if (pixelMode === "multi") {
+    const playerTurret = pixelTurrets.find((turret) => turret.isPlayer);
+    if (playerTurret) {
+      sendPixelMessage({ angle: Math.atan2(pixelAimY - playerTurret.y, pixelAimX - playerTurret.x), type: "pixel-aim" });
+    }
+  }
 }
 
 function startPixelAim(event: PointerEvent) {
@@ -6085,7 +6332,16 @@ window.addEventListener("keydown", (event) => {
     ) {
       event.preventDefault();
       const point = randomPixelPerimeterPoint();
-      queuePixelRespawn(playerTurret, point.x, point.y);
+      if (pixelMode === "multi") {
+        const layout = pixelLayout();
+        sendPixelMessage({
+          type: "pixel-respawn",
+          xRatio: clampNumber((point.x - layout.x) / layout.boardW, 0, 1),
+          yRatio: clampNumber((point.y - layout.y) / layout.boardH, 0, 1),
+        });
+      } else {
+        queuePixelRespawn(playerTurret, point.x, point.y);
+      }
       return;
     }
     if (playerTurret && !pixelTurretIsActive(playerTurret)) {
@@ -6123,12 +6379,18 @@ window.addEventListener("keydown", (event) => {
       event.preventDefault();
       pixelAimActive = false;
       playerTurret.angle = clampPixelTurretAngle(playerTurret, playerTurret.angle - 0.12);
+      if (pixelMode === "multi") {
+        sendPixelMessage({ angle: playerTurret.angle, type: "pixel-aim" });
+      }
       return;
     }
     if (playerTurret && event.code === "KeyD") {
       event.preventDefault();
       pixelAimActive = false;
       playerTurret.angle = clampPixelTurretAngle(playerTurret, playerTurret.angle + 0.12);
+      if (pixelMode === "multi") {
+        sendPixelMessage({ angle: playerTurret.angle, type: "pixel-aim" });
+      }
       return;
     }
   }
@@ -6268,14 +6530,22 @@ restartButton.addEventListener("click", () => {
 });
 homeButton.addEventListener("click", () => {
   leaveSnakeRoom();
+  leavePixelWarsNetwork();
   reset("platform");
 });
 selectPlaneButton.addEventListener("click", () => {
   leaveSnakeRoom();
+  leavePixelWarsNetwork();
   reset("ready");
 });
-selectSnakeButton.addEventListener("click", showSnakeMenu);
-selectBridgeButton.addEventListener("click", showBridgeMenu);
+selectSnakeButton.addEventListener("click", () => {
+  leavePixelWarsNetwork();
+  showSnakeMenu();
+});
+selectBridgeButton.addEventListener("click", () => {
+  leavePixelWarsNetwork();
+  showBridgeMenu();
+});
 selectPixelButton.addEventListener("click", showPixelMenu);
 snakeOptionsButton.addEventListener("click", showSnakeOptions);
 snakeMenuBackButton.addEventListener("click", () => reset("platform"));
@@ -6297,7 +6567,7 @@ pixelSinglePlayerButton.addEventListener("click", showPixelSingleConfig);
 pixelMultiplayerButton.addEventListener("click", showPixelLobby);
 pixelStartButton.addEventListener("click", startPixelWars);
 pixelOptionsButton.addEventListener("click", showPixelOptions);
-pixelMenuBackButton.addEventListener("click", () => reset("platform"));
+pixelMenuBackButton.addEventListener("click", handlePixelMenuBack);
 pixelOptionsBackButton.addEventListener("click", showPixelMenu);
 pixelReportIssueButton.addEventListener("click", () => showReportIssue("pixel-wars", "pixel-options"));
 pixelRefreshLobbiesButton.addEventListener("click", () => void loadPixelLobbies());
