@@ -1412,8 +1412,38 @@ function updatePixelScore() {
   }
 }
 
+function pixelOwnedCellCount(owner: PixelOwner) {
+  return pixelCells.reduce((total, currentOwner) => total + (currentOwner === owner ? 1 : 0), 0);
+}
+
 function pixelTurretIsActive(turret: PixelTurret) {
   return !turret.eliminated && !turret.respawnPending && turret.respawnTimer <= 0 && turret.shieldHealth > 0;
+}
+
+function eliminatePixelTurret(turret: PixelTurret) {
+  turret.eliminated = true;
+  turret.respawnPending = false;
+  turret.respawnTimer = 0;
+  turret.respawnDelay = 0;
+  turret.shieldHealth = 0;
+  if (turret.isPlayer) {
+    pixelAimActive = false;
+    pixelAimPointerId = null;
+    pixelRunnerMessage = "No pixels left";
+    pixelRunnerMessageTimer = 2;
+  }
+}
+
+function updatePixelRespawnEliminations() {
+  pixelTurrets.forEach((turret) => {
+    if (
+      !turret.eliminated &&
+      (turret.respawnPending || turret.respawnTimer > 0) &&
+      pixelOwnedCellCount(turret.id) <= 0
+    ) {
+      eliminatePixelTurret(turret);
+    }
+  });
 }
 
 function knockOutPixelTurret(turret: PixelTurret) {
@@ -1438,6 +1468,10 @@ function queuePixelRespawn(turret: PixelTurret, x: number, y: number, layout = p
   if (turret.eliminated || !turret.respawnPending) {
     return;
   }
+  if (pixelOwnedCellCount(turret.id) <= 0) {
+    eliminatePixelTurret(turret);
+    return;
+  }
 
   turret.spawnXRatio = clampNumber((x - layout.x) / layout.boardW, 0, 1);
   turret.spawnYRatio = clampNumber((y - layout.y) / layout.boardH, 0, 1);
@@ -1453,6 +1487,10 @@ function queuePixelRespawn(turret: PixelTurret, x: number, y: number, layout = p
 
 function respawnPixelTurret(turret: PixelTurret) {
   if (turret.eliminated || turret.respawnPending || turret.respawnTimer > 0) {
+    return;
+  }
+  if (pixelOwnedCellCount(turret.id) <= 0) {
+    eliminatePixelTurret(turret);
     return;
   }
 
@@ -3014,6 +3052,7 @@ function updatePixelWars(dt: number) {
   }
 
   positionPixelTurrets();
+  updatePixelRespawnEliminations();
   updatePixelRespawns(dt);
   if (pixelMatchOver) {
     updatePixelScore();
@@ -3073,6 +3112,7 @@ function updatePixelWars(dt: number) {
   }
 
   updatePixelScore();
+  updatePixelRespawnEliminations();
   checkPixelWinCondition();
 }
 
