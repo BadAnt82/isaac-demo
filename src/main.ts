@@ -221,12 +221,15 @@ type PixelTurret = {
   bombShots: number;
   arc: number;
   color: string;
+  eliminated: boolean;
   fireCooldown: number;
   fireSpeedBoosts: number;
   fireInterval: number;
   homeAngle: number;
   id: PixelOwner;
   isPlayer: boolean;
+  respawnDelay: number;
+  respawnTimer: number;
   rotateDirection: number;
   rotateSpeed: number;
   shieldHealth: number;
@@ -576,6 +579,8 @@ let pixelRunnerObstacles: PixelRunnerObstacle[] = [];
 let pixelRunnerSpecialSpins = 0;
 let pixelRunnerMessage = "";
 let pixelRunnerMessageTimer = 0;
+let pixelMatchOver = false;
+let pixelMatchMessage = "";
 let pixelReelMatchReady = false;
 let pixelReels: Record<PixelLane, PixelReel> = {
   center: { finalPrize: "blank", prize: "blank", spinTimer: 0 },
@@ -671,6 +676,7 @@ const pixelShieldDamage = 10;
 const pixelShieldRadius = 19;
 const pixelCannonLength = pixelShieldRadius;
 const pixelCornerSpawnInset = pixelShieldRadius * 0.42;
+const pixelRespawnWindow = 10;
 const pixelRunnerLanes: PixelLane[] = ["left", "center", "right"];
 const pixelRunnerSpeed = 156;
 const pixelRunnerJumpDuration = 0.46;
@@ -1263,7 +1269,7 @@ function positionPixelTurrets() {
   pixelTurrets.forEach((turret, index) => setPixelTurretPosition(turret, index));
 }
 
-function pixelSeedCandidates(turret: PixelTurret, layout: PixelBoardLayout) {
+function pixelSeedCandidates(turret: Pick<PixelTurret, "x" | "y">, layout: PixelBoardLayout) {
   const candidates: { distance: number; index: number }[] = [];
   for (let row = 0; row < pixelRows; row += 1) {
     for (let column = 0; column < pixelColumns; column += 1) {
@@ -1284,7 +1290,7 @@ function pixelStartingSeedCount(layout: PixelBoardLayout) {
   const sideReference = {
     x: layout.x + layout.boardW / 2,
     y: layout.y + layout.boardH,
-  } as PixelTurret;
+  };
   const radiusSquared = pixelShieldRadius * pixelShieldRadius;
   return Math.max(
     1,
@@ -1294,13 +1300,14 @@ function pixelStartingSeedCount(layout: PixelBoardLayout) {
 
 function seedPixelTurretTerritory() {
   const layout = pixelLayout();
-  const seedLists = pixelTurrets.map((turret) => pixelSeedCandidates(turret, layout));
   const seedCount = pixelStartingSeedCount(layout);
 
-  pixelTurrets.forEach((turret, turretIndex) => {
-    seedLists[turretIndex].slice(0, seedCount).forEach((candidate) => {
-      pixelCells[candidate.index] = turret.id;
-    });
+  pixelTurrets.forEach((turret) => seedPixelTurretStart(turret, layout, seedCount));
+}
+
+function seedPixelTurretStart(turret: PixelTurret, layout = pixelLayout(), seedCount = pixelStartingSeedCount(layout)) {
+  pixelSeedCandidates(turret, layout).slice(0, seedCount).forEach((candidate) => {
+    pixelCells[candidate.index] = turret.id;
   });
 }
 
@@ -1337,12 +1344,15 @@ function createPixelTurret(id: PixelOwner, isPlayer: boolean): PixelTurret {
     bombShots: 0,
     arc: Math.PI * 0.4,
     color,
+    eliminated: false,
     fireCooldown: Math.random() * pixelBaseFireInterval,
     fireSpeedBoosts: 0,
     fireInterval: pixelBaseFireInterval,
     homeAngle: isPlayer ? -Math.PI / 2 : Math.PI / 2,
     id,
     isPlayer,
+    respawnDelay: 0,
+    respawnTimer: 0,
     rotateDirection: Math.random() < 0.5 ? -1 : 1,
     rotateSpeed: isPlayer ? 0.8 : 0.55 + Math.random() * 0.5,
     shieldHealth: pixelShieldMaxHealth,
@@ -1359,6 +1369,8 @@ function resetPixelWars() {
   pixelAimActive = false;
   pixelAimPointerId = null;
   pixelTerritory = 0;
+  pixelMatchOver = false;
+  pixelMatchMessage = "";
   pixelTurrets = [createPixelTurret("player", true)];
   for (let human = 2; human <= pixelHumanSlots; human += 1) {
     pixelTurrets.push(createPixelTurret(`human-${human}` as PixelOwner, false));
@@ -1385,6 +1397,93 @@ function updatePixelScore() {
   if (pixelTerritory > pixelLocalBest) {
     writePixelLocalBest(pixelTerritory);
     renderPixelScores();
+  }
+}
+
+function pixelTurretIsActive(turret: PixelTurret) {
+  return !turret.eliminated && turret.respawnTimer <= 0 && turret.shieldHealth > 0;
+}
+
+function knockOutPixelTurret(turret: PixelTurret) {
+  if (turret.eliminated || turret.respawnTimer > 0) {
+    return;
+  }
+
+  turret.shieldHealth = 0;
+  turret.respawnTimer = pixelRespawnWindow;
+  turret.respawnDelay = turret.isPlayer ? 0 : 2 + Math.random() * 6.4;
+  turret.fireCooldown = pixelBaseFireInterval;
+  if (turret.isPlayer) {
+    pixelAimActive = false;
+    pixelAimPointerId = null;
+    pixelRunnerMessage = "Tap base to respawn";
+    pixelRunnerMessageTimer = 2;
+  }
+}
+
+function respawnPixelTurret(turret: PixelTurret) {
+  if (turret.eliminated || turret.respawnTimer <= 0) {
+    return;
+  }
+
+  turret.shieldHealth = pixelShieldMaxHealth;
+  turret.respawnTimer = 0;
+  turret.respawnDelay = 0;
+  turret.fireCooldown = 0.35;
+  seedPixelTurretStart(turret);
+  if (turret.isPlayer) {
+    pixelRunnerMessage = "Respawned";
+    pixelRunnerMessageTimer = 1.2;
+  }
+}
+
+function updatePixelRespawns(dt: number) {
+  pixelTurrets.forEach((turret) => {
+    if (turret.respawnTimer <= 0 || turret.eliminated) {
+      return;
+    }
+
+    turret.respawnTimer = Math.max(0, turret.respawnTimer - dt);
+    if (!turret.isPlayer) {
+      turret.respawnDelay = Math.max(0, turret.respawnDelay - dt);
+      if (turret.respawnDelay <= 0 && turret.respawnTimer > 0) {
+        respawnPixelTurret(turret);
+        return;
+      }
+    }
+
+    if (turret.respawnTimer <= 0) {
+      turret.eliminated = true;
+      if (turret.isPlayer) {
+        pixelMatchOver = true;
+        pixelMatchMessage = "You were eliminated";
+      }
+    }
+  });
+}
+
+function checkPixelWinCondition() {
+  if (pixelMatchOver || state !== "pixel-running") {
+    return;
+  }
+
+  const playerTurret = pixelTurrets.find((turret) => turret.isPlayer);
+  if (!playerTurret || playerTurret.eliminated) {
+    pixelMatchOver = true;
+    pixelMatchMessage = "You were eliminated";
+    return;
+  }
+
+  if (pixelTerritory >= 100) {
+    pixelMatchOver = true;
+    pixelMatchMessage = "You claimed the board";
+    return;
+  }
+
+  const opponentsRemaining = pixelTurrets.some((turret) => !turret.isPlayer && !turret.eliminated);
+  if (!opponentsRemaining && pixelTurrets.length > 1) {
+    pixelMatchOver = true;
+    pixelMatchMessage = "You win";
   }
 }
 
@@ -2811,7 +2910,7 @@ function pixelEffectiveFireInterval(turret: PixelTurret) {
 
 function firePixelShot(turret: PixelTurret) {
   const layout = pixelLayout();
-  if (!pixelRayIntersectsBoard(turret, turret.angle, layout)) {
+  if (!pixelTurretIsActive(turret) || !pixelRayIntersectsBoard(turret, turret.angle, layout)) {
     return;
   }
 
@@ -2835,7 +2934,7 @@ function firePixelShot(turret: PixelTurret) {
 
 function pixelShotShieldHit(shot: PixelShot) {
   for (const turret of pixelTurrets) {
-    if (turret.id === shot.owner || turret.shieldHealth <= 0) {
+    if (turret.id === shot.owner || !pixelTurretIsActive(turret)) {
       continue;
     }
 
@@ -2843,6 +2942,9 @@ function pixelShotShieldHit(shot: PixelShot) {
     const dy = shot.y - turret.y;
     if (dx * dx + dy * dy <= pixelShieldRadius * pixelShieldRadius) {
       turret.shieldHealth = Math.max(0, turret.shieldHealth - (shot.kind === "bomb" ? pixelShieldDamage * 3 : pixelShieldDamage));
+      if (turret.shieldHealth <= 0) {
+        knockOutPixelTurret(turret);
+      }
       return true;
     }
   }
@@ -2868,7 +2970,16 @@ function updatePixelWars(dt: number) {
   }
 
   positionPixelTurrets();
+  updatePixelRespawns(dt);
+  if (pixelMatchOver) {
+    updatePixelScore();
+    return;
+  }
+
   pixelTurrets.forEach((turret) => {
+    if (!pixelTurretIsActive(turret)) {
+      return;
+    }
     steerPixelTurret(turret, dt);
     turret.fireCooldown -= dt;
     if (turret.fireCooldown <= 0) {
@@ -2876,7 +2987,13 @@ function updatePixelWars(dt: number) {
       turret.fireCooldown = pixelEffectiveFireInterval(turret) * (0.82 + Math.random() * 0.36);
     }
   });
-  updatePixelRunner(dt);
+  const playerTurret = pixelTurrets.find((turret) => turret.isPlayer);
+  if (playerTurret && pixelTurretIsActive(playerTurret)) {
+    updatePixelRunner(dt);
+  } else {
+    pixelRunnerMessageTimer = Math.max(0, pixelRunnerMessageTimer - dt);
+    updatePixelReels(dt);
+  }
 
   const layout = pixelLayout();
   for (let index = pixelShots.length - 1; index >= 0; index -= 1) {
@@ -2912,6 +3029,7 @@ function updatePixelWars(dt: number) {
   }
 
   updatePixelScore();
+  checkPixelWinCondition();
 }
 
 function drawPixelTileGrid(layout: PixelBoardLayout) {
@@ -3049,10 +3167,38 @@ function drawPixelShield(turret: PixelTurret, time: number) {
   ctx.restore();
 }
 
+function drawPixelRespawnTimer(turret: PixelTurret) {
+  if (turret.eliminated || turret.respawnTimer <= 0) {
+    return;
+  }
+
+  ctx.save();
+  ctx.translate(turret.x, turret.y);
+  ctx.fillStyle = "rgba(5, 9, 20, 0.78)";
+  ctx.strokeStyle = turret.isPlayer ? "#ffd84f" : "rgba(255, 255, 255, 0.62)";
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  roundedRectPath(-28, -19, 56, 38, 8);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = turret.isPlayer ? "#ffd84f" : "rgba(255, 255, 255, 0.86)";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.font = "900 18px Inter, sans-serif";
+  ctx.fillText(`${Math.ceil(turret.respawnTimer)}`, 0, -3);
+  ctx.font = "800 8px Inter, sans-serif";
+  ctx.fillText(turret.isPlayer ? "TAP BASE" : "REBOOT", 0, 12);
+  ctx.restore();
+}
+
 function drawPixelTurret(turret: PixelTurret, layout: PixelBoardLayout, time: number) {
   const radius = turret.isPlayer ? 8 : 7;
   drawPixelTurretHealth(turret, layout);
   drawPixelShield(turret, time);
+  if (!pixelTurretIsActive(turret)) {
+    drawPixelRespawnTimer(turret);
+    return;
+  }
 
   ctx.save();
   ctx.translate(turret.x, turret.y);
@@ -3386,6 +3532,21 @@ function drawPixelWars(time: number) {
     ctx.restore();
   });
   pixelTurrets.forEach((turret) => drawPixelTurret(turret, layout, time));
+
+  if (pixelMatchOver) {
+    ctx.save();
+    ctx.fillStyle = "rgba(5, 9, 20, 0.68)";
+    ctx.fillRect(layout.x, layout.y, layout.boardW, layout.boardH);
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = "#f7fbff";
+    ctx.font = "900 34px Inter, sans-serif";
+    ctx.fillText(pixelMatchMessage, layout.x + layout.boardW / 2, layout.y + layout.boardH / 2 - 14);
+    ctx.fillStyle = "rgba(217, 248, 255, 0.86)";
+    ctx.font = "800 14px Inter, sans-serif";
+    ctx.fillText("Tap the board to restart", layout.x + layout.boardW / 2, layout.y + layout.boardH / 2 + 24);
+    ctx.restore();
+  }
 
   if (state === "pixel-menu" || state === "pixel-options") {
     ctx.fillStyle = "rgba(5, 9, 20, 0.48)";
@@ -5529,6 +5690,22 @@ function handlePixelRunnerPointer(x: number, y: number) {
   return true;
 }
 
+function handlePixelRespawnPointer(x: number, y: number) {
+  const playerTurret = pixelTurrets.find((turret) => turret.isPlayer);
+  if (!playerTurret || playerTurret.respawnTimer <= 0 || playerTurret.eliminated) {
+    return false;
+  }
+
+  const dx = x - playerTurret.x;
+  const dy = y - playerTurret.y;
+  if (dx * dx + dy * dy > (pixelShieldRadius * 1.9) ** 2) {
+    return false;
+  }
+
+  respawnPixelTurret(playerTurret);
+  return true;
+}
+
 function updatePixelAimFromPointer(event: PointerEvent) {
   const point = canvasPointFromEvent(event);
   pixelAimX = point.x;
@@ -5561,6 +5738,24 @@ window.visualViewport?.addEventListener("resize", resize);
 window.addEventListener("keydown", (event) => {
   if (state === "pixel-running") {
     const playerTurret = pixelTurrets.find((turret) => turret.isPlayer);
+    if (pixelMatchOver && (event.code === "Enter" || event.code === "Space")) {
+      event.preventDefault();
+      startPixelWars();
+      return;
+    }
+    if (
+      playerTurret &&
+      playerTurret.respawnTimer > 0 &&
+      !playerTurret.eliminated &&
+      (event.code === "Enter" || event.code === "Space" || event.code === "KeyR")
+    ) {
+      event.preventDefault();
+      respawnPixelTurret(playerTurret);
+      return;
+    }
+    if (playerTurret && !pixelTurretIsActive(playerTurret)) {
+      return;
+    }
     if (event.code === "ArrowLeft") {
       event.preventDefault();
       pixelRunnerTargetLane = clampNumber(pixelRunnerTargetLane - 1, 0, 2);
@@ -5661,9 +5856,25 @@ window.addEventListener("keydown", (event) => {
 canvas.addEventListener("pointerdown", (event) => {
   if (state === "pixel-running") {
     const point = canvasPointFromEvent(event);
+    if (pixelMatchOver) {
+      event.preventDefault();
+      unlockAudio();
+      startPixelWars();
+      return;
+    }
+    if (handlePixelRespawnPointer(point.x, point.y)) {
+      event.preventDefault();
+      unlockAudio();
+      return;
+    }
     if (handlePixelRunnerPointer(point.x, point.y)) {
       event.preventDefault();
       unlockAudio();
+      return;
+    }
+    const playerTurret = pixelTurrets.find((turret) => turret.isPlayer);
+    if (!playerTurret || !pixelTurretIsActive(playerTurret)) {
+      event.preventDefault();
       return;
     }
     startPixelAim(event);
