@@ -228,11 +228,14 @@ type PixelTurret = {
   homeAngle: number;
   id: PixelOwner;
   isPlayer: boolean;
+  respawnPending: boolean;
   respawnDelay: number;
   respawnTimer: number;
   rotateDirection: number;
   rotateSpeed: number;
   shieldHealth: number;
+  spawnXRatio: number | null;
+  spawnYRatio: number | null;
   x: number;
   y: number;
 };
@@ -1256,7 +1259,13 @@ function setPixelTurretPosition(turret: PixelTurret, index: number) {
   const layout = pixelLayout();
   const centerX = layout.x + layout.boardW / 2;
   const centerY = layout.y + layout.boardH / 2;
-  const anchor = pixelSpawnAnchors(layout)[index % pixelMaxPlayers];
+  const anchor =
+    turret.spawnXRatio !== null && turret.spawnYRatio !== null
+      ? {
+          x: layout.x + layout.boardW * turret.spawnXRatio,
+          y: layout.y + layout.boardH * turret.spawnYRatio,
+        }
+      : pixelSpawnAnchors(layout)[index % pixelMaxPlayers];
   turret.x = anchor.x;
   turret.y = anchor.y;
   const centered = Math.abs(turret.x - centerX) < 1 && Math.abs(turret.y - centerY) < 1;
@@ -1351,11 +1360,14 @@ function createPixelTurret(id: PixelOwner, isPlayer: boolean): PixelTurret {
     homeAngle: isPlayer ? -Math.PI / 2 : Math.PI / 2,
     id,
     isPlayer,
+    respawnPending: false,
     respawnDelay: 0,
     respawnTimer: 0,
     rotateDirection: Math.random() < 0.5 ? -1 : 1,
     rotateSpeed: isPlayer ? 0.8 : 0.55 + Math.random() * 0.5,
     shieldHealth: pixelShieldMaxHealth,
+    spawnXRatio: null,
+    spawnYRatio: null,
     x: 0,
     y: 0,
   };
@@ -1401,34 +1413,50 @@ function updatePixelScore() {
 }
 
 function pixelTurretIsActive(turret: PixelTurret) {
-  return !turret.eliminated && turret.respawnTimer <= 0 && turret.shieldHealth > 0;
+  return !turret.eliminated && !turret.respawnPending && turret.respawnTimer <= 0 && turret.shieldHealth > 0;
 }
 
 function knockOutPixelTurret(turret: PixelTurret) {
-  if (turret.eliminated || turret.respawnTimer > 0) {
+  if (turret.eliminated || turret.respawnPending || turret.respawnTimer > 0) {
     return;
   }
 
   turret.shieldHealth = 0;
-  turret.respawnTimer = pixelRespawnWindow;
-  turret.respawnDelay = turret.isPlayer ? 0 : 2 + Math.random() * 6.4;
+  turret.respawnPending = true;
+  turret.respawnTimer = 0;
+  turret.respawnDelay = turret.isPlayer ? 0 : 0.75 + Math.random() * 1.8;
   turret.fireCooldown = pixelBaseFireInterval;
   if (turret.isPlayer) {
     pixelAimActive = false;
     pixelAimPointerId = null;
-    pixelRunnerMessage = "Tap base to respawn";
+    pixelRunnerMessage = "Tap board edge";
     pixelRunnerMessageTimer = 2;
   }
 }
 
+function queuePixelRespawn(turret: PixelTurret, x: number, y: number, layout = pixelLayout()) {
+  if (turret.eliminated || !turret.respawnPending) {
+    return;
+  }
+
+  turret.spawnXRatio = clampNumber((x - layout.x) / layout.boardW, 0, 1);
+  turret.spawnYRatio = clampNumber((y - layout.y) / layout.boardH, 0, 1);
+  setPixelTurretPosition(turret, pixelTurrets.indexOf(turret));
+  turret.respawnPending = false;
+  turret.respawnTimer = pixelRespawnWindow;
+  turret.respawnDelay = 0;
+  if (turret.isPlayer) {
+    pixelRunnerMessage = "Respawning";
+    pixelRunnerMessageTimer = 1.4;
+  }
+}
+
 function respawnPixelTurret(turret: PixelTurret) {
-  if (turret.eliminated || turret.respawnTimer <= 0) {
+  if (turret.eliminated || turret.respawnPending || turret.respawnTimer > 0) {
     return;
   }
 
   turret.shieldHealth = pixelShieldMaxHealth;
-  turret.respawnTimer = 0;
-  turret.respawnDelay = 0;
   turret.fireCooldown = 0.35;
   seedPixelTurretStart(turret);
   if (turret.isPlayer) {
@@ -1437,27 +1465,49 @@ function respawnPixelTurret(turret: PixelTurret) {
   }
 }
 
+function randomPixelPerimeterPoint(layout = pixelLayout()) {
+  const side = Math.floor(Math.random() * 4);
+  const edgePadding = Math.max(layout.cellW, layout.cellH) * 1.5;
+  if (side === 0) {
+    return { x: layout.x + edgePadding + Math.random() * (layout.boardW - edgePadding * 2), y: layout.y };
+  }
+  if (side === 1) {
+    return {
+      x: layout.x + layout.boardW,
+      y: layout.y + edgePadding + Math.random() * (layout.boardH - edgePadding * 2),
+    };
+  }
+  if (side === 2) {
+    return {
+      x: layout.x + edgePadding + Math.random() * (layout.boardW - edgePadding * 2),
+      y: layout.y + layout.boardH,
+    };
+  }
+  return { x: layout.x, y: layout.y + edgePadding + Math.random() * (layout.boardH - edgePadding * 2) };
+}
+
 function updatePixelRespawns(dt: number) {
   pixelTurrets.forEach((turret) => {
-    if (turret.respawnTimer <= 0 || turret.eliminated) {
+    if (turret.eliminated) {
+      return;
+    }
+
+    if (turret.respawnPending) {
+      turret.respawnDelay = Math.max(0, turret.respawnDelay - dt);
+      if (!turret.isPlayer && turret.respawnDelay <= 0) {
+        const point = randomPixelPerimeterPoint();
+        queuePixelRespawn(turret, point.x, point.y);
+      }
+      return;
+    }
+
+    if (turret.respawnTimer <= 0) {
       return;
     }
 
     turret.respawnTimer = Math.max(0, turret.respawnTimer - dt);
-    if (!turret.isPlayer) {
-      turret.respawnDelay = Math.max(0, turret.respawnDelay - dt);
-      if (turret.respawnDelay <= 0 && turret.respawnTimer > 0) {
-        respawnPixelTurret(turret);
-        return;
-      }
-    }
-
     if (turret.respawnTimer <= 0) {
-      turret.eliminated = true;
-      if (turret.isPlayer) {
-        pixelMatchOver = true;
-        pixelMatchMessage = "You were eliminated";
-      }
+      respawnPixelTurret(turret);
     }
   });
 }
@@ -1478,12 +1528,6 @@ function checkPixelWinCondition() {
     pixelMatchOver = true;
     pixelMatchMessage = "You claimed the board";
     return;
-  }
-
-  const opponentsRemaining = pixelTurrets.some((turret) => !turret.isPlayer && !turret.eliminated);
-  if (!opponentsRemaining && pixelTurrets.length > 1) {
-    pixelMatchOver = true;
-    pixelMatchMessage = "You win";
   }
 }
 
@@ -3049,6 +3093,26 @@ function drawPixelTileGrid(layout: PixelBoardLayout) {
   ctx.globalAlpha = 1;
 }
 
+function drawPixelRespawnPerimeterPrompt(layout: PixelBoardLayout, time: number) {
+  const playerTurret = pixelTurrets.find((turret) => turret.isPlayer);
+  if (!playerTurret?.respawnPending) {
+    return;
+  }
+
+  ctx.save();
+  ctx.globalAlpha = 0.6 + Math.sin(time * 5) * 0.18;
+  ctx.strokeStyle = "#ffd84f";
+  ctx.shadowBlur = 18;
+  ctx.shadowColor = "#ffd84f";
+  ctx.lineWidth = 4;
+  ctx.strokeRect(layout.x + 2, layout.y + 2, layout.boardW - 4, layout.boardH - 4);
+  ctx.fillStyle = "#ffd84f";
+  ctx.font = "900 14px Inter, sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillText("Tap any board edge to place your new turret", layout.x + layout.boardW / 2, layout.y + 24);
+  ctx.restore();
+}
+
 function pixelHealthSide(turret: PixelTurret, layout: PixelBoardLayout) {
   const centerX = layout.x + layout.boardW / 2;
   const centerY = layout.y + layout.boardH / 2;
@@ -3168,7 +3232,7 @@ function drawPixelShield(turret: PixelTurret, time: number) {
 }
 
 function drawPixelRespawnTimer(turret: PixelTurret) {
-  if (turret.eliminated || turret.respawnTimer <= 0) {
+  if (turret.eliminated || (!turret.respawnPending && turret.respawnTimer <= 0)) {
     return;
   }
 
@@ -3184,10 +3248,17 @@ function drawPixelRespawnTimer(turret: PixelTurret) {
   ctx.fillStyle = turret.isPlayer ? "#ffd84f" : "rgba(255, 255, 255, 0.86)";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.font = "900 18px Inter, sans-serif";
-  ctx.fillText(`${Math.ceil(turret.respawnTimer)}`, 0, -3);
-  ctx.font = "800 8px Inter, sans-serif";
-  ctx.fillText(turret.isPlayer ? "TAP BASE" : "REBOOT", 0, 12);
+  if (turret.respawnPending) {
+    ctx.font = "900 12px Inter, sans-serif";
+    ctx.fillText(turret.isPlayer ? "PICK" : "WAIT", 0, -4);
+    ctx.font = "800 8px Inter, sans-serif";
+    ctx.fillText("EDGE", 0, 11);
+  } else {
+    ctx.font = "900 18px Inter, sans-serif";
+    ctx.fillText(`${Math.ceil(turret.respawnTimer)}`, 0, -3);
+    ctx.font = "800 8px Inter, sans-serif";
+    ctx.fillText("RESPAWN", 0, 12);
+  }
   ctx.restore();
 }
 
@@ -3493,6 +3564,7 @@ function drawPixelWars(time: number) {
   ctx.restore();
 
   drawPixelTileGrid(layout);
+  drawPixelRespawnPerimeterPrompt(layout, time);
 
   ctx.save();
   ctx.strokeStyle = "rgba(255, 255, 255, 0.08)";
@@ -5690,19 +5762,58 @@ function handlePixelRunnerPointer(x: number, y: number) {
   return true;
 }
 
+function pixelPerimeterRespawnPoint(x: number, y: number, layout = pixelLayout()) {
+  const margin = Math.max(24, Math.max(layout.cellW, layout.cellH) * 2.4);
+  if (
+    x < layout.x - margin ||
+    x > layout.x + layout.boardW + margin ||
+    y < layout.y - margin ||
+    y > layout.y + layout.boardH + margin
+  ) {
+    return null;
+  }
+
+  const clampedX = clampNumber(x, layout.x, layout.x + layout.boardW);
+  const clampedY = clampNumber(y, layout.y, layout.y + layout.boardH);
+  const distances = [
+    { edge: "left", value: Math.abs(clampedX - layout.x) },
+    { edge: "right", value: Math.abs(layout.x + layout.boardW - clampedX) },
+    { edge: "top", value: Math.abs(clampedY - layout.y) },
+    { edge: "bottom", value: Math.abs(layout.y + layout.boardH - clampedY) },
+  ].sort((a, b) => a.value - b.value);
+
+  if ((distances[0]?.value ?? Number.POSITIVE_INFINITY) > margin) {
+    return null;
+  }
+
+  const edge = distances[0]?.edge;
+  if (edge === "left") {
+    return { x: layout.x, y: clampedY };
+  }
+  if (edge === "right") {
+    return { x: layout.x + layout.boardW, y: clampedY };
+  }
+  if (edge === "top") {
+    return { x: clampedX, y: layout.y };
+  }
+  return { x: clampedX, y: layout.y + layout.boardH };
+}
+
 function handlePixelRespawnPointer(x: number, y: number) {
   const playerTurret = pixelTurrets.find((turret) => turret.isPlayer);
-  if (!playerTurret || playerTurret.respawnTimer <= 0 || playerTurret.eliminated) {
+  if (!playerTurret || !playerTurret.respawnPending || playerTurret.eliminated) {
     return false;
   }
 
-  const dx = x - playerTurret.x;
-  const dy = y - playerTurret.y;
-  if (dx * dx + dy * dy > (pixelShieldRadius * 1.9) ** 2) {
+  const layout = pixelLayout();
+  const point = pixelPerimeterRespawnPoint(x, y, layout);
+  if (!point) {
+    pixelRunnerMessage = "Pick the board edge";
+    pixelRunnerMessageTimer = 1;
     return false;
   }
 
-  respawnPixelTurret(playerTurret);
+  queuePixelRespawn(playerTurret, point.x, point.y, layout);
   return true;
 }
 
@@ -5745,15 +5856,17 @@ window.addEventListener("keydown", (event) => {
     }
     if (
       playerTurret &&
-      playerTurret.respawnTimer > 0 &&
+      playerTurret.respawnPending &&
       !playerTurret.eliminated &&
-      (event.code === "Enter" || event.code === "Space" || event.code === "KeyR")
+      event.code === "KeyR"
     ) {
       event.preventDefault();
-      respawnPixelTurret(playerTurret);
+      const point = randomPixelPerimeterPoint();
+      queuePixelRespawn(playerTurret, point.x, point.y);
       return;
     }
     if (playerTurret && !pixelTurretIsActive(playerTurret)) {
+      event.preventDefault();
       return;
     }
     if (event.code === "ArrowLeft") {
