@@ -1128,13 +1128,14 @@ function renderPixelScores() {
   pixelMenuTurrets.textContent = `${pixelHumanSlots + pixelBotCount}`;
 }
 
-function isPixelMobilePortrait() {
+function isWideGameMobilePortrait() {
   return window.matchMedia("(hover: none) and (pointer: coarse)").matches && window.innerHeight > window.innerWidth;
 }
 
 function updatePixelOrientationGate() {
   const pixelState = state === "pixel-menu" || state === "pixel-options" || state === "pixel-running";
-  pixelRotateNotice.hidden = !(pixelState && isPixelMobilePortrait());
+  const bridgeState = state === "bridge-menu" || state === "bridge-options" || state === "bridge-running";
+  pixelRotateNotice.hidden = !((pixelState || bridgeState) && isWideGameMobilePortrait());
 }
 
 function syncPixelConfigFromInputs() {
@@ -1602,7 +1603,7 @@ function updatePixelRunner(dt: number) {
 
 function startPixelWars() {
   unlockAudio();
-  if (isPixelMobilePortrait()) {
+  if (isWideGameMobilePortrait()) {
     state = "pixel-menu";
     updatePixelOrientationGate();
     return;
@@ -2236,6 +2237,11 @@ function showBridgeDead() {
 
 function startBridgeGame() {
   unlockAudio();
+  if (isWideGameMobilePortrait()) {
+    state = "bridge-menu";
+    updatePixelOrientationGate();
+    return;
+  }
   leaveSnakeRoom();
   setSnakeLayout(false);
   resetSnakeJoystick();
@@ -2263,7 +2269,7 @@ function startBridgeGame() {
   startButton.hidden = true;
   restartButton.hidden = true;
   snakeControls.hidden = true;
-  bridgeControls.hidden = false;
+  bridgeControls.hidden = true;
   updateBridgeScore();
   updateRollButton();
 }
@@ -2420,7 +2426,7 @@ async function spinBridgeHintWheel() {
 }
 
 function updateBridge(dt: number) {
-  if (state !== "bridge-running") {
+  if (state !== "bridge-running" || isWideGameMobilePortrait()) {
     return;
   }
 
@@ -2857,7 +2863,7 @@ function steerPixelTurret(turret: PixelTurret, dt: number) {
 }
 
 function updatePixelWars(dt: number) {
-  if (state !== "pixel-running" || isPixelMobilePortrait()) {
+  if (state !== "pixel-running" || isWideGameMobilePortrait()) {
     return;
   }
 
@@ -3461,6 +3467,55 @@ function bridgePanelAtPoint(x: number, y: number) {
   );
 }
 
+function bridgeWheelButtonRects(canvasHeight: number, areas: BridgeAreas) {
+  const padding = Math.max(8, Math.min(14, areas.wheelWidth * 0.06));
+  const gap = canvasHeight < 430 ? 6 : 8;
+  const h = Math.min(38, Math.max(28, canvasHeight * 0.075));
+  const w = areas.wheelWidth - padding * 2;
+  const x = areas.wheelX + padding;
+  const pointY = canvasHeight - padding - h;
+  return {
+    hint: { h, w, x, y: pointY - gap - h },
+    point: { h, w, x, y: pointY },
+  };
+}
+
+function bridgeWheelActionAtPoint(x: number, y: number) {
+  const canvasWidth = canvas.width / dpr;
+  const canvasHeight = canvas.height / dpr;
+  const areas = bridgeAreas(canvasWidth);
+  if (x < areas.wheelX) {
+    return null;
+  }
+
+  const buttons = bridgeWheelButtonRects(canvasHeight, areas);
+  if (pixelRectContains(buttons.hint, x, y)) {
+    return "hint";
+  }
+  if (pixelRectContains(buttons.point, x, y)) {
+    return "point";
+  }
+  return null;
+}
+
+function drawBridgeWheelButton(rect: PixelRect, label: string, active: boolean) {
+  ctx.save();
+  ctx.globalAlpha = active ? 1 : 0.46;
+  ctx.fillStyle = active ? "rgba(213, 245, 255, 0.78)" : "rgba(213, 245, 255, 0.32)";
+  ctx.strokeStyle = active ? "rgba(231, 251, 255, 0.72)" : "rgba(231, 251, 255, 0.28)";
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  roundedRectPath(rect.x, rect.y, rect.w, rect.h, 8);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = "#10253d";
+  ctx.font = `900 ${Math.max(10, Math.min(14, rect.h * 0.36))}px Inter, sans-serif`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(label, rect.x + rect.w / 2, rect.y + rect.h / 2);
+  ctx.restore();
+}
+
 function drawBridgeWheelFace<T extends { color?: string; label: string; weight: number }>(
   segments: T[],
   angle: number,
@@ -3520,6 +3575,7 @@ function drawBridgeWheelFace<T extends { color?: string; label: string; weight: 
 }
 
 function drawBridgeWheelPanel(canvasHeight: number, areas: BridgeAreas) {
+  const compact = canvasHeight < 430;
   ctx.fillStyle = "rgba(4, 10, 20, 0.74)";
   ctx.fillRect(areas.wheelX, 0, areas.wheelWidth, canvasHeight);
   ctx.strokeStyle = "rgba(205, 249, 255, 0.24)";
@@ -3530,9 +3586,10 @@ function drawBridgeWheelPanel(canvasHeight: number, areas: BridgeAreas) {
   ctx.stroke();
 
   const centerX = areas.wheelX + areas.wheelWidth / 2;
-  const radius = Math.min(64, areas.wheelWidth * 0.28, canvasHeight * 0.12);
-  const pointWheelY = Math.max(radius + 36, canvasHeight * 0.2);
-  const hintWheelY = Math.max(pointWheelY + radius * 2 + 54, canvasHeight * 0.5);
+  const radius = Math.min(compact ? 48 : 64, areas.wheelWidth * 0.28, canvasHeight * (compact ? 0.105 : 0.12));
+  const pointWheelY = Math.max(radius + (compact ? 25 : 36), canvasHeight * (compact ? 0.18 : 0.2));
+  const hintWheelY = Math.max(pointWheelY + radius * 2 + (compact ? 38 : 54), canvasHeight * (compact ? 0.51 : 0.5));
+  const buttons = bridgeWheelButtonRects(canvasHeight, areas);
 
   drawBridgeWheelFace(bridgeWheelSegments, bridgeWheelAngle, centerX, pointWheelY, radius, true, (outcome, index) =>
     index === bridgeJackpotSegmentIndex ? ["Jackpot"] : [outcome.label],
@@ -3545,46 +3602,59 @@ function drawBridgeWheelPanel(canvasHeight: number, areas: BridgeAreas) {
   ctx.fillStyle = "rgba(255, 255, 255, 0.94)";
   ctx.textAlign = "center";
   ctx.textBaseline = "alphabetic";
-  ctx.font = "900 15px Inter, sans-serif";
-  ctx.fillText("Point Wheel", centerX, Math.max(22, pointWheelY - radius - 28));
-  ctx.font = "900 17px Inter, sans-serif";
+  ctx.font = `900 ${compact ? 12 : 15}px Inter, sans-serif`;
+  ctx.fillText("Point Wheel", centerX, Math.max(compact ? 15 : 22, pointWheelY - radius - (compact ? 15 : 28)));
+  ctx.font = `900 ${compact ? 13 : 17}px Inter, sans-serif`;
   ctx.fillText(
     bridgeWheelRequesting || bridgeWheelSpinTimer > 0 ? "Spinning" : bridgeWheelLabel,
     centerX,
-    pointWheelY + radius + 24,
+    pointWheelY + radius + (compact ? 15 : 24),
   );
-  ctx.font = "900 15px Inter, sans-serif";
-  ctx.fillText("Hint Wheel", centerX, hintWheelY - radius - 22);
-  ctx.font = "900 17px Inter, sans-serif";
+  ctx.font = `900 ${compact ? 12 : 15}px Inter, sans-serif`;
+  ctx.fillText("Hint Wheel", centerX, hintWheelY - radius - (compact ? 12 : 22));
+  ctx.font = `900 ${compact ? 13 : 17}px Inter, sans-serif`;
   ctx.fillText(
     bridgeHintWheelRequesting || bridgeHintWheelSpinTimer > 0 ? "Spinning" : bridgeHintWheelLabel,
     centerX,
-    hintWheelY + radius + 24,
+    hintWheelY + radius + (compact ? 14 : 24),
   );
   ctx.fillStyle = "#ffd85a";
-  ctx.font = "900 12px Inter, sans-serif";
-  ctx.fillText(`Jackpot ${formatScore(bridgeJackpot)}`, centerX, pointWheelY + radius + 42);
+  ctx.font = `900 ${compact ? 10 : 12}px Inter, sans-serif`;
+  ctx.fillText(`Jackpot ${formatScore(bridgeJackpot)}`, centerX, pointWheelY + radius + (compact ? 29 : 42));
 
   const puzzle = bridgePuzzles[bridgeStep];
   const activeHint = bridgeHint?.pathIndex === bridgeStep ? bridgeHint : null;
-  const promptY = Math.min(canvasHeight - 106, hintWheelY + radius + 44);
+  const promptH = compact ? 42 : 96;
+  const promptBottom = buttons.hint.y - (compact ? 6 : 10);
+  const promptY = compact
+    ? Math.max(hintWheelY + radius + 18, Math.min(promptBottom - promptH, canvasHeight * 0.68))
+    : Math.min(promptBottom - promptH, hintWheelY + radius + 44);
   ctx.fillStyle = "rgba(213, 245, 255, 0.12)";
   ctx.strokeStyle = "rgba(205, 249, 255, 0.32)";
   ctx.lineWidth = 1;
   ctx.beginPath();
-  roundedRectPath(areas.wheelX + 14, promptY, areas.wheelWidth - 28, 96, 8);
+  roundedRectPath(areas.wheelX + 14, promptY, areas.wheelWidth - 28, promptH, 8);
   ctx.fill();
   ctx.stroke();
 
   ctx.fillStyle = "#d9f8ff";
-  ctx.font = "900 12px Inter, sans-serif";
-  ctx.fillText(activeHint ? "Hint" : "Choice", centerX, promptY + 23);
+  ctx.font = `900 ${compact ? 10 : 12}px Inter, sans-serif`;
+  ctx.fillText(activeHint ? "Hint" : "Choice", centerX, promptY + (compact ? 14 : 23));
   ctx.fillStyle = "#ffffff";
-  ctx.font = activeHint?.kind === "math" ? "900 22px Inter, sans-serif" : "900 16px Inter, sans-serif";
-  ctx.fillText(activeHint?.kind === "math" ? `${puzzle?.prompt ?? "?"} = ?` : "Pick a glass tile", centerX, promptY + 54);
+  ctx.font = activeHint?.kind === "math"
+    ? `900 ${compact ? 14 : 22}px Inter, sans-serif`
+    : `900 ${compact ? 12 : 16}px Inter, sans-serif`;
+  ctx.fillText(activeHint?.kind === "math" ? `${puzzle?.prompt ?? "?"} = ?` : "Pick a glass tile", centerX, promptY + (compact ? 30 : 54));
   ctx.fillStyle = "#afefff";
-  ctx.font = "800 12px Inter, sans-serif";
-  ctx.fillText(activeHint?.kind === "freebie" ? "Safe tile is glowing" : "Tap left or right glass", centerX, promptY + 78);
+  ctx.font = `800 ${compact ? 9 : 12}px Inter, sans-serif`;
+  if (!compact) {
+    ctx.fillText(activeHint?.kind === "freebie" ? "Safe tile is glowing" : "Tap left or right glass", centerX, promptY + 78);
+  }
+  const bridgeBusy = bridgeWheelBusy();
+  const hasPoints = bridgePoints >= bridgeWheelCost;
+  const hintUsed = bridgeHint?.pathIndex === bridgeStep;
+  drawBridgeWheelButton(buttons.hint, !hasPoints ? "Need 1" : hintUsed ? "Hint used" : "Hint -1", !bridgeBusy && hasPoints && !hintUsed);
+  drawBridgeWheelButton(buttons.point, hasPoints ? "Point -1" : "Need 1", !bridgeBusy && hasPoints);
   ctx.textAlign = "left";
 }
 
@@ -5602,6 +5672,17 @@ canvas.addEventListener("pointerdown", (event) => {
 
   if (state === "bridge-running") {
     const point = canvasPointFromEvent(event);
+    const wheelAction = bridgeWheelActionAtPoint(point.x, point.y);
+    if (wheelAction === "hint") {
+      event.preventDefault();
+      void spinBridgeHintWheel();
+      return;
+    }
+    if (wheelAction === "point") {
+      event.preventDefault();
+      void spinBridgeWheel();
+      return;
+    }
     const panel = bridgePanelAtPoint(point.x, point.y);
     if (panel) {
       chooseBridgeSide(panel.side);
