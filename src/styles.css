@@ -946,10 +946,19 @@ body.fullscreen-fallback-active {
 .game-config {
   display: grid;
   width: min(100%, 420px);
+  gap: 10px;
+  text-align: left;
+}
+
+.config-field {
+  display: grid;
   grid-template-columns: minmax(112px, 0.75fr) minmax(0, 1fr);
   align-items: center;
   gap: 10px;
-  text-align: left;
+}
+
+.config-field[hidden] {
+  display: none;
 }
 
 .game-config label {
@@ -971,6 +980,93 @@ body.fullscreen-fallback-active {
   font: inherit;
   font-weight: 800;
   padding: 0 12px;
+}
+
+.game-config[hidden] {
+  display: none;
+}
+
+.mode-choice {
+  display: grid;
+  width: min(100%, 420px);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.mode-choice[hidden] {
+  display: none;
+}
+
+.pixel-lobby-panel {
+  display: grid;
+  width: min(100%, 520px);
+  gap: 10px;
+}
+
+.pixel-lobby-panel[hidden] {
+  display: none;
+}
+
+.lobby-header,
+.lobby-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.lobby-header strong {
+  color: #ffffff;
+  font-size: 0.92rem;
+  font-weight: 900;
+}
+
+.lobby-header button,
+.lobby-row button,
+.pixel-lobby-panel > button {
+  min-height: 38px;
+  padding: 0 14px;
+}
+
+.lobby-list {
+  display: grid;
+  max-height: 184px;
+  overflow: auto;
+  gap: 8px;
+  padding-right: 4px;
+}
+
+.lobby-row,
+.lobby-empty {
+  margin: 0;
+  border: 1px solid rgba(80, 215, 255, 0.3);
+  border-radius: 8px;
+  background: rgba(6, 12, 26, 0.72);
+  padding: 10px;
+}
+
+.lobby-details {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.lobby-details strong {
+  color: #ffffff;
+  font-weight: 900;
+}
+
+.lobby-details small,
+.lobby-empty,
+.lobby-status {
+  color: #bdefff;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.lobby-status {
+  min-height: 1rem;
+  margin: 0;
 }
 
 .crash-panel #restart {

@@ -312,6 +312,15 @@ type PixelRunnerLayout = {
   y: number;
 };
 
+type PixelLobby = {
+  aiBots: number;
+  createdAt: string;
+  humanPlayers: number;
+  id: string;
+  playerCount: number;
+  status: "waiting" | "full";
+};
+
 function requireElement<T extends Element>(selector: string) {
   const element = document.querySelector<T>(selector);
   if (!element) {
@@ -410,9 +419,18 @@ const pixelOptionsButton = requireElement<HTMLButtonElement>("#pixel-options");
 const pixelMenuBackButton = requireElement<HTMLButtonElement>("#pixel-menu-back");
 const pixelOptionsBackButton = requireElement<HTMLButtonElement>("#pixel-options-back");
 const pixelReportIssueButton = requireElement<HTMLButtonElement>("#pixel-report-issue");
-const pixelModeInput = requireElement<HTMLSelectElement>("#pixel-mode");
+const pixelModeChoice = requireElement<HTMLElement>("#pixel-mode-choice");
+const pixelSinglePlayerButton = requireElement<HTMLButtonElement>("#pixel-single-player");
+const pixelMultiplayerButton = requireElement<HTMLButtonElement>("#pixel-multiplayer");
+const pixelConfigForm = requireElement<HTMLFormElement>("#pixel-config");
 const pixelBotsInput = requireElement<HTMLInputElement>("#pixel-bots");
 const pixelHumansInput = requireElement<HTMLInputElement>("#pixel-humans");
+const pixelHumansRow = requireElement<HTMLElement>("#pixel-humans-row");
+const pixelLobbyPanel = requireElement<HTMLElement>("#pixel-lobby-panel");
+const pixelLobbyList = requireElement<HTMLElement>("#pixel-lobby-list");
+const pixelRefreshLobbiesButton = requireElement<HTMLButtonElement>("#pixel-refresh-lobbies");
+const pixelCreateLobbyButton = requireElement<HTMLButtonElement>("#pixel-create-lobby");
+const pixelLobbyStatus = requireElement<HTMLElement>("#pixel-lobby-status");
 const pixelMenuTurrets = requireElement<HTMLElement>("#pixel-menu-turrets");
 const pixelRotateNotice = requireElement<HTMLElement>("#pixel-rotate-notice");
 const reportPanel = requireElement<HTMLElement>("#report-panel");
@@ -584,6 +602,9 @@ let pixelRunnerMessage = "";
 let pixelRunnerMessageTimer = 0;
 let pixelMatchOver = false;
 let pixelMatchMessage = "";
+let pixelLobbies: PixelLobby[] = [];
+let pixelJoinedLobbyId = "";
+let pixelLobbyLoading = false;
 let pixelReelMatchReady = false;
 let pixelReels: Record<PixelLane, PixelReel> = {
   center: { finalPrize: "blank", prize: "blank", spinTimer: 0 },
@@ -1137,6 +1158,18 @@ function renderPixelScores() {
   pixelMenuTurrets.textContent = `${pixelHumanSlots + pixelBotCount}`;
 }
 
+function setPixelMenuView(view: "choice" | "single" | "lobby") {
+  pixelModeChoice.hidden = view !== "choice";
+  pixelConfigForm.hidden = view === "choice";
+  pixelHumansRow.hidden = view !== "lobby";
+  pixelLobbyPanel.hidden = view !== "lobby";
+  pixelStartButton.hidden = view !== "single";
+  pixelCreateLobbyButton.hidden = view !== "lobby";
+  if (view === "choice") {
+    pixelLobbyStatus.textContent = "";
+  }
+}
+
 function isWideGameMobilePortrait() {
   return window.matchMedia("(hover: none) and (pointer: coarse)").matches && window.innerHeight > window.innerWidth;
 }
@@ -1148,7 +1181,6 @@ function updatePixelOrientationGate() {
 }
 
 function syncPixelConfigFromInputs() {
-  pixelMode = pixelModeInput.value === "multi" ? "multi" : "single";
   pixelHumanSlots =
     pixelMode === "multi" ? clampNumber(Math.round(Number(pixelHumansInput.value) || 1), 1, pixelMaxPlayers) : 1;
   pixelBotCount = clampNumber(
@@ -1161,6 +1193,154 @@ function syncPixelConfigFromInputs() {
   pixelBotsInput.max = `${Math.max(0, pixelMaxPlayers - pixelHumanSlots)}`;
   pixelHumansInput.disabled = pixelMode === "single";
   renderPixelScores();
+}
+
+function renderPixelLobbyList() {
+  if (pixelLobbyLoading) {
+    pixelLobbyList.innerHTML = '<p class="lobby-empty">Loading games...</p>';
+    return;
+  }
+
+  if (pixelLobbies.length === 0) {
+    pixelLobbyList.innerHTML = '<p class="lobby-empty">No waiting games yet.</p>';
+    return;
+  }
+
+  pixelLobbyList.replaceChildren(
+    ...pixelLobbies.map((lobby) => {
+      const row = document.createElement("div");
+      row.className = "lobby-row";
+
+      const details = document.createElement("span");
+      details.className = "lobby-details";
+      const title = document.createElement("strong");
+      title.textContent = `Game ${lobby.id.slice(-4).toUpperCase()}`;
+      const meta = document.createElement("small");
+      meta.textContent = `${lobby.playerCount}/${lobby.humanPlayers} humans - ${lobby.aiBots} AI`;
+      details.append(title, meta);
+
+      const joinButton = document.createElement("button");
+      joinButton.type = "button";
+      joinButton.textContent = lobby.id === pixelJoinedLobbyId ? "Enter" : "Join";
+      joinButton.disabled = lobby.status === "full" && lobby.id !== pixelJoinedLobbyId;
+      joinButton.addEventListener("click", () => {
+        void joinPixelLobby(lobby.id);
+      });
+
+      row.append(details, joinButton);
+      return row;
+    }),
+  );
+}
+
+async function loadPixelLobbies() {
+  pixelLobbyLoading = true;
+  renderPixelLobbyList();
+  try {
+    const response = await fetch("/api/pixel-wars-lobbies", { cache: "no-store" });
+    if (!response.ok) {
+      throw new Error("Lobby list failed.");
+    }
+    const data = (await response.json()) as { lobbies?: PixelLobby[] };
+    pixelLobbies = Array.isArray(data.lobbies) ? data.lobbies : [];
+    pixelLobbyStatus.textContent = pixelLobbies.length > 0 ? "" : "Create a game to open the lobby.";
+  } catch {
+    pixelLobbies = [];
+    pixelLobbyStatus.textContent = "Lobby list unavailable.";
+  } finally {
+    pixelLobbyLoading = false;
+    renderPixelLobbyList();
+  }
+}
+
+function applyPixelLobbySettings(lobby: PixelLobby) {
+  pixelMode = "multi";
+  pixelHumanSlots = clampNumber(Math.round(lobby.humanPlayers), 1, pixelMaxPlayers);
+  pixelBotCount = clampNumber(Math.round(lobby.aiBots), 0, Math.max(0, pixelMaxPlayers - pixelHumanSlots));
+  pixelHumansInput.value = `${pixelHumanSlots}`;
+  pixelBotsInput.value = `${pixelBotCount}`;
+  syncPixelConfigFromInputs();
+}
+
+async function createPixelLobby() {
+  pixelMode = "multi";
+  syncPixelConfigFromInputs();
+  pixelLobbyStatus.textContent = "Creating game...";
+  try {
+    const response = await fetch("/api/pixel-wars-lobbies", {
+      body: JSON.stringify({
+        aiBots: pixelBotCount,
+        humanPlayers: pixelHumanSlots,
+      }),
+      headers: { "Content-Type": "application/json" },
+      method: "POST",
+    });
+    if (!response.ok) {
+      throw new Error("Create failed.");
+    }
+    const data = (await response.json()) as { lobby?: PixelLobby };
+    if (!data.lobby) {
+      throw new Error("Missing lobby.");
+    }
+    pixelJoinedLobbyId = data.lobby.id;
+    applyPixelLobbySettings(data.lobby);
+    pixelLobbyStatus.textContent = "Game created.";
+    await loadPixelLobbies();
+    startPixelWars();
+  } catch {
+    pixelLobbyStatus.textContent = "Could not create game.";
+  }
+}
+
+async function joinPixelLobby(lobbyId: string) {
+  const knownLobby = pixelLobbies.find((lobby) => lobby.id === lobbyId);
+  if (knownLobby && knownLobby.id === pixelJoinedLobbyId) {
+    applyPixelLobbySettings(knownLobby);
+    startPixelWars();
+    return;
+  }
+
+  pixelLobbyStatus.textContent = "Joining game...";
+  try {
+    const response = await fetch(`/api/pixel-wars-lobbies/${encodeURIComponent(lobbyId)}/join`, {
+      headers: { "Content-Type": "application/json" },
+      method: "POST",
+    });
+    if (!response.ok) {
+      throw new Error("Join failed.");
+    }
+    const data = (await response.json()) as { lobby?: PixelLobby };
+    if (!data.lobby) {
+      throw new Error("Missing lobby.");
+    }
+    pixelJoinedLobbyId = data.lobby.id;
+    applyPixelLobbySettings(data.lobby);
+    pixelLobbyStatus.textContent = "Joined game.";
+    startPixelWars();
+  } catch {
+    pixelLobbyStatus.textContent = "Could not join that game.";
+    void loadPixelLobbies();
+  }
+}
+
+function showPixelSingleConfig() {
+  pixelMode = "single";
+  pixelJoinedLobbyId = "";
+  pixelHumansInput.value = "1";
+  syncPixelConfigFromInputs();
+  setPixelMenuView("single");
+}
+
+function showPixelLobby() {
+  pixelMode = "multi";
+  pixelJoinedLobbyId = "";
+  pixelHumansInput.disabled = false;
+  if (Number(pixelHumansInput.value) < 2) {
+    pixelHumansInput.value = "2";
+  }
+  syncPixelConfigFromInputs();
+  setPixelMenuView("lobby");
+  void loadPixelLobbies();
 }
 
 function pixelLayout(): PixelBoardLayout {
@@ -1824,7 +2004,10 @@ function showPixelMenu() {
   setSnakeLayout(false);
   resetSnakeJoystick();
   readPixelLocalBest();
+  pixelMode = "single";
+  pixelJoinedLobbyId = "";
   syncPixelConfigFromInputs();
+  setPixelMenuView("choice");
   state = "pixel-menu";
   overlay.hidden = false;
   overlay.classList.remove("is-platform");
@@ -6110,12 +6293,15 @@ bridgeSoundToggle.addEventListener("click", () => {
   setBridgeSound(!bridgeSoundEnabled);
 });
 bridgeReportIssueButton.addEventListener("click", () => showReportIssue("glass-bridge", "bridge-options"));
+pixelSinglePlayerButton.addEventListener("click", showPixelSingleConfig);
+pixelMultiplayerButton.addEventListener("click", showPixelLobby);
 pixelStartButton.addEventListener("click", startPixelWars);
 pixelOptionsButton.addEventListener("click", showPixelOptions);
 pixelMenuBackButton.addEventListener("click", () => reset("platform"));
 pixelOptionsBackButton.addEventListener("click", showPixelMenu);
 pixelReportIssueButton.addEventListener("click", () => showReportIssue("pixel-wars", "pixel-options"));
-pixelModeInput.addEventListener("change", syncPixelConfigFromInputs);
+pixelRefreshLobbiesButton.addEventListener("click", () => void loadPixelLobbies());
+pixelCreateLobbyButton.addEventListener("click", () => void createPixelLobby());
 pixelBotsInput.addEventListener("input", syncPixelConfigFromInputs);
 pixelHumansInput.addEventListener("input", syncPixelConfigFromInputs);
 issueCancelButton.addEventListener("click", returnFromReportIssue);

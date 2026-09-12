@@ -54,12 +54,16 @@ const snakePlayers = new Map();
 const snakeBots = new Map();
 const snakeOrbs = [];
 const snakeProjectiles = [];
+const pixelLobbies = new Map();
 let nextSnakeId = 1;
 let nextSnakeOrbId = 1;
 let nextSnakeProjectileId = 1;
+let nextPixelLobbyId = 1;
 let snakeRoomInterval = null;
 let snakeIdleResetTimer = null;
 let lastSnakeRandomOrbSpawnAt = 0;
+const pixelMaxPlayers = 9;
+const pixelLobbyTtlMs = 30 * 60 * 1000;
 
 const contentTypes = {
   ".css": "text/css; charset=utf-8",
@@ -822,6 +826,87 @@ function readRequestBody(request) {
   });
 }
 
+function clampInteger(value, min, max) {
+  const number = Math.round(Number(value));
+  if (!Number.isFinite(number)) {
+    return min;
+  }
+  return Math.max(min, Math.min(max, number));
+}
+
+function prunePixelLobbies() {
+  const now = Date.now();
+  for (const [id, lobby] of pixelLobbies) {
+    if (now - lobby.updatedAt > pixelLobbyTtlMs || lobby.playerCount >= lobby.humanPlayers) {
+      pixelLobbies.delete(id);
+    }
+  }
+}
+
+function publicPixelLobby(lobby) {
+  return {
+    aiBots: lobby.aiBots,
+    createdAt: lobby.createdAt,
+    humanPlayers: lobby.humanPlayers,
+    id: lobby.id,
+    playerCount: lobby.playerCount,
+    status: lobby.playerCount >= lobby.humanPlayers ? "full" : "waiting",
+  };
+}
+
+function pixelLobbyList() {
+  prunePixelLobbies();
+  return Array.from(pixelLobbies.values())
+    .map(publicPixelLobby)
+    .filter((lobby) => lobby.status === "waiting")
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+}
+
+async function handlePixelLobbyCreate(request, response) {
+  try {
+    const body = JSON.parse(await readRequestBody(request));
+    const humanPlayers = clampInteger(body.humanPlayers, 1, pixelMaxPlayers);
+    const aiBots = clampInteger(body.aiBots, 0, pixelMaxPlayers - humanPlayers);
+    const id = `px-${Date.now().toString(36)}-${(nextPixelLobbyId++).toString(36)}`;
+    const now = new Date().toISOString();
+    const lobby = {
+      aiBots,
+      createdAt: now,
+      humanPlayers,
+      id,
+      playerCount: 1,
+      updatedAt: Date.now(),
+    };
+    if (lobby.playerCount < lobby.humanPlayers) {
+      pixelLobbies.set(id, lobby);
+    }
+    sendJson(response, 201, { lobby: publicPixelLobby(lobby) });
+  } catch {
+    sendJson(response, 400, { error: "Invalid Pixel Wars lobby payload." });
+  }
+}
+
+function handlePixelLobbyJoin(response, lobbyId) {
+  prunePixelLobbies();
+  const lobby = pixelLobbies.get(lobbyId);
+  if (!lobby) {
+    sendJson(response, 404, { error: "Pixel Wars lobby not found." });
+    return;
+  }
+
+  if (lobby.playerCount >= lobby.humanPlayers) {
+    sendJson(response, 409, { error: "Pixel Wars lobby is full." });
+    return;
+  }
+
+  lobby.playerCount += 1;
+  lobby.updatedAt = Date.now();
+  if (lobby.playerCount >= lobby.humanPlayers) {
+    pixelLobbies.delete(lobbyId);
+  }
+  sendJson(response, 200, { lobby: publicPixelLobby(lobby) });
+}
+
 async function handleApi(request, response) {
   const url = new URL(request.url || "/", "http://localhost");
   if (request.url === "/api/high-scores" && request.method === "GET") {
@@ -846,6 +931,11 @@ async function handleApi(request, response) {
 
   if (request.url === "/api/glass-bridge-jackpot" && request.method === "GET") {
     sendJson(response, 200, bridgeJackpotSnapshot());
+    return true;
+  }
+
+  if (request.url === "/api/pixel-wars-lobbies" && request.method === "GET") {
+    sendJson(response, 200, { lobbies: pixelLobbyList() });
     return true;
   }
 
@@ -876,6 +966,17 @@ async function handleApi(request, response) {
 
   if (request.url === "/api/glass-bridge-jackpot-contribution" && request.method === "POST") {
     handleBridgeJackpotContribution(response);
+    return true;
+  }
+
+  if (request.url === "/api/pixel-wars-lobbies" && request.method === "POST") {
+    await handlePixelLobbyCreate(request, response);
+    return true;
+  }
+
+  const pixelLobbyJoinMatch = url.pathname.match(/^\/api\/pixel-wars-lobbies\/([^/]+)\/join$/);
+  if (pixelLobbyJoinMatch && request.method === "POST") {
+    handlePixelLobbyJoin(response, decodeURIComponent(pixelLobbyJoinMatch[1]));
     return true;
   }
 

@@ -298,19 +298,31 @@
                 <dd id="pixel-menu-turrets">4</dd>
               </div>
             </dl>
-            <form id="pixel-config" class="game-config">
-              <label for="pixel-mode">Match</label>
-              <select id="pixel-mode">
-                <option value="single">Single player</option>
-                <option value="multi">Multiplayer host</option>
-              </select>
-              <label for="pixel-bots">AI bots</label>
-              <input id="pixel-bots" type="number" min="0" max="8" value="3" />
-              <label for="pixel-humans">Human players</label>
-              <input id="pixel-humans" type="number" min="1" max="9" value="1" />
+            <div id="pixel-mode-choice" class="mode-choice">
+              <button id="pixel-single-player" type="button">Single Player</button>
+              <button id="pixel-multiplayer" type="button">Multiplayer</button>
+            </div>
+            <form id="pixel-config" class="game-config" hidden>
+              <div class="config-field">
+                <label for="pixel-bots">AI bots</label>
+                <input id="pixel-bots" type="number" min="0" max="8" value="3" />
+              </div>
+              <div id="pixel-humans-row" class="config-field">
+                <label for="pixel-humans">Human players</label>
+                <input id="pixel-humans" type="number" min="1" max="9" value="1" />
+              </div>
             </form>
+            <div id="pixel-lobby-panel" class="pixel-lobby-panel" hidden>
+              <div class="lobby-header">
+                <strong>Waiting Games</strong>
+                <button id="pixel-refresh-lobbies" type="button">Refresh</button>
+              </div>
+              <div id="pixel-lobby-list" class="lobby-list" aria-live="polite"></div>
+              <button id="pixel-create-lobby" type="button">Create Game</button>
+              <p id="pixel-lobby-status" class="lobby-status" aria-live="polite"></p>
+            </div>
             <div class="menu-actions">
-              <button id="pixel-start" type="button">Start</button>
+              <button id="pixel-start" type="button" hidden>Start</button>
               <button id="pixel-options" type="button">Options</button>
               <button id="pixel-menu-back" type="button">Back to games</button>
             </div>
