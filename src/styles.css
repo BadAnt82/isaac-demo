@@ -23,7 +23,9 @@ body {
 }
 
 body {
+  min-height: 100vh;
   min-height: 100dvh;
+  min-height: var(--app-height, 100dvh);
   overflow: hidden;
 }
 
@@ -58,7 +60,9 @@ button:focus-visible {
 .shell {
   display: grid;
   width: 100vw;
+  height: 100vh;
   height: 100dvh;
+  height: var(--app-height, 100dvh);
   padding: 0;
   place-items: center;
   background: linear-gradient(180deg, #cdbf9f 0%, #eee6d2 62%, #a99066 100%);
@@ -68,8 +72,10 @@ button:focus-visible {
   position: relative;
   aspect-ratio: 16 / 9;
   width: min(100vw, 1120px, calc(100dvh * 16 / 9));
+  width: min(100vw, 1120px, calc(var(--app-height, 100dvh) * 16 / 9));
   height: auto;
   max-height: 100dvh;
+  max-height: var(--app-height, 100dvh);
   min-height: 0;
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.36);
@@ -1111,8 +1117,10 @@ body.fullscreen-fallback-active {
   .game-frame {
     --snake-info-height: 50px;
     width: min(100vw, calc(100dvh * 16 / 9));
+    width: min(100vw, calc(var(--app-height, 100dvh) * 16 / 9));
     height: auto;
     max-height: 100dvh;
+    max-height: var(--app-height, 100dvh);
     aspect-ratio: 16 / 9;
     border: 0;
     border-radius: 0;
@@ -1124,8 +1132,10 @@ body.fullscreen-fallback-active {
     top: 50%;
     left: 50%;
     width: min(100vw, calc(100dvh * 16 / 9));
+    width: min(100vw, calc(var(--app-height, 100dvh) * 16 / 9));
     height: auto;
     max-height: 100dvh;
+    max-height: var(--app-height, 100dvh);
     aspect-ratio: 16 / 9;
     transform: translate(-50%, -50%);
   }
@@ -1334,8 +1344,10 @@ body.fullscreen-fallback-active {
 
   .game-frame {
     width: min(100vw, calc(100dvh * 16 / 9));
+    width: min(100vw, calc(var(--app-height, 100dvh) * 16 / 9));
     height: auto;
     max-height: 100dvh;
+    max-height: var(--app-height, 100dvh);
     aspect-ratio: 16 / 9;
     border: 0;
     border-radius: 0;

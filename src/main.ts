@@ -94,6 +94,10 @@ type HighScoreResponse = {
   allTimeRecord?: boolean;
 };
 
+type ScoreLoadOptions = {
+  reconcile?: boolean;
+};
+
 type SnakeDirection = "up" | "down" | "left" | "right";
 
 type SnakePoint = {
@@ -479,6 +483,9 @@ let serverHighest = 0;
 let todayHighName = "";
 let serverHighName = "";
 let pendingRecordName: ((name: string) => void) | null = null;
+let planeScoreSyncActive = false;
+let snakeScoreSyncActive = false;
+let bridgeScoreSyncActive = false;
 let audioContext: AudioContext | null = null;
 let snakeSocket: WebSocket | null = null;
 let snakeReconnectTimer = 0;
@@ -708,6 +715,7 @@ type FullscreenDocument = Document & {
 };
 
 function resize() {
+  document.documentElement.style.setProperty("--app-height", `${Math.max(1, window.innerHeight)}px`);
   const box = canvas.getBoundingClientRect();
   compactPlayfield = true;
   const cssWidth = Math.max(320, Math.floor(box.width));
@@ -3833,6 +3841,15 @@ function setText(elements: HTMLElement[], text: string) {
   });
 }
 
+function scoreNumber(value: unknown, fallback: number) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function isClaimableRecordName(name: string) {
+  return !name || name === "Unknown scorer";
+}
+
 function updateSoundButtons() {
   planeSoundToggle.textContent = planeSoundEnabled ? "Sound on" : "Sound off";
   planeSoundToggle.setAttribute("aria-pressed", `${planeSoundEnabled}`);
@@ -3934,7 +3951,7 @@ function renderBridgeHighScores() {
   setText(bridgeServerPointNameEls, bridgeServerPointName || (bridgeServerPoints > 0 ? "Unknown scorer" : "No scorer yet"));
 }
 
-async function loadServerHighScores() {
+async function loadServerHighScores(options: ScoreLoadOptions = {}) {
   try {
     const response = await fetch("/api/high-scores", { cache: "no-store" });
     if (!response.ok) {
@@ -3942,46 +3959,48 @@ async function loadServerHighScores() {
     }
 
     const scores = await response.json();
-    todayHighest = Number(scores.todayHighest) || 0;
+    todayHighest = scoreNumber(scores.todayHighest, 0);
     todayHighName = typeof scores.todayName === "string" ? scores.todayName : "";
-    serverHighest = Number(scores.allTimeHighest) || 0;
+    serverHighest = scoreNumber(scores.allTimeHighest, 0);
     serverHighName = typeof scores.allTimeName === "string" ? scores.allTimeName : "";
     renderHighScores();
-    void retryPendingServerScore();
-    void reconcileLocalHighScore();
+    if (options.reconcile !== false) {
+      void retryPendingServerScore();
+      void reconcileLocalHighScore();
+    }
   } catch {
     // The game should still work offline or from a static dev server.
   }
 }
 
 function applyServerHighScores(scores: HighScoreResponse) {
-  todayHighest = Number(scores.todayHighest) || todayHighest;
+  todayHighest = scoreNumber(scores.todayHighest, todayHighest);
   todayHighName = typeof scores.todayName === "string" ? scores.todayName : todayHighName;
-  serverHighest = Number(scores.allTimeHighest) || serverHighest;
+  serverHighest = scoreNumber(scores.allTimeHighest, serverHighest);
   serverHighName = typeof scores.allTimeName === "string" ? scores.allTimeName : serverHighName;
   renderHighScores();
 }
 
 function applyServerSnakeHighScores(scores: HighScoreResponse) {
-  snakeTodayLongest = Number(scores.todayHighest) || snakeTodayLongest;
+  snakeTodayLongest = scoreNumber(scores.todayHighest, snakeTodayLongest);
   snakeTodayLongName = typeof scores.todayName === "string" ? scores.todayName : snakeTodayLongName;
-  snakeServerLongest = Number(scores.allTimeHighest) || snakeServerLongest;
+  snakeServerLongest = scoreNumber(scores.allTimeHighest, snakeServerLongest);
   snakeServerLongName = typeof scores.allTimeName === "string" ? scores.allTimeName : snakeServerLongName;
   renderSnakeHighScores();
 }
 
 function applyServerBridgeTileScores(scores: HighScoreResponse) {
-  bridgeTodayTiles = Number(scores.todayHighest) || bridgeTodayTiles;
+  bridgeTodayTiles = scoreNumber(scores.todayHighest, bridgeTodayTiles);
   bridgeTodayTileName = typeof scores.todayName === "string" ? scores.todayName : bridgeTodayTileName;
-  bridgeServerTiles = Number(scores.allTimeHighest) || bridgeServerTiles;
+  bridgeServerTiles = scoreNumber(scores.allTimeHighest, bridgeServerTiles);
   bridgeServerTileName = typeof scores.allTimeName === "string" ? scores.allTimeName : bridgeServerTileName;
   renderBridgeHighScores();
 }
 
 function applyServerBridgePointScores(scores: HighScoreResponse) {
-  bridgeTodayPoints = Number(scores.todayHighest) || bridgeTodayPoints;
+  bridgeTodayPoints = scoreNumber(scores.todayHighest, bridgeTodayPoints);
   bridgeTodayPointName = typeof scores.todayName === "string" ? scores.todayName : bridgeTodayPointName;
-  bridgeServerPoints = Number(scores.allTimeHighest) || bridgeServerPoints;
+  bridgeServerPoints = scoreNumber(scores.allTimeHighest, bridgeServerPoints);
   bridgeServerPointName = typeof scores.allTimeName === "string" ? scores.allTimeName : bridgeServerPointName;
   renderBridgeHighScores();
 }
@@ -4009,7 +4028,7 @@ async function submitServerHighScore(finalScore: number, name = "") {
   }
 }
 
-async function loadServerSnakeHighScores() {
+async function loadServerSnakeHighScores(options: ScoreLoadOptions = {}) {
   try {
     const response = await fetch("/api/snake-high-scores", { cache: "no-store" });
     if (!response.ok) {
@@ -4018,8 +4037,10 @@ async function loadServerSnakeHighScores() {
 
     const scores = await response.json() as HighScoreResponse;
     applyServerSnakeHighScores(scores);
-    void retryPendingServerSnakeScore();
-    void reconcileSnakeLocalHighScore();
+    if (options.reconcile !== false) {
+      void retryPendingServerSnakeScore();
+      void reconcileSnakeLocalHighScore();
+    }
   } catch {
     // Snake can still run locally if the score endpoint is unavailable.
   }
@@ -4049,7 +4070,7 @@ async function submitServerSnakeHighScore(finalScore: number, name = "") {
   }
 }
 
-async function loadServerBridgeHighScores() {
+async function loadServerBridgeHighScores(options: ScoreLoadOptions = {}) {
   try {
     const [tileResponse, pointResponse] = await Promise.all([
       fetch("/api/glass-bridge-tile-scores", { cache: "no-store" }),
@@ -4061,8 +4082,10 @@ async function loadServerBridgeHighScores() {
     if (pointResponse.ok) {
       applyServerBridgePointScores(await pointResponse.json() as HighScoreResponse);
     }
-    void retryPendingServerBridgeScores();
-    void reconcileBridgeLocalScores();
+    if (options.reconcile !== false) {
+      void retryPendingServerBridgeScores();
+      void reconcileBridgeLocalScores();
+    }
   } catch {
     // Glass Bridge can still run locally if the score endpoints are unavailable.
   }
@@ -4195,7 +4218,7 @@ function rememberPendingServerBridgeScores(tiles: number, points: number) {
 async function retryPendingServerScore() {
   const pendingScore = Number(localStorage.getItem(pendingScoreKey) || 0);
   if (Number.isFinite(pendingScore) && pendingScore > 0) {
-    await submitServerHighScore(pendingScore);
+    await syncFinalScore(pendingScore);
   }
 }
 
@@ -4205,7 +4228,7 @@ async function retryPendingServerSnakeScore() {
     Number(localStorage.getItem(oldSnakePendingScoreKey) || 0),
   );
   if (Number.isFinite(pendingScore) && pendingScore > 0) {
-    await submitServerSnakeHighScore(pendingScore);
+    await syncFinalSnakeScore(pendingScore);
   }
 }
 
@@ -4213,17 +4236,20 @@ async function retryPendingServerBridgeScores() {
   const pendingTiles = Number(localStorage.getItem(bridgePendingTilesKey) || 0);
   const pendingPoints = Number(localStorage.getItem(bridgePendingPointsKey) || 0);
   if (Number.isFinite(pendingTiles) && pendingTiles > 0) {
-    await submitServerBridgeTileScore(pendingTiles);
-  }
-  if (Number.isFinite(pendingPoints) && pendingPoints > 0) {
-    await submitServerBridgePointScore(pendingPoints);
+    await syncFinalBridgeScores(pendingTiles, pendingPoints);
+  } else if (Number.isFinite(pendingPoints) && pendingPoints > 0) {
+    await syncFinalBridgeScores(pendingTiles, pendingPoints);
   }
 }
 
 async function reconcileLocalHighScore() {
-  if (localHighest > todayHighest || localHighest > serverHighest) {
-    rememberPendingServerScore(localHighest);
-    await submitServerHighScore(localHighest);
+  if (
+    localHighest > todayHighest ||
+    localHighest > serverHighest ||
+    (localHighest > 0 && localHighest === todayHighest && isClaimableRecordName(todayHighName)) ||
+    (localHighest > 0 && localHighest === serverHighest && isClaimableRecordName(serverHighName))
+  ) {
+    await syncFinalScore(localHighest);
   }
 }
 
@@ -4232,20 +4258,29 @@ async function reconcileSnakeLocalHighScore() {
     return;
   }
 
-  if (snakeLocalLongest > snakeTodayLongest || snakeLocalLongest > snakeServerLongest) {
-    rememberPendingServerSnakeScore(snakeLocalLongest);
-    await submitServerSnakeHighScore(snakeLocalLongest);
+  if (
+    snakeLocalLongest > snakeTodayLongest ||
+    snakeLocalLongest > snakeServerLongest ||
+    (snakeLocalLongest > 3 && snakeLocalLongest === snakeTodayLongest && isClaimableRecordName(snakeTodayLongName)) ||
+    (snakeLocalLongest > 3 && snakeLocalLongest === snakeServerLongest && isClaimableRecordName(snakeServerLongName))
+  ) {
+    await syncFinalSnakeScore(snakeLocalLongest);
   }
 }
 
 async function reconcileBridgeLocalScores() {
-  if (bridgeLocalTiles > bridgeTodayTiles || bridgeLocalTiles > bridgeServerTiles) {
-    rememberPendingServerBridgeScores(bridgeLocalTiles, bridgeLocalPoints);
-    await submitServerBridgeTileScore(bridgeLocalTiles);
-  }
-  if (bridgeLocalPoints > bridgeTodayPoints || bridgeLocalPoints > bridgeServerPoints) {
-    rememberPendingServerBridgeScores(bridgeLocalTiles, bridgeLocalPoints);
-    await submitServerBridgePointScore(bridgeLocalPoints);
+  const tileRecord =
+    bridgeLocalTiles > bridgeTodayTiles ||
+    bridgeLocalTiles > bridgeServerTiles ||
+    (bridgeLocalTiles > 0 && bridgeLocalTiles === bridgeTodayTiles && isClaimableRecordName(bridgeTodayTileName)) ||
+    (bridgeLocalTiles > 0 && bridgeLocalTiles === bridgeServerTiles && isClaimableRecordName(bridgeServerTileName));
+  const pointRecord =
+    bridgeLocalPoints > bridgeTodayPoints ||
+    bridgeLocalPoints > bridgeServerPoints ||
+    (bridgeLocalPoints > 0 && bridgeLocalPoints === bridgeTodayPoints && isClaimableRecordName(bridgeTodayPointName)) ||
+    (bridgeLocalPoints > 0 && bridgeLocalPoints === bridgeServerPoints && isClaimableRecordName(bridgeServerPointName));
+  if (tileRecord || pointRecord) {
+    await syncFinalBridgeScores(bridgeLocalTiles, bridgeLocalPoints);
   }
 }
 
@@ -4261,81 +4296,129 @@ function askForRecordName(finalScore: number, recordLabels: string[], unitLabel 
 }
 
 async function syncFinalScore(finalScore: number) {
-  rememberPendingServerScore(finalScore);
-  const result = await submitServerHighScore(finalScore);
-  if (!result) {
+  if (planeScoreSyncActive) {
     return;
   }
+  planeScoreSyncActive = true;
+  try {
+    rememberPendingServerScore(finalScore);
+    const result = await submitServerHighScore(finalScore);
+    if (!result) {
+      return;
+    }
 
-  const recordLabels: string[] = [];
-  if (result.todayRecord) {
-    recordLabels.push("today's top score");
-  }
-  if (result.allTimeRecord) {
-    recordLabels.push("the server top score");
-  }
+    const recordLabels: string[] = [];
+    if (result.todayRecord) {
+      recordLabels.push("today's top score");
+    }
+    if (result.allTimeRecord) {
+      recordLabels.push("the server top score");
+    }
 
-  if (recordLabels.length === 0) {
-    return;
-  }
+    if (recordLabels.length === 0) {
+      return;
+    }
 
-  const name = await askForRecordName(finalScore, recordLabels);
-  await submitServerHighScore(finalScore, name);
+    const name = await askForRecordName(finalScore, recordLabels);
+    await submitServerHighScore(finalScore, name);
+  } finally {
+    planeScoreSyncActive = false;
+  }
 }
 
 async function syncFinalSnakeScore(finalScore: number) {
-  rememberPendingServerSnakeScore(finalScore);
-  const result = await submitServerSnakeHighScore(finalScore);
-  if (!result) {
+  if (snakeScoreSyncActive) {
     return;
   }
+  snakeScoreSyncActive = true;
+  try {
+    rememberPendingServerSnakeScore(finalScore);
+    const result = await submitServerSnakeHighScore(finalScore);
+    if (!result) {
+      return;
+    }
 
-  const recordLabels: string[] = [];
-  if (result.todayRecord) {
-    recordLabels.push("today's longest snake");
-  }
-  if (result.allTimeRecord) {
-    recordLabels.push("the server longest snake");
-  }
+    const recordLabels: string[] = [];
+    if (result.todayRecord) {
+      recordLabels.push("today's longest snake");
+    }
+    if (result.allTimeRecord) {
+      recordLabels.push("the server longest snake");
+    }
 
-  if (recordLabels.length === 0) {
-    return;
-  }
+    if (recordLabels.length === 0) {
+      return;
+    }
 
-  const name = await askForRecordName(finalScore, recordLabels, "segments");
-  await submitServerSnakeHighScore(finalScore, name);
+    const name = await askForRecordName(finalScore, recordLabels, "segments");
+    await submitServerSnakeHighScore(finalScore, name);
+  } finally {
+    snakeScoreSyncActive = false;
+  }
 }
 
 async function syncFinalBridgeScores(finalTiles: number, finalPoints: number) {
-  rememberPendingServerBridgeScores(finalTiles, finalPoints);
-  const [tileResult, pointResult] = await Promise.all([
-    submitServerBridgeTileScore(finalTiles),
-    submitServerBridgePointScore(finalPoints),
-  ]);
+  if (bridgeScoreSyncActive) {
+    return;
+  }
+  bridgeScoreSyncActive = true;
+  try {
+    rememberPendingServerBridgeScores(finalTiles, finalPoints);
+    const [tileResult, pointResult] = await Promise.all([
+      submitServerBridgeTileScore(finalTiles),
+      submitServerBridgePointScore(finalPoints),
+    ]);
 
-  const recordLabels: string[] = [];
-  if (tileResult?.todayRecord) {
-    recordLabels.push("today's bridge tile record");
-  }
-  if (tileResult?.allTimeRecord) {
-    recordLabels.push("the server bridge tile record");
-  }
-  if (pointResult?.todayRecord) {
-    recordLabels.push("today's bridge point record");
-  }
-  if (pointResult?.allTimeRecord) {
-    recordLabels.push("the server bridge point record");
-  }
+    const recordLabels: string[] = [];
+    if (tileResult?.todayRecord) {
+      recordLabels.push("today's bridge tile record");
+    }
+    if (tileResult?.allTimeRecord) {
+      recordLabels.push("the server bridge tile record");
+    }
+    if (pointResult?.todayRecord) {
+      recordLabels.push("today's bridge point record");
+    }
+    if (pointResult?.allTimeRecord) {
+      recordLabels.push("the server bridge point record");
+    }
 
-  if (recordLabels.length === 0) {
+    if (recordLabels.length === 0) {
+      return;
+    }
+
+    const name = await askForRecordName(Math.max(finalTiles, finalPoints), recordLabels, "best result");
+    await Promise.all([
+      submitServerBridgeTileScore(finalTiles, name),
+      submitServerBridgePointScore(finalPoints, name),
+    ]);
+  } finally {
+    bridgeScoreSyncActive = false;
+  }
+}
+
+function refreshVisibleServerScores() {
+  if (document.visibilityState === "hidden") {
     return;
   }
 
-  const name = await askForRecordName(Math.max(finalTiles, finalPoints), recordLabels, "best result");
-  await Promise.all([
-    submitServerBridgeTileScore(finalTiles, name),
-    submitServerBridgePointScore(finalPoints, name),
-  ]);
+  if (
+    state === "platform" ||
+    state === "ready" ||
+    state === "plane-options" ||
+    state === "running" ||
+    state === "bubble-crash"
+  ) {
+    void loadServerHighScores({ reconcile: false });
+  }
+
+  if (state === "platform" || state === "snake-menu" || state === "snake-options" || state === "snake-dead") {
+    void loadServerSnakeHighScores({ reconcile: false });
+  }
+
+  if (state === "platform" || state === "bridge-menu" || state === "bridge-options" || state === "bridge-dead") {
+    void loadServerBridgeHighScores({ reconcile: false });
+  }
 }
 
 function addScore(points: number) {
@@ -5404,6 +5487,7 @@ window.addEventListener("orientationchange", () => {
   resize();
   updatePixelOrientationGate();
 });
+window.visualViewport?.addEventListener("resize", resize);
 window.addEventListener("keydown", (event) => {
   if (state === "pixel-running") {
     const playerTurret = pixelTurrets.find((turret) => turret.isPlayer);
@@ -5698,6 +5782,8 @@ document.addEventListener("fullscreenchange", () => {
   updateFullscreenButton();
   resize();
 });
+document.addEventListener("visibilitychange", refreshVisibleServerScores);
+window.setInterval(refreshVisibleServerScores, 15000);
 readLocalHighest();
 readSnakeLocalLongest();
 readBridgeLocalScores();
