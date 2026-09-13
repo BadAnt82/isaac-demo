@@ -122,6 +122,32 @@ try {
   assert.equal(response.status, 200);
   assert.equal(response.body.todayRecord, true);
 
+  response = await json("/api/glass-bridge-point-scores", {
+    body: JSON.stringify({ score: 9 }),
+    method: "POST",
+  });
+  assert.equal(response.status, 200);
+  assert.equal(response.body.todayRecord, true);
+  assert.equal(response.body.todayName, "Unknown scorer");
+
+  response = await json("/api/glass-bridge-point-scores", {
+    body: JSON.stringify({ score: 9 }),
+    method: "POST",
+  });
+  assert.equal(response.status, 200);
+  assert.equal(response.body.todayRecord, false);
+  assert.equal(response.body.allTimeRecord, false);
+  assert.equal(response.body.todayName, "Unknown scorer");
+
+  response = await json("/api/glass-bridge-point-scores", {
+    body: JSON.stringify({ name: "Claimed", score: 9 }),
+    method: "POST",
+  });
+  assert.equal(response.status, 200);
+  assert.equal(response.body.todayRecord, false);
+  assert.equal(response.body.allTimeRecord, false);
+  assert.equal(response.body.todayName, "Claimed");
+
   response = await json("/api/glass-bridge-jackpot");
   assert.equal(response.status, 200);
   assert.equal(response.body.jackpot, 20);

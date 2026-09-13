@@ -1550,17 +1550,20 @@ async function handleScorePost(request, response, path) {
     }
 
     const scores = readScores(path);
+    const rawName = typeof body.name === "string" ? body.name.trim() : "";
     const name = cleanName(body.name);
-    const todayRecord = score > scores.todayHighest || (score === scores.todayHighest && isClaimableName(scores.todayName));
-    const allTimeRecord =
-      score > scores.allTimeHighest || (score === scores.allTimeHighest && isClaimableName(scores.allTimeName));
+    const todayRecord = score > scores.todayHighest;
+    const allTimeRecord = score > scores.allTimeHighest;
+    const todayNameClaim = !todayRecord && score === scores.todayHighest && isClaimableName(scores.todayName) && rawName.length > 0;
+    const allTimeNameClaim =
+      !allTimeRecord && score === scores.allTimeHighest && isClaimableName(scores.allTimeName) && rawName.length > 0;
 
-    if (todayRecord) {
+    if (todayRecord || todayNameClaim) {
       scores.todayHighest = score;
       scores.todayName = name;
     }
 
-    if (allTimeRecord) {
+    if (allTimeRecord || allTimeNameClaim) {
       scores.allTimeHighest = score;
       scores.allTimeName = name;
     }
