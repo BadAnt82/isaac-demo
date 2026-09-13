@@ -3956,82 +3956,202 @@ function drawPixelSlot(runner: PixelRunnerLayout, time: number) {
   ctx.restore();
 }
 
+function pixelRunnerTrackMetrics(runner: PixelRunnerLayout) {
+  const horizonY = runner.trackY + 8;
+  const bottomY = runner.playerY + 28;
+  const vanishX = runner.trackX + runner.trackW / 2;
+  const topW = runner.trackW * 0.24;
+  const bottomW = runner.trackW;
+  return {
+    bottomW,
+    bottomY,
+    horizonY,
+    topW,
+    vanishX,
+  };
+}
+
+function pixelRunnerDepth(runner: PixelRunnerLayout, y: number) {
+  return clampNumber((y - runner.trackY) / Math.max(1, runner.playerY - runner.trackY), 0, 1);
+}
+
+function pixelRunnerPerspective(depth: number) {
+  return Math.pow(clampNumber(depth, 0, 1), 1.62);
+}
+
+function pixelRunnerTrackWidth(runner: PixelRunnerLayout, perspective: number) {
+  const metrics = pixelRunnerTrackMetrics(runner);
+  return metrics.topW + (metrics.bottomW - metrics.topW) * perspective;
+}
+
+function pixelRunnerProject(runner: PixelRunnerLayout, lanePosition: number, y: number) {
+  const metrics = pixelRunnerTrackMetrics(runner);
+  const depth = pixelRunnerDepth(runner, y);
+  const perspective = pixelRunnerPerspective(depth);
+  const width = pixelRunnerTrackWidth(runner, perspective);
+  const left = metrics.vanishX - width / 2;
+  const laneWidth = width / 3;
+  return {
+    depth,
+    laneWidth,
+    perspective,
+    scale: 0.28 + perspective * 0.96,
+    x: left + laneWidth * (lanePosition + 0.5),
+    y: metrics.horizonY + (runner.playerY - metrics.horizonY) * perspective,
+  };
+}
+
+function pixelRunnerLaneAtPoint(runner: PixelRunnerLayout, x: number, y: number) {
+  const metrics = pixelRunnerTrackMetrics(runner);
+  if (y < metrics.horizonY || y > runner.trackY + runner.trackH) {
+    return null;
+  }
+  const rawDepth = clampNumber((y - metrics.horizonY) / Math.max(1, metrics.bottomY - metrics.horizonY), 0, 1);
+  const width = pixelRunnerTrackWidth(runner, rawDepth);
+  const left = metrics.vanishX - width / 2;
+  if (x < left || x > left + width) {
+    return null;
+  }
+  return clampNumber(Math.floor((x - left) / (width / 3)), 0, 2);
+}
+
+function pixelRunnerTrackPath(runner: PixelRunnerLayout) {
+  const metrics = pixelRunnerTrackMetrics(runner);
+  ctx.moveTo(metrics.vanishX - metrics.topW / 2, metrics.horizonY);
+  ctx.lineTo(metrics.vanishX + metrics.topW / 2, metrics.horizonY);
+  ctx.lineTo(runner.trackX + runner.trackW, runner.trackY + runner.trackH);
+  ctx.lineTo(runner.trackX, runner.trackY + runner.trackH);
+  ctx.closePath();
+}
+
 function drawPixelRunnerPickup(pickup: PixelRunnerPickup, runner: PixelRunnerLayout) {
   const laneIndex = pixelLaneIndex(pickup.lane);
-  const x = runner.laneCenters[laneIndex] ?? runner.laneCenters[1];
+  const projected = pixelRunnerProject(runner, laneIndex, pickup.y);
+  if (projected.depth <= 0) {
+    return;
+  }
+  const radius = (pickup.kind === "special" ? 10 : 8) * projected.scale;
   ctx.save();
-  ctx.translate(x, pickup.y);
+  ctx.translate(projected.x, projected.y);
   ctx.shadowBlur = pickup.kind === "special" ? 18 : 10;
   ctx.shadowColor = pickup.kind === "special" ? "#ffd84f" : "#50d7ff";
   ctx.fillStyle = pickup.kind === "special" ? "#ffd84f" : "#50d7ff";
   ctx.beginPath();
-  ctx.arc(0, 0, pickup.kind === "special" ? 10 : 8, 0, Math.PI * 2);
+  ctx.arc(0, 0, radius, 0, Math.PI * 2);
   ctx.fill();
   ctx.fillStyle = "rgba(5, 9, 20, 0.92)";
-  ctx.font = "900 8px Inter, sans-serif";
+  ctx.font = `900 ${Math.max(5, 8 * projected.scale)}px Inter, sans-serif`;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.fillText(pickup.kind === "special" ? "ALL" : pickup.lane[0].toUpperCase(), 0, 0);
   if (pickup.action !== "none") {
     ctx.fillStyle = "rgba(255, 255, 255, 0.82)";
-    ctx.font = "800 9px Inter, sans-serif";
-    ctx.fillText(pickup.action.toUpperCase(), 0, -17);
+    ctx.font = `800 ${Math.max(5, 9 * projected.scale)}px Inter, sans-serif`;
+    ctx.fillText(pickup.action.toUpperCase(), 0, -17 * projected.scale);
   }
   ctx.restore();
 }
 
 function drawPixelRunnerObstacle(obstacle: PixelRunnerObstacle, runner: PixelRunnerLayout) {
   const laneIndex = pixelLaneIndex(obstacle.lane);
-  const x = runner.laneCenters[laneIndex] ?? runner.laneCenters[1];
+  const projected = pixelRunnerProject(runner, laneIndex, obstacle.y);
+  if (projected.depth <= 0) {
+    return;
+  }
+  const obstacleW = Math.max(10, projected.laneWidth * 0.74);
   ctx.save();
   ctx.fillStyle = obstacle.kind === "hurdle" ? "rgba(255, 111, 111, 0.9)" : "rgba(255, 216, 79, 0.9)";
-  ctx.shadowBlur = 10;
+  ctx.shadowBlur = 10 * projected.scale;
   ctx.shadowColor = ctx.fillStyle;
-  const obstacleW = runner.trackW / 3 - 18;
   if (obstacle.kind === "hurdle") {
-    ctx.fillRect(x - obstacleW / 2, obstacle.y + 6, obstacleW, 10);
+    const h = Math.max(5, 12 * projected.scale);
+    const y = projected.y + 13 * projected.scale;
+    ctx.fillRect(projected.x - obstacleW / 2, y - h / 2, obstacleW, h);
+    ctx.fillStyle = "rgba(255, 175, 175, 0.82)";
+    ctx.beginPath();
+    ctx.moveTo(projected.x - obstacleW / 2, y - h / 2);
+    ctx.lineTo(projected.x - obstacleW * 0.36, y - h * 1.25);
+    ctx.lineTo(projected.x + obstacleW * 0.64, y - h * 1.25);
+    ctx.lineTo(projected.x + obstacleW / 2, y - h / 2);
+    ctx.closePath();
+    ctx.fill();
   } else {
-    ctx.fillRect(x - obstacleW / 2, obstacle.y - 13, obstacleW, 8);
+    const h = Math.max(4, 9 * projected.scale);
+    const y = projected.y - 34 * projected.scale;
+    ctx.fillRect(projected.x - obstacleW / 2, y - h / 2, obstacleW, h);
+    ctx.fillStyle = "rgba(255, 245, 167, 0.86)";
+    ctx.fillRect(projected.x - obstacleW / 2, y - h * 1.4, obstacleW, h * 0.45);
+    ctx.strokeStyle = "rgba(255, 216, 79, 0.48)";
+    ctx.lineWidth = Math.max(1, 2 * projected.scale);
+    ctx.beginPath();
+    ctx.moveTo(projected.x - obstacleW / 2, y);
+    ctx.lineTo(projected.x - obstacleW / 2, projected.y + 18 * projected.scale);
+    ctx.moveTo(projected.x + obstacleW / 2, y);
+    ctx.lineTo(projected.x + obstacleW / 2, projected.y + 18 * projected.scale);
+    ctx.stroke();
   }
   ctx.restore();
 }
 
 function drawPixelRunner(runner: PixelRunnerLayout, time: number) {
+  const metrics = pixelRunnerTrackMetrics(runner);
   ctx.save();
-  ctx.fillStyle = "rgba(6, 10, 22, 0.72)";
+  const trackGradient = ctx.createLinearGradient(0, metrics.horizonY, 0, runner.trackY + runner.trackH);
+  trackGradient.addColorStop(0, "rgba(15, 25, 49, 0.62)");
+  trackGradient.addColorStop(1, "rgba(6, 10, 22, 0.9)");
+  ctx.fillStyle = trackGradient;
   ctx.strokeStyle = "rgba(168, 232, 255, 0.42)";
   ctx.lineWidth = 1.5;
   ctx.beginPath();
-  roundedRectPath(runner.trackX, runner.trackY, runner.trackW, runner.trackH, 8);
+  pixelRunnerTrackPath(runner);
   ctx.fill();
   ctx.stroke();
 
-  ctx.strokeStyle = "rgba(255, 255, 255, 0.13)";
+  ctx.save();
+  ctx.beginPath();
+  pixelRunnerTrackPath(runner);
+  ctx.clip();
+
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.15)";
   ctx.lineWidth = 1;
   for (let lane = 1; lane < 3; lane += 1) {
-    const x = runner.trackX + (runner.trackW / 3) * lane;
+    const bottomX = runner.trackX + (runner.trackW / 3) * lane;
+    const topX = metrics.vanishX + (bottomX - metrics.vanishX) * 0.24;
     ctx.beginPath();
-    ctx.moveTo(x, runner.trackY + 8);
-    ctx.lineTo(x, runner.trackY + runner.trackH - 8);
+    ctx.moveTo(topX, metrics.horizonY + 2);
+    ctx.lineTo(bottomX, runner.trackY + runner.trackH - 4);
     ctx.stroke();
   }
 
-  pixelRunnerPickups.forEach((pickup) => drawPixelRunnerPickup(pickup, runner));
-  pixelRunnerObstacles.forEach((obstacle) => drawPixelRunnerObstacle(obstacle, runner));
+  for (let marker = 1; marker < 9; marker += 1) {
+    const perspective = marker / 9;
+    const width = pixelRunnerTrackWidth(runner, perspective);
+    const y = metrics.horizonY + (runner.trackY + runner.trackH - metrics.horizonY) * perspective;
+    ctx.strokeStyle = `rgba(80, 215, 255, ${0.06 + perspective * 0.09})`;
+    ctx.beginPath();
+    ctx.moveTo(metrics.vanishX - width / 2, y);
+    ctx.lineTo(metrics.vanishX + width / 2, y);
+    ctx.stroke();
+  }
 
-  const playerX = runner.trackX + (runner.trackW / 3) * (0.5 + pixelRunnerLanePosition);
+  [...pixelRunnerPickups].sort((a, b) => a.y - b.y).forEach((pickup) => drawPixelRunnerPickup(pickup, runner));
+  [...pixelRunnerObstacles].sort((a, b) => a.y - b.y).forEach((obstacle) => drawPixelRunnerObstacle(obstacle, runner));
+
+  const playerProjection = pixelRunnerProject(runner, pixelRunnerLanePosition, runner.playerY);
+  const playerX = playerProjection.x;
   const jumpOffset = pixelRunnerJumpTimer > 0 ? Math.sin((pixelRunnerJumpTimer / pixelRunnerJumpDuration) * Math.PI) * 28 : 0;
   const duckScale = pixelRunnerDuckTimer > 0 ? 0.5 : 1;
-  ctx.translate(playerX, runner.playerY - jumpOffset);
+  ctx.translate(playerX, playerProjection.y - jumpOffset);
   ctx.globalAlpha = pixelRunnerStumbleTimer > 0 ? 0.56 + Math.sin(time * 40) * 0.24 : 1;
   ctx.shadowBlur = 18;
   ctx.shadowColor = "#35d7ff";
   ctx.fillStyle = "#35d7ff";
   ctx.beginPath();
-  roundedRectPath(-12, -14 * duckScale, 24, 28 * duckScale, 7);
+  roundedRectPath(-14, -16 * duckScale, 28, 32 * duckScale, 7);
   ctx.fill();
   ctx.fillStyle = "rgba(5, 9, 20, 0.9)";
-  ctx.fillRect(-5, -4 * duckScale, 10, 4);
+  ctx.fillRect(-6, -5 * duckScale, 12, 5);
+  ctx.restore();
   ctx.restore();
 
   drawPixelButton(runner.jumpButton, "JUMP", pixelRunnerJumpTimer <= 0);
@@ -6276,9 +6396,9 @@ function handlePixelRunnerPointer(x: number, y: number) {
     pixelRunnerJumpTimer = 0;
     return true;
   }
-  if (x >= runner.trackX && x <= runner.trackX + runner.trackW && y >= runner.trackY) {
-    const laneWidth = runner.trackW / 3;
-    pixelRunnerTargetLane = clampNumber(Math.floor((x - runner.trackX) / laneWidth), 0, 2);
+  const lane = pixelRunnerLaneAtPoint(runner, x, y);
+  if (lane !== null) {
+    pixelRunnerTargetLane = lane;
     return true;
   }
   return true;
