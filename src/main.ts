@@ -750,7 +750,7 @@ const pixelCannonLength = pixelShieldRadius;
 const pixelCornerSpawnInset = pixelShieldRadius * 0.42;
 const pixelRespawnWindow = 10;
 const pixelRunnerLanes: PixelLane[] = ["left", "center", "right"];
-const pixelRunnerSpeed = 156;
+const pixelRunnerSpeed = 78;
 const pixelRunnerJumpDuration = 0.46;
 const pixelRunnerDuckDuration = 0.44;
 const pixelRunnerSameLaneClearance = pixelRunnerSpeed * 0.58;
@@ -4141,6 +4141,81 @@ function drawPixelRunnerObstacle(obstacle: PixelRunnerObstacle, runner: PixelRun
   ctx.restore();
 }
 
+function drawPixelRunnerStickFigure(jumpOffset: number, sliding: boolean, time: number) {
+  const stride = Math.sin(time * 13) * 4;
+  ctx.save();
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.shadowBlur = 16;
+  ctx.shadowColor = "#35d7ff";
+  ctx.strokeStyle = "#dff9ff";
+  ctx.fillStyle = "#35d7ff";
+  ctx.lineWidth = 3;
+
+  if (sliding) {
+    ctx.translate(0, 8);
+    ctx.rotate(-0.16);
+    ctx.beginPath();
+    ctx.arc(-14, -9, 5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(-8, -7);
+    ctx.lineTo(11, -2);
+    ctx.moveTo(-3, -5);
+    ctx.lineTo(-14, 5);
+    ctx.moveTo(4, -3);
+    ctx.lineTo(18, -10);
+    ctx.moveTo(9, -1);
+    ctx.lineTo(24, 2);
+    ctx.moveTo(9, -1);
+    ctx.lineTo(21, 9);
+    ctx.stroke();
+    ctx.fillStyle = "rgba(53, 215, 255, 0.24)";
+    ctx.beginPath();
+    ctx.ellipse(8, 12, 27, 5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+    return;
+  }
+
+  const jumpPose = jumpOffset > 1;
+  ctx.beginPath();
+  ctx.arc(0, -25, 5.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(0, -19);
+  ctx.lineTo(0, -5);
+  if (jumpPose) {
+    ctx.moveTo(0, -15);
+    ctx.lineTo(-12, -22);
+    ctx.moveTo(0, -15);
+    ctx.lineTo(12, -22);
+    ctx.moveTo(0, -5);
+    ctx.lineTo(-10, 4);
+    ctx.lineTo(-18, -2);
+    ctx.moveTo(0, -5);
+    ctx.lineTo(11, 2);
+    ctx.lineTo(18, -5);
+  } else {
+    ctx.moveTo(0, -15);
+    ctx.lineTo(-10, -7 + stride * 0.25);
+    ctx.moveTo(0, -15);
+    ctx.lineTo(10, -8 - stride * 0.25);
+    ctx.moveTo(0, -5);
+    ctx.lineTo(-8, 11 + stride);
+    ctx.moveTo(0, -5);
+    ctx.lineTo(8, 11 - stride);
+  }
+  ctx.stroke();
+  ctx.fillStyle = "rgba(53, 215, 255, 0.18)";
+  ctx.beginPath();
+  ctx.ellipse(0, 16, 18, 4, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
 function drawPixelRunner(runner: PixelRunnerLayout, time: number) {
   const metrics = pixelRunnerTrackMetrics(runner);
   ctx.save();
@@ -4188,17 +4263,9 @@ function drawPixelRunner(runner: PixelRunnerLayout, time: number) {
   const playerProjection = pixelRunnerProject(runner, pixelRunnerLanePosition, runner.playerY);
   const playerX = playerProjection.x;
   const jumpOffset = pixelRunnerJumpTimer > 0 ? Math.sin((pixelRunnerJumpTimer / pixelRunnerJumpDuration) * Math.PI) * 28 : 0;
-  const duckScale = pixelRunnerDuckTimer > 0 ? 0.5 : 1;
   ctx.translate(playerX, playerProjection.y - jumpOffset);
   ctx.globalAlpha = pixelRunnerStumbleTimer > 0 ? 0.56 + Math.sin(time * 40) * 0.24 : 1;
-  ctx.shadowBlur = 18;
-  ctx.shadowColor = "#35d7ff";
-  ctx.fillStyle = "#35d7ff";
-  ctx.beginPath();
-  roundedRectPath(-14, -16 * duckScale, 28, 32 * duckScale, 7);
-  ctx.fill();
-  ctx.fillStyle = "rgba(5, 9, 20, 0.9)";
-  ctx.fillRect(-6, -5 * duckScale, 12, 5);
+  drawPixelRunnerStickFigure(jumpOffset, pixelRunnerDuckTimer > 0, time);
   ctx.restore();
   ctx.restore();
 
