@@ -1139,7 +1139,7 @@ function connectSnakeSocket() {
   snakeSocket.addEventListener("close", () => {
     snakeConnected = false;
     snakeSocket = null;
-    if (state === "snake-running" || state === "snake-dead") {
+    if (state === "snake-running") {
       window.clearTimeout(snakeReconnectTimer);
       snakeReconnectTimer = window.setTimeout(connectSnakeSocket, 900);
     }

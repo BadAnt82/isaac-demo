@@ -154,7 +154,7 @@ function targetSnakeBotCount() {
 }
 
 function activeSnakePlayers() {
-  return [...snakePlayers.values()].filter((player) => player.active);
+  return [...snakePlayers.values()].filter((player) => player.active && player.alive);
 }
 
 function allSnakes() {
@@ -277,6 +277,8 @@ function destroySnake(player) {
   player.alive = false;
   if (player.botRespawnTicks !== undefined) {
     player.botRespawnTicks = snakeBotRespawnTicks;
+  } else {
+    player.active = false;
   }
   const drops = Math.floor(player.segments.length * 0.5);
   for (let index = 0; index < drops; index += 1) {
@@ -662,6 +664,7 @@ function tickSnakeRoom() {
   }
   updateSnakeProjectiles();
   broadcastSnakeState();
+  stopSnakeRoomIfIdle();
 }
 
 function startSnakeRoom() {
