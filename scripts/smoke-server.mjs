@@ -182,6 +182,26 @@ try {
   assert.equal(pixelState.cells.length, 54 * 36);
   assert.equal(pixelState.turrets.length, 3);
   assert.equal(pixelState.lobby.status, "full");
+
+  const jackpotStatePromise = new Promise((resolveState, rejectState) => {
+    const timer = setTimeout(() => rejectState(new Error("Timed out waiting for Pixel Wars jackpot turret")), 5000);
+    firstPixel.socket.on("message", (data) => {
+      const message = JSON.parse(data.toString());
+      if (
+        message.type === "pixel-wars-state" &&
+        message.turrets.filter((turret) => turret.id === firstPixel.result.id).length >= 2
+      ) {
+        clearTimeout(timer);
+        resolveState(message);
+      }
+    });
+  });
+  firstPixel.socket.send(JSON.stringify({ prize: "turret", type: "pixel-prize" }));
+  const jackpotState = await jackpotStatePromise;
+  const jackpotTurrets = jackpotState.turrets.filter((turret) => turret.id === firstPixel.result.id);
+  assert.equal(jackpotTurrets.length, 2);
+  assert.equal(jackpotTurrets.filter((turret) => turret.respawnPending).length, 1);
+
   firstPixel.socket.close();
   secondPixel.socket.close();
 

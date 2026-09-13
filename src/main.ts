@@ -211,7 +211,7 @@ type PixelOwner = "neutral" | "player" | `bot-${number}` | `human-${number}`;
 
 type PixelLane = "left" | "center" | "right";
 
-type PixelPrize = "blank" | "bomb" | "clock";
+type PixelPrize = "blank" | "bomb" | "clock" | "turret";
 
 type PixelRunnerAction = "duck" | "jump" | "none";
 
@@ -741,6 +741,7 @@ const pixelColumns = 54;
 const pixelRows = 36;
 const pixelShotSpeed = 360;
 const pixelMaxPlayers = 9;
+const pixelMaxTurretsPerOwner = 4;
 const pixelBaseFireInterval = 1;
 const pixelShieldMaxHealth = 100;
 const pixelShieldDamage = 10;
@@ -1175,7 +1176,7 @@ function sendPixelMessage(message: Record<string, unknown>) {
 
 function applyPixelSnapshot(snapshot: PixelWarsSnapshot) {
   pixelRemoteSnapshot = snapshot;
-  const humanIds = snapshot.turrets.filter((turret) => !turret.isBot).map((turret) => turret.id);
+  const humanIds = Array.from(new Set(snapshot.turrets.filter((turret) => !turret.isBot).map((turret) => turret.id)));
   const ownerMap = new Map<string, PixelOwner>();
   let otherHumanIndex = 1;
   humanIds.forEach((id) => {
@@ -1246,8 +1247,10 @@ function applyPixelSnapshot(snapshot: PixelWarsSnapshot) {
   pixelHumanSlots = snapshot.lobby.humanPlayers;
   pixelBotCount = snapshot.lobby.aiBots;
   updatePixelScore();
-  const self = snapshot.turrets.find((turret) => turret.id === pixelClientId);
-  if (self?.eliminated) {
+  const selfTurrets = snapshot.turrets.filter((turret) => turret.id === pixelClientId);
+  const selfHasTurret = selfTurrets.some((turret) => !turret.eliminated);
+  const selfPixels = snapshot.cells.reduce((total, owner) => total + (owner === pixelClientId ? 1 : 0), 0);
+  if (selfTurrets.length > 0 && !selfHasTurret && selfPixels <= 0) {
     pixelMatchOver = true;
     pixelMatchMessage = "You were eliminated";
   }
@@ -1789,13 +1792,42 @@ function pixelTurretIsActive(turret: PixelTurret) {
   return !turret.eliminated && !turret.respawnPending && turret.respawnTimer <= 0 && turret.shieldHealth > 0;
 }
 
+function pixelOwnerHasActiveTurret(owner: PixelOwner) {
+  return pixelTurrets.some((turret) => turret.id === owner && pixelTurretIsActive(turret));
+}
+
+function pixelOwnerCanRespawn(owner: PixelOwner) {
+  return pixelOwnedCellCount(owner) > 0 || pixelOwnerHasActiveTurret(owner);
+}
+
+function pixelPlayerTurretCount() {
+  return pixelTurrets.filter((turret) => turret.isPlayer && !turret.eliminated).length;
+}
+
+function addPixelPlayerTurret() {
+  if (pixelPlayerTurretCount() >= pixelMaxTurretsPerOwner) {
+    pixelRunnerMessage = "Turrets maxed";
+    pixelRunnerMessageTimer = 1.6;
+    return false;
+  }
+  const turret = createPixelTurret("player", true);
+  turret.respawnPending = true;
+  turret.shieldHealth = 0;
+  turret.fireCooldown = pixelBaseFireInterval;
+  pixelTurrets.push(turret);
+  positionPixelTurrets();
+  pixelRunnerMessage = "New turret ready";
+  pixelRunnerMessageTimer = 1.8;
+  return true;
+}
+
 function eliminatePixelTurret(turret: PixelTurret) {
   turret.eliminated = true;
   turret.respawnPending = false;
   turret.respawnTimer = 0;
   turret.respawnDelay = 0;
   turret.shieldHealth = 0;
-  if (turret.isPlayer) {
+  if (turret.isPlayer && !pixelOwnerCanRespawn("player")) {
     pixelAimActive = false;
     pixelAimPointerId = null;
     pixelRunnerMessage = "No pixels left";
@@ -1808,7 +1840,7 @@ function updatePixelRespawnEliminations() {
     if (
       !turret.eliminated &&
       (turret.respawnPending || turret.respawnTimer > 0) &&
-      pixelOwnedCellCount(turret.id) <= 0
+      !pixelOwnerCanRespawn(turret.id)
     ) {
       eliminatePixelTurret(turret);
     }
@@ -1837,7 +1869,7 @@ function queuePixelRespawn(turret: PixelTurret, x: number, y: number, layout = p
   if (turret.eliminated || !turret.respawnPending) {
     return;
   }
-  if (pixelOwnedCellCount(turret.id) <= 0) {
+  if (!pixelOwnerCanRespawn(turret.id)) {
     eliminatePixelTurret(turret);
     return;
   }
@@ -1858,7 +1890,7 @@ function respawnPixelTurret(turret: PixelTurret) {
   if (turret.eliminated || turret.respawnPending || turret.respawnTimer > 0) {
     return;
   }
-  if (pixelOwnedCellCount(turret.id) <= 0) {
+  if (!pixelOwnerCanRespawn(turret.id)) {
     eliminatePixelTurret(turret);
     return;
   }
@@ -1924,8 +1956,8 @@ function checkPixelWinCondition() {
     return;
   }
 
-  const playerTurret = pixelTurrets.find((turret) => turret.isPlayer);
-  if (!playerTurret || playerTurret.eliminated) {
+  const playerHasTurret = pixelTurrets.some((turret) => turret.isPlayer && !turret.eliminated);
+  if (!playerHasTurret && pixelOwnedCellCount("player") <= 0) {
     pixelMatchOver = true;
     pixelMatchMessage = "You were eliminated";
     return;
@@ -1939,14 +1971,17 @@ function checkPixelWinCondition() {
 }
 
 function pixelRandomPrize(): PixelPrize {
-  const roll = Math.random() * 15;
-  if (roll < 6) {
+  const roll = Math.random() * 100;
+  if (roll < 42) {
     return "blank";
   }
-  if (roll < 13) {
+  if (roll < 82) {
     return "clock";
   }
-  return "bomb";
+  if (roll < 94) {
+    return "bomb";
+  }
+  return "turret";
 }
 
 function pixelLaneIndex(lane: PixelLane) {
@@ -2011,22 +2046,29 @@ function pixelSpinAllReels(freeSpin = false) {
 }
 
 function pixelApplySlotPrize(prize: PixelPrize) {
-  const playerTurret = pixelTurrets.find((turret) => turret.isPlayer);
-  if (!playerTurret) {
+  const playerTurrets = pixelTurrets.filter((turret) => turret.isPlayer && !turret.eliminated);
+  if (playerTurrets.length === 0) {
     return;
   }
   if (pixelMode === "multi") {
     sendPixelMessage({ prize, type: "pixel-prize" });
-    pixelRunnerMessage = prize === "clock" ? "Speed sent" : prize === "bomb" ? "Bomb sent" : "Dud match";
+    pixelRunnerMessage =
+      prize === "clock" ? "Speed sent" : prize === "bomb" ? "Bomb sent" : prize === "turret" ? "Turret sent" : "Dud match";
     pixelRunnerMessageTimer = 1.6;
     return;
   }
   if (prize === "clock") {
-    playerTurret.fireSpeedBoosts += 1;
-    pixelRunnerMessage = `Speed +${playerTurret.fireSpeedBoosts}`;
+    playerTurrets.forEach((turret) => {
+      turret.fireSpeedBoosts += 1;
+    });
+    pixelRunnerMessage = `Speed +${Math.max(...playerTurrets.map((turret) => turret.fireSpeedBoosts))}`;
   } else if (prize === "bomb") {
-    playerTurret.bombShots += pixelBombShotAward;
+    playerTurrets.forEach((turret) => {
+      turret.bombShots += pixelBombShotAward;
+    });
     pixelRunnerMessage = `Bomb shots +${pixelBombShotAward}`;
+  } else if (prize === "turret") {
+    addPixelPlayerTurret();
   } else {
     pixelRunnerMessage = "Dud match";
   }
@@ -3454,8 +3496,8 @@ function updatePixelWars(dt: number) {
       updatePixelReels(dt);
       return;
     }
-    const playerTurret = pixelTurrets.find((turret) => turret.isPlayer);
-    if (playerTurret && pixelTurretIsActive(playerTurret)) {
+    const playerTurret = pixelTurrets.find((turret) => turret.isPlayer && pixelTurretIsActive(turret));
+    if (playerTurret) {
       updatePixelRunner(dt);
     } else {
       pixelRunnerMessageTimer = Math.max(0, pixelRunnerMessageTimer - dt);
@@ -3483,8 +3525,8 @@ function updatePixelWars(dt: number) {
       turret.fireCooldown = pixelEffectiveFireInterval(turret) * (0.82 + Math.random() * 0.36);
     }
   });
-  const playerTurret = pixelTurrets.find((turret) => turret.isPlayer);
-  if (playerTurret && pixelTurretIsActive(playerTurret)) {
+  const playerTurret = pixelTurrets.find((turret) => turret.isPlayer && pixelTurretIsActive(turret));
+  if (playerTurret) {
     updatePixelRunner(dt);
   } else {
     pixelRunnerMessageTimer = Math.max(0, pixelRunnerMessageTimer - dt);
@@ -3547,7 +3589,7 @@ function drawPixelTileGrid(layout: PixelBoardLayout) {
 }
 
 function drawPixelRespawnPerimeterPrompt(layout: PixelBoardLayout, time: number) {
-  const playerTurret = pixelTurrets.find((turret) => turret.isPlayer);
+  const playerTurret = pixelTurrets.find((turret) => turret.isPlayer && turret.respawnPending && !turret.eliminated);
   if (!playerTurret?.respawnPending) {
     return;
   }
@@ -3758,6 +3800,9 @@ function pixelPrizeLabel(prize: PixelPrize) {
   if (prize === "bomb") {
     return "Bomb";
   }
+  if (prize === "turret") {
+    return "Jackpot";
+  }
   return "Blank";
 }
 
@@ -3767,6 +3812,9 @@ function pixelPrizeColor(prize: PixelPrize) {
   }
   if (prize === "bomb") {
     return "#ff6f6f";
+  }
+  if (prize === "turret") {
+    return "#ffd84f";
   }
   return "#9aa3b5";
 }
@@ -3801,6 +3849,24 @@ function drawPixelPrizeIcon(prize: PixelPrize, x: number, y: number, size: numbe
     ctx.moveTo(size * 0.16, -size * 0.17);
     ctx.quadraticCurveTo(size * 0.28, -size * 0.42, size * 0.46, -size * 0.28);
     ctx.stroke();
+  } else if (prize === "turret") {
+    ctx.shadowBlur = 18;
+    ctx.lineCap = "round";
+    ctx.lineWidth = Math.max(3, size * 0.12);
+    ctx.beginPath();
+    ctx.moveTo(size * 0.02, -size * 0.04);
+    ctx.lineTo(size * 0.38, -size * 0.24);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(-size * 0.08, size * 0.02, size * 0.28, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.78)";
+    ctx.lineWidth = Math.max(1.5, size * 0.045);
+    ctx.stroke();
+    ctx.fillStyle = "rgba(5, 9, 20, 0.9)";
+    ctx.beginPath();
+    ctx.arc(-size * 0.08, size * 0.02, size * 0.1, 0, Math.PI * 2);
+    ctx.fill();
   } else {
     ctx.shadowBlur = 0;
     ctx.strokeStyle = "rgba(255, 255, 255, 0.34)";
@@ -3879,10 +3945,13 @@ function drawPixelSlot(runner: PixelRunnerLayout, time: number) {
   ctx.font = "800 12px Inter, sans-serif";
   ctx.fillStyle = "rgba(255, 255, 255, 0.62)";
   ctx.textAlign = "left";
-  const playerTurret = pixelTurrets.find((turret) => turret.isPlayer);
-  const fireBoost = playerTurret?.fireSpeedBoosts ?? 0;
-  const bombShots = playerTurret?.bombShots ?? 0;
-  const message = pixelRunnerMessageTimer > 0 ? pixelRunnerMessage : `Speed +${fireBoost}  Bomb ${bombShots}`;
+  const playerTurrets = pixelTurrets.filter((turret) => turret.isPlayer && !turret.eliminated);
+  const fireBoost = Math.max(0, ...playerTurrets.map((turret) => turret.fireSpeedBoosts));
+  const bombShots = playerTurrets.reduce((total, turret) => total + turret.bombShots, 0);
+  const message =
+    pixelRunnerMessageTimer > 0
+      ? pixelRunnerMessage
+      : `Speed +${fireBoost}  Bomb ${bombShots}  Turrets ${playerTurrets.length}/${pixelMaxTurretsPerOwner}`;
   ctx.fillText(message, runner.slotX, runner.slotY + runner.slotH + 30);
   ctx.restore();
 }
@@ -6253,7 +6322,7 @@ function pixelPerimeterRespawnPoint(x: number, y: number, layout = pixelLayout()
 }
 
 function handlePixelRespawnPointer(x: number, y: number) {
-  const playerTurret = pixelTurrets.find((turret) => turret.isPlayer);
+  const playerTurret = pixelTurrets.find((turret) => turret.isPlayer && turret.respawnPending && !turret.eliminated);
   if (!playerTurret || !playerTurret.respawnPending || playerTurret.eliminated) {
     return false;
   }
@@ -6286,9 +6355,15 @@ function updatePixelAimFromPointer(event: PointerEvent) {
   pixelAimX = point.x;
   pixelAimY = point.y;
   if (pixelMode === "multi") {
-    const playerTurret = pixelTurrets.find((turret) => turret.isPlayer);
+    const playerTurret = pixelTurrets.find((turret) => turret.isPlayer && pixelTurretIsActive(turret));
     if (playerTurret) {
-      sendPixelMessage({ angle: Math.atan2(pixelAimY - playerTurret.y, pixelAimX - playerTurret.x), type: "pixel-aim" });
+      const layout = pixelLayout();
+      sendPixelMessage({
+        angle: Math.atan2(pixelAimY - playerTurret.y, pixelAimX - playerTurret.x),
+        targetXRatio: clampNumber((pixelAimX - layout.x) / layout.boardW, 0, 1),
+        targetYRatio: clampNumber((pixelAimY - layout.y) / layout.boardH, 0, 1),
+        type: "pixel-aim",
+      });
     }
   }
 }
@@ -6318,16 +6393,14 @@ window.addEventListener("orientationchange", () => {
 window.visualViewport?.addEventListener("resize", resize);
 window.addEventListener("keydown", (event) => {
   if (state === "pixel-running") {
-    const playerTurret = pixelTurrets.find((turret) => turret.isPlayer);
+    const playerTurret = pixelTurrets.find((turret) => turret.isPlayer && pixelTurretIsActive(turret));
     if (pixelMatchOver && (event.code === "Enter" || event.code === "Space")) {
       event.preventDefault();
       startPixelWars();
       return;
     }
     if (
-      playerTurret &&
-      playerTurret.respawnPending &&
-      !playerTurret.eliminated &&
+      pixelTurrets.some((turret) => turret.isPlayer && turret.respawnPending && !turret.eliminated) &&
       event.code === "KeyR"
     ) {
       event.preventDefault();
@@ -6340,11 +6413,14 @@ window.addEventListener("keydown", (event) => {
           yRatio: clampNumber((point.y - layout.y) / layout.boardH, 0, 1),
         });
       } else {
-        queuePixelRespawn(playerTurret, point.x, point.y);
+        const pendingTurret = pixelTurrets.find((turret) => turret.isPlayer && turret.respawnPending && !turret.eliminated);
+        if (pendingTurret) {
+          queuePixelRespawn(pendingTurret, point.x, point.y);
+        }
       }
       return;
     }
-    if (playerTurret && !pixelTurretIsActive(playerTurret)) {
+    if (!pixelTurrets.some((turret) => turret.isPlayer && pixelTurretIsActive(turret))) {
       event.preventDefault();
       return;
     }
@@ -6470,8 +6546,8 @@ canvas.addEventListener("pointerdown", (event) => {
       unlockAudio();
       return;
     }
-    const playerTurret = pixelTurrets.find((turret) => turret.isPlayer);
-    if (!playerTurret || !pixelTurretIsActive(playerTurret)) {
+    const playerTurret = pixelTurrets.find((turret) => turret.isPlayer && pixelTurretIsActive(turret));
+    if (!playerTurret) {
       event.preventDefault();
       return;
     }

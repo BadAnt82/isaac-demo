@@ -67,6 +67,7 @@ let snakeRoomInterval = null;
 let snakeIdleResetTimer = null;
 let lastSnakeRandomOrbSpawnAt = 0;
 const pixelMaxPlayers = 9;
+const pixelMaxTurretsPerOwner = 4;
 const pixelLobbyTtlMs = 30 * 60 * 1000;
 const pixelTickMs = 50;
 const pixelBaseFireInterval = 1;
@@ -732,7 +733,7 @@ function pixelHomeAngleForPoint(x, y) {
   return Math.atan2(pixelBoard.rows / 2 - y, pixelBoard.columns / 2 - x);
 }
 
-function createPixelTurret(id, index, isBot = false) {
+function createPixelTurret(id, index, isBot = false, options = {}) {
   const anchor = pixelSpawnAnchors()[index % pixelMaxPlayers];
   const x = anchor.xRatio * pixelBoard.columns;
   const y = anchor.yRatio * pixelBoard.rows;
@@ -748,6 +749,7 @@ function createPixelTurret(id, index, isBot = false) {
     homeAngle,
     id,
     isBot,
+    primary: options.primary ?? true,
     respawnPending: false,
     respawnTimer: 0,
     rotateDirection: Math.random() < 0.5 ? -1 : 1,
@@ -826,6 +828,37 @@ function pixelOwnedCellCount(match, owner) {
 
 function pixelTurretIsActive(turret) {
   return !turret.eliminated && !turret.respawnPending && turret.respawnTimer <= 0 && turret.shieldHealth > 0;
+}
+
+function pixelOwnerTurrets(match, owner) {
+  return match.turrets.filter((turret) => turret.id === owner && !turret.eliminated);
+}
+
+function pixelOwnerHasActiveTurret(match, owner) {
+  return match.turrets.some((turret) => turret.id === owner && pixelTurretIsActive(turret));
+}
+
+function pixelOwnerCanRespawn(match, owner) {
+  return pixelOwnedCellCount(match, owner) > 0 || pixelOwnerHasActiveTurret(match, owner);
+}
+
+function addPixelOwnerTurret(match, owner) {
+  const ownerTurrets = pixelOwnerTurrets(match, owner);
+  if (ownerTurrets.length >= pixelMaxTurretsPerOwner) {
+    return null;
+  }
+  const referenceTurret = ownerTurrets[0] || match.turrets.find((turret) => turret.id === owner);
+  if (!referenceTurret) {
+    return null;
+  }
+  const turret = createPixelTurret(owner, match.turrets.length, referenceTurret.isBot, { primary: false });
+  turret.color = referenceTurret.color;
+  turret.fireSpeedBoosts = Math.max(0, ...ownerTurrets.map((ownedTurret) => ownedTurret.fireSpeedBoosts));
+  turret.respawnPending = true;
+  turret.shieldHealth = 0;
+  turret.fireCooldown = pixelBaseFireInterval;
+  match.turrets.push(turret);
+  return turret;
 }
 
 function clampPixelAngle(turret, angle) {
@@ -939,7 +972,7 @@ function updatePixelRespawnEliminations(match) {
     if (
       !turret.eliminated &&
       (turret.respawnPending || turret.respawnTimer > 0) &&
-      pixelOwnedCellCount(match, turret.id) <= 0
+      !pixelOwnerCanRespawn(match, turret.id)
     ) {
       eliminatePixelTurret(turret);
     }
@@ -947,8 +980,8 @@ function updatePixelRespawnEliminations(match) {
 }
 
 function queuePixelRespawn(match, turret, xRatio, yRatio) {
-  if (turret.eliminated || !turret.respawnPending || pixelOwnedCellCount(match, turret.id) <= 0) {
-    if (pixelOwnedCellCount(match, turret.id) <= 0) {
+  if (turret.eliminated || !turret.respawnPending || !pixelOwnerCanRespawn(match, turret.id)) {
+    if (!pixelOwnerCanRespawn(match, turret.id)) {
       eliminatePixelTurret(turret);
     }
     return;
@@ -967,7 +1000,7 @@ function respawnPixelTurret(match, turret) {
   if (turret.eliminated || turret.respawnPending || turret.respawnTimer > 0) {
     return;
   }
-  if (pixelOwnedCellCount(match, turret.id) <= 0) {
+  if (!pixelOwnerCanRespawn(match, turret.id)) {
     eliminatePixelTurret(turret);
     return;
   }
@@ -1121,7 +1154,7 @@ function startPixelMatch(match) {
 }
 
 function activePixelSocketCount(match) {
-  return match.turrets.filter((turret) => !turret.isBot && turret.socket?.readyState === WebSocket.OPEN).length;
+  return match.turrets.filter((turret) => !turret.isBot && turret.primary && turret.socket?.readyState === WebSocket.OPEN).length;
 }
 
 function stopPixelMatchIfIdle(lobby) {
@@ -1674,7 +1707,7 @@ pixelServer.on("connection", (socket) => {
         lobby.match = createPixelMatch(lobby);
       }
       match = lobby.match;
-      turret = match.turrets.find((candidate) => !candidate.isBot && !candidate.socket);
+      turret = match.turrets.find((candidate) => !candidate.isBot && candidate.primary && !candidate.socket);
       if (!turret) {
         socket.close(1008, "Lobby full");
         return;
@@ -1690,21 +1723,43 @@ pixelServer.on("connection", (socket) => {
     }
 
     if (message.type === "pixel-aim" && Number.isFinite(message.angle)) {
-      turret.angle = clampPixelAngle(turret, Number(message.angle));
+      const targetX = Number(message.targetXRatio) * pixelBoard.columns;
+      const targetY = Number(message.targetYRatio) * pixelBoard.rows;
+      pixelOwnerTurrets(match, turret.id).forEach((ownedTurret) => {
+        if (!pixelTurretIsActive(ownedTurret)) {
+          return;
+        }
+        const angle =
+          Number.isFinite(targetX) && Number.isFinite(targetY)
+            ? Math.atan2(targetY - ownedTurret.y, targetX - ownedTurret.x)
+            : Number(message.angle);
+        ownedTurret.angle = clampPixelAngle(ownedTurret, angle);
+      });
       return;
     }
 
     if (message.type === "pixel-respawn") {
-      queuePixelRespawn(match, turret, message.xRatio, message.yRatio);
+      const pendingTurret = match.turrets.find(
+        (candidate) => candidate.id === turret.id && candidate.respawnPending && !candidate.eliminated,
+      );
+      if (pendingTurret) {
+        queuePixelRespawn(match, pendingTurret, message.xRatio, message.yRatio);
+      }
       broadcastPixelMatch(match);
       return;
     }
 
     if (message.type === "pixel-prize") {
       if (message.prize === "clock") {
-        turret.fireSpeedBoosts += 1;
+        pixelOwnerTurrets(match, turret.id).forEach((ownedTurret) => {
+          ownedTurret.fireSpeedBoosts += 1;
+        });
       } else if (message.prize === "bomb") {
-        turret.bombShots += pixelBombShotAward;
+        pixelOwnerTurrets(match, turret.id).forEach((ownedTurret) => {
+          ownedTurret.bombShots += pixelBombShotAward;
+        });
+      } else if (message.prize === "turret") {
+        addPixelOwnerTurret(match, turret.id);
       }
       broadcastPixelMatch(match);
     }
