@@ -634,6 +634,9 @@ let pixelRunnerLanePosition = 1;
 let pixelRunnerTargetLane = 1;
 let pixelRunnerJumpTimer = 0;
 let pixelRunnerDuckTimer = 0;
+let pixelRunnerPointerId: number | null = null;
+let pixelRunnerSwipeStartX = 0;
+let pixelRunnerSwipeStartY = 0;
 let pixelRunnerStumbleTimer = 0;
 let pixelRunnerPickupTimer = 0;
 let pixelRunnerObstacleTimer = 0;
@@ -1707,6 +1710,7 @@ function resetPixelRunner() {
   pixelRunnerTargetLane = 1;
   pixelRunnerJumpTimer = 0;
   pixelRunnerDuckTimer = 0;
+  pixelRunnerPointerId = null;
   pixelRunnerStumbleTimer = 0;
   pixelRunnerPickupTimer = 0.7;
   pixelRunnerObstacleTimer = 1.35;
@@ -4047,20 +4051,6 @@ function pixelRunnerProject(runner: PixelRunnerLayout, lanePosition: number, y: 
     x: left + laneWidth * (lanePosition + 0.5),
     y: metrics.horizonY + (runner.playerY - metrics.horizonY) * perspective,
   };
-}
-
-function pixelRunnerLaneAtPoint(runner: PixelRunnerLayout, x: number, y: number) {
-  const metrics = pixelRunnerTrackMetrics(runner);
-  if (y < metrics.horizonY || y > runner.trackY + runner.trackH) {
-    return null;
-  }
-  const rawDepth = clampNumber((y - metrics.horizonY) / Math.max(1, metrics.bottomY - metrics.horizonY), 0, 1);
-  const width = pixelRunnerTrackWidth(runner, rawDepth);
-  const left = metrics.vanishX - width / 2;
-  if (x < left || x > left + width) {
-    return null;
-  }
-  return clampNumber(Math.floor((x - left) / (width / 3)), 0, 2);
 }
 
 function pixelRunnerTrackPath(runner: PixelRunnerLayout) {
@@ -6490,7 +6480,21 @@ function pixelRectContains(rect: PixelRect, x: number, y: number) {
   return x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h;
 }
 
-function handlePixelRunnerPointer(x: number, y: number) {
+function pixelRunnerJump() {
+  pixelRunnerJumpTimer = pixelRunnerJumpDuration;
+  pixelRunnerDuckTimer = 0;
+}
+
+function pixelRunnerDuck() {
+  pixelRunnerDuckTimer = pixelRunnerDuckDuration;
+  pixelRunnerJumpTimer = 0;
+}
+
+function pixelRunnerStepLane(direction: -1 | 1) {
+  pixelRunnerTargetLane = clampNumber(pixelRunnerTargetLane + direction, 0, 2);
+}
+
+function startPixelRunnerPointer(event: PointerEvent, x: number, y: number) {
   const layout = pixelLayout();
   if (x < layout.panelX) {
     return false;
@@ -6502,20 +6506,56 @@ function handlePixelRunnerPointer(x: number, y: number) {
     return true;
   }
   if (pixelRectContains(runner.jumpButton, x, y)) {
-    pixelRunnerJumpTimer = pixelRunnerJumpDuration;
-    pixelRunnerDuckTimer = 0;
+    pixelRunnerJump();
     return true;
   }
   if (pixelRectContains(runner.duckButton, x, y)) {
-    pixelRunnerDuckTimer = pixelRunnerDuckDuration;
-    pixelRunnerJumpTimer = 0;
+    pixelRunnerDuck();
     return true;
   }
-  const lane = pixelRunnerLaneAtPoint(runner, x, y);
-  if (lane !== null) {
-    pixelRunnerTargetLane = lane;
+
+  pixelRunnerPointerId = event.pointerId;
+  pixelRunnerSwipeStartX = x;
+  pixelRunnerSwipeStartY = y;
+  canvas.setPointerCapture(event.pointerId);
+  return true;
+}
+
+function finishPixelRunnerPointer(event: PointerEvent) {
+  if (event.pointerId !== pixelRunnerPointerId) {
+    return false;
+  }
+
+  const point = canvasPointFromEvent(event);
+  const dx = point.x - pixelRunnerSwipeStartX;
+  const dy = point.y - pixelRunnerSwipeStartY;
+  const absX = Math.abs(dx);
+  const absY = Math.abs(dy);
+  const threshold = Math.max(18, Math.min(width, height) * 0.018);
+  pixelRunnerPointerId = null;
+  if (canvas.hasPointerCapture(event.pointerId)) {
+    canvas.releasePointerCapture(event.pointerId);
+  }
+
+  if (Math.max(absX, absY) < threshold) {
     return true;
   }
+
+  if (absX > absY) {
+    pixelRunnerStepLane(dx > 0 ? 1 : -1);
+  } else if (dy < 0) {
+    pixelRunnerJump();
+  } else {
+    pixelRunnerDuck();
+  }
+  return true;
+}
+
+function cancelPixelRunnerPointer(event?: PointerEvent) {
+  if (event && event.pointerId !== pixelRunnerPointerId) {
+    return false;
+  }
+  pixelRunnerPointerId = null;
   return true;
 }
 
@@ -6661,24 +6701,22 @@ window.addEventListener("keydown", (event) => {
     }
     if (event.code === "ArrowLeft") {
       event.preventDefault();
-      pixelRunnerTargetLane = clampNumber(pixelRunnerTargetLane - 1, 0, 2);
+      pixelRunnerStepLane(-1);
       return;
     }
     if (event.code === "ArrowRight") {
       event.preventDefault();
-      pixelRunnerTargetLane = clampNumber(pixelRunnerTargetLane + 1, 0, 2);
+      pixelRunnerStepLane(1);
       return;
     }
     if (event.code === "ArrowUp" || event.code === "KeyW" || event.code === "Space") {
       event.preventDefault();
-      pixelRunnerJumpTimer = pixelRunnerJumpDuration;
-      pixelRunnerDuckTimer = 0;
+      pixelRunnerJump();
       return;
     }
     if (event.code === "ArrowDown" || event.code === "KeyS") {
       event.preventDefault();
-      pixelRunnerDuckTimer = pixelRunnerDuckDuration;
-      pixelRunnerJumpTimer = 0;
+      pixelRunnerDuck();
       return;
     }
     if (event.code === "KeyQ") {
@@ -6776,7 +6814,7 @@ canvas.addEventListener("pointerdown", (event) => {
       unlockAudio();
       return;
     }
-    if (handlePixelRunnerPointer(point.x, point.y)) {
+    if (startPixelRunnerPointer(event, point.x, point.y)) {
       event.preventDefault();
       unlockAudio();
       return;
@@ -6813,6 +6851,11 @@ canvas.addEventListener("pointerdown", (event) => {
   flap();
 });
 canvas.addEventListener("pointermove", (event) => {
+  if (state === "pixel-running" && event.pointerId === pixelRunnerPointerId) {
+    event.preventDefault();
+    return;
+  }
+
   if (state !== "pixel-running" || event.pointerId !== pixelAimPointerId) {
     return;
   }
@@ -6820,9 +6863,22 @@ canvas.addEventListener("pointermove", (event) => {
   event.preventDefault();
   updatePixelAimFromPointer(event);
 });
-canvas.addEventListener("pointerup", stopPixelAim);
-canvas.addEventListener("pointercancel", stopPixelAim);
+canvas.addEventListener("pointerup", (event) => {
+  if (finishPixelRunnerPointer(event)) {
+    event.preventDefault();
+    return;
+  }
+  stopPixelAim(event);
+});
+canvas.addEventListener("pointercancel", (event) => {
+  if (cancelPixelRunnerPointer(event)) {
+    event.preventDefault();
+    return;
+  }
+  stopPixelAim(event);
+});
 canvas.addEventListener("lostpointercapture", () => {
+  cancelPixelRunnerPointer();
   pixelAimActive = false;
   pixelAimPointerId = null;
 });
