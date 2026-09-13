@@ -753,6 +753,8 @@ const pixelRunnerLanes: PixelLane[] = ["left", "center", "right"];
 const pixelRunnerSpeed = 156;
 const pixelRunnerJumpDuration = 0.46;
 const pixelRunnerDuckDuration = 0.44;
+const pixelRunnerSameLaneClearance = pixelRunnerSpeed * 0.58;
+const pixelRunnerActionConflictClearance = pixelRunnerSpeed * 0.9;
 const pixelReelSpinDuration = 0.72;
 const pixelBombShotAward = 4;
 const pixelOwnerColors: Partial<Record<PixelOwner, string>> & { neutral: string; player: string } = {
@@ -2088,28 +2090,76 @@ function pixelResolveReelMatch() {
   }
 }
 
+function shuffledPixelRunnerLanes() {
+  return [...pixelRunnerLanes].sort(() => Math.random() - 0.5);
+}
+
+function pixelObstacleAction(obstacle: Pick<PixelRunnerObstacle, "kind">): PixelRunnerAction {
+  return obstacle.kind === "hurdle" ? "jump" : "duck";
+}
+
+function pixelRunnerActionsConflict(first: PixelRunnerAction, second: PixelRunnerAction) {
+  return first !== "none" && second !== "none" && first !== second;
+}
+
+function pixelRunnerLaneIsClear(lane: PixelLane, y: number, action: PixelRunnerAction) {
+  const pickupBlocked = pixelRunnerPickups.some(
+    (pickup) => pickup.lane === lane && Math.abs(pickup.y - y) < pixelRunnerSameLaneClearance,
+  );
+  if (pickupBlocked) {
+    return false;
+  }
+
+  return !pixelRunnerObstacles.some((obstacle) => {
+    if (obstacle.lane !== lane) {
+      return false;
+    }
+    const distance = Math.abs(obstacle.y - y);
+    return (
+      distance < pixelRunnerSameLaneClearance ||
+      (distance < pixelRunnerActionConflictClearance && pixelRunnerActionsConflict(action, pixelObstacleAction(obstacle)))
+    );
+  });
+}
+
+function pixelChooseRunnerLane(y: number, action: PixelRunnerAction) {
+  return shuffledPixelRunnerLanes().find((lane) => pixelRunnerLaneIsClear(lane, y, action)) ?? null;
+}
+
 function pixelSpawnRunnerPickup(layout: PixelRunnerLayout) {
-  const lane = pixelRunnerLanes[Math.floor(Math.random() * pixelRunnerLanes.length)] ?? "center";
+  const y = layout.trackY - 24;
   const actionRoll = Math.random();
+  const action: PixelRunnerAction = actionRoll < 0.14 ? "jump" : actionRoll < 0.28 ? "duck" : "none";
+  const lane = pixelChooseRunnerLane(y, action);
+  if (!lane) {
+    return false;
+  }
   pixelRunnerPickups.push({
-    action: actionRoll < 0.14 ? "jump" : actionRoll < 0.28 ? "duck" : "none",
+    action,
     id: pixelRunnerPickupId,
     kind: Math.random() < 0.14 ? "special" : "lane",
     lane,
-    y: layout.trackY - 24,
+    y,
   });
   pixelRunnerPickupId += 1;
+  return true;
 }
 
 function pixelSpawnRunnerObstacle(layout: PixelRunnerLayout) {
-  const lane = pixelRunnerLanes[Math.floor(Math.random() * pixelRunnerLanes.length)] ?? "center";
+  const kind: PixelRunnerObstacle["kind"] = Math.random() < 0.5 ? "hurdle" : "beam";
+  const y = layout.trackY - 18;
+  const lane = pixelChooseRunnerLane(y, pixelObstacleAction({ kind }));
+  if (!lane) {
+    return false;
+  }
   pixelRunnerObstacles.push({
     id: pixelRunnerPickupId,
-    kind: Math.random() < 0.5 ? "hurdle" : "beam",
+    kind,
     lane,
-    y: layout.trackY - 18,
+    y,
   });
   pixelRunnerPickupId += 1;
+  return true;
 }
 
 function pixelRunnerActionActive(action: PixelRunnerAction) {
@@ -2160,12 +2210,10 @@ function updatePixelRunner(dt: number) {
   pixelRunnerObstacleTimer -= dt;
 
   if (pixelRunnerPickupTimer <= 0) {
-    pixelSpawnRunnerPickup(layout);
-    pixelRunnerPickupTimer = 0.82 + Math.random() * 0.72;
+    pixelRunnerPickupTimer = pixelSpawnRunnerPickup(layout) ? 0.82 + Math.random() * 0.72 : 0.22;
   }
   if (pixelRunnerObstacleTimer <= 0) {
-    pixelSpawnRunnerObstacle(layout);
-    pixelRunnerObstacleTimer = 1.25 + Math.random() * 0.95;
+    pixelRunnerObstacleTimer = pixelSpawnRunnerObstacle(layout) ? 1.25 + Math.random() * 0.95 : 0.22;
   }
 
   const currentLane = pixelLaneFromIndex(pixelRunnerLanePosition);
