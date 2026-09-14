@@ -228,6 +228,26 @@ try {
   assert.equal(jackpotTurrets.length, 2);
   assert.equal(jackpotTurrets.filter((turret) => turret.respawnPending).length, 1);
 
+  const blockingTurret = jackpotState.turrets.find((turret) => turret.id === secondPixel.result.id);
+  assert.ok(blockingTurret);
+  let blockedRespawnState = jackpotState;
+  firstPixel.socket.on("message", (data) => {
+    const message = JSON.parse(data.toString());
+    if (message.type === "pixel-wars-state") {
+      blockedRespawnState = message;
+    }
+  });
+  firstPixel.socket.send(
+    JSON.stringify({
+      type: "pixel-respawn",
+      xRatio: blockingTurret.xRatio,
+      yRatio: blockingTurret.yRatio,
+    }),
+  );
+  await wait(250);
+  const blockedRespawnTurrets = blockedRespawnState.turrets.filter((turret) => turret.id === firstPixel.result.id);
+  assert.equal(blockedRespawnTurrets.filter((turret) => turret.respawnPending).length, 1);
+
   firstPixel.socket.close();
   secondPixel.socket.close();
 

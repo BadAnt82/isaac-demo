@@ -751,6 +751,7 @@ const pixelShieldDamage = 10;
 const pixelShieldRadius = 19;
 const pixelCannonLength = pixelShieldRadius;
 const pixelCornerSpawnInset = pixelShieldRadius * 0.42;
+const pixelRespawnShieldClearanceCells = 2;
 const pixelRespawnWindow = 10;
 const pixelRunnerLanes: PixelLane[] = ["left", "center", "right"];
 const pixelRunnerSpeed = 78;
@@ -1871,13 +1872,37 @@ function knockOutPixelTurret(turret: PixelTurret) {
   }
 }
 
+function pixelRespawnPlacementIsClear(turret: PixelTurret, x: number, y: number, layout = pixelLayout()) {
+  const cellClearance = Math.max(layout.cellW, layout.cellH) * pixelRespawnShieldClearanceCells;
+  const minDistance = pixelShieldRadius * 2 + cellClearance;
+  const minDistanceSquared = minDistance * minDistance;
+  return !pixelTurrets.some((otherTurret) => {
+    if (otherTurret === turret || otherTurret.eliminated || otherTurret.respawnPending) {
+      return false;
+    }
+    if (otherTurret.shieldHealth <= 0 && otherTurret.respawnTimer <= 0) {
+      return false;
+    }
+    const dx = x - otherTurret.x;
+    const dy = y - otherTurret.y;
+    return dx * dx + dy * dy < minDistanceSquared;
+  });
+}
+
 function queuePixelRespawn(turret: PixelTurret, x: number, y: number, layout = pixelLayout()) {
   if (turret.eliminated || !turret.respawnPending) {
-    return;
+    return false;
   }
   if (!pixelOwnerCanRespawn(turret.id)) {
     eliminatePixelTurret(turret);
-    return;
+    return false;
+  }
+  if (!pixelRespawnPlacementIsClear(turret, x, y, layout)) {
+    if (turret.isPlayer) {
+      pixelRunnerMessage = "Too close to tower";
+      pixelRunnerMessageTimer = 1.3;
+    }
+    return false;
   }
 
   turret.spawnXRatio = clampNumber((x - layout.x) / layout.boardW, 0, 1);
@@ -1890,6 +1915,7 @@ function queuePixelRespawn(turret: PixelTurret, x: number, y: number, layout = p
     pixelRunnerMessage = "Respawning";
     pixelRunnerMessageTimer = 1.4;
   }
+  return true;
 }
 
 function respawnPixelTurret(turret: PixelTurret) {
@@ -1940,8 +1966,12 @@ function updatePixelRespawns(dt: number) {
     if (turret.respawnPending) {
       turret.respawnDelay = Math.max(0, turret.respawnDelay - dt);
       if (!turret.isPlayer && turret.respawnDelay <= 0) {
-        const point = randomPixelPerimeterPoint();
-        queuePixelRespawn(turret, point.x, point.y);
+        for (let attempt = 0; attempt < 20; attempt += 1) {
+          const point = randomPixelPerimeterPoint();
+          if (queuePixelRespawn(turret, point.x, point.y)) {
+            break;
+          }
+        }
       }
       return;
     }
@@ -2295,7 +2325,7 @@ function startPixelWars() {
   pixelOptionsPanel.hidden = true;
   reportPanel.hidden = true;
   snakeDeadPanel.hidden = true;
-  scorePanel.hidden = false;
+  scorePanel.hidden = true;
   homeButton.hidden = false;
   startButton.hidden = true;
   restartButton.hidden = true;
@@ -6608,6 +6638,11 @@ function handlePixelRespawnPointer(x: number, y: number) {
     pixelRunnerMessage = "Pick the board edge";
     pixelRunnerMessageTimer = 1;
     return false;
+  }
+  if (!pixelRespawnPlacementIsClear(playerTurret, point.x, point.y, layout)) {
+    pixelRunnerMessage = "Too close to tower";
+    pixelRunnerMessageTimer = 1.3;
+    return true;
   }
 
   if (pixelMode === "multi") {

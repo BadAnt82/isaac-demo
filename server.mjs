@@ -75,6 +75,8 @@ const pixelShotSpeed = 34;
 const pixelShotLife = 2.2;
 const pixelShieldMaxHealth = 100;
 const pixelShieldDamage = 10;
+const pixelShieldRadiusCells = 2.15;
+const pixelRespawnShieldClearanceCells = 2;
 const pixelRespawnSeconds = 10;
 const pixelBombShotAward = 4;
 const pixelOwnerColors = {
@@ -984,16 +986,38 @@ function queuePixelRespawn(match, turret, xRatio, yRatio) {
     if (!pixelOwnerCanRespawn(match, turret.id)) {
       eliminatePixelTurret(turret);
     }
-    return;
+    return false;
   }
-  turret.xRatio = Math.max(0, Math.min(1, Number(xRatio)));
-  turret.yRatio = Math.max(0, Math.min(1, Number(yRatio)));
-  turret.x = turret.xRatio * pixelBoard.columns;
-  turret.y = turret.yRatio * pixelBoard.rows;
+  const nextXRatio = Math.max(0, Math.min(1, Number(xRatio)));
+  const nextYRatio = Math.max(0, Math.min(1, Number(yRatio)));
+  const nextX = nextXRatio * pixelBoard.columns;
+  const nextY = nextYRatio * pixelBoard.rows;
+  const minDistance = pixelShieldRadiusCells * 2 + pixelRespawnShieldClearanceCells;
+  const minDistanceSquared = minDistance * minDistance;
+  const blocked = match.turrets.some((otherTurret) => {
+    if (otherTurret === turret || otherTurret.eliminated || otherTurret.respawnPending) {
+      return false;
+    }
+    if (otherTurret.shieldHealth <= 0 && otherTurret.respawnTimer <= 0) {
+      return false;
+    }
+    const dx = nextX - otherTurret.x;
+    const dy = nextY - otherTurret.y;
+    return dx * dx + dy * dy < minDistanceSquared;
+  });
+  if (blocked) {
+    return false;
+  }
+
+  turret.xRatio = nextXRatio;
+  turret.yRatio = nextYRatio;
+  turret.x = nextX;
+  turret.y = nextY;
   turret.homeAngle = pixelHomeAngleForPoint(turret.x, turret.y);
   turret.angle = clampPixelAngle(turret, turret.angle);
   turret.respawnPending = false;
   turret.respawnTimer = pixelRespawnSeconds;
+  return true;
 }
 
 function respawnPixelTurret(match, turret) {
@@ -1052,7 +1076,7 @@ function updatePixelShots(match, dt) {
       }
       const dx = shot.x - turret.x;
       const dy = shot.y - turret.y;
-      if (dx * dx + dy * dy <= 2.15 * 2.15) {
+      if (dx * dx + dy * dy <= pixelShieldRadiusCells * pixelShieldRadiusCells) {
         turret.shieldHealth = Math.max(0, turret.shieldHealth - (shot.kind === "bomb" ? pixelShieldDamage * 3 : pixelShieldDamage));
         if (turret.shieldHealth <= 0) {
           knockOutPixelTurret(match, turret);
