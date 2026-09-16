@@ -238,6 +238,17 @@ export function initBreakout() {
     startLevel(nextLevel);
   }
 
+  function exitFromCheckpoint(save: boolean) {
+    if (save) {
+      state.progress.currentLevel = state.level + 1;
+      state.progress.lives = state.lives;
+      saveProgress(state.progress);
+    } else {
+      state.progress = readProgress();
+    }
+    setPanels("menu");
+  }
+
   function endGame() {
     cancelAnimationFrame(state.raf);
     state.value = "dead";
@@ -438,7 +449,8 @@ export function initBreakout() {
   el<HTMLButtonElement>("#breakout-options-back").addEventListener("click", () => setPanels("menu"));
   el<HTMLButtonElement>("#breakout-save-continue").addEventListener("click", () => continueFromCheckpoint(true));
   el<HTMLButtonElement>("#breakout-continue").addEventListener("click", () => continueFromCheckpoint(false));
-  el<HTMLButtonElement>("#breakout-checkpoint-exit").addEventListener("click", () => { state.progress = readProgress(); setPanels("menu"); });
+  el<HTMLButtonElement>("#breakout-save-exit").addEventListener("click", () => exitFromCheckpoint(true));
+  el<HTMLButtonElement>("#breakout-exit-without-saving").addEventListener("click", () => exitFromCheckpoint(false));
   el<HTMLButtonElement>("#breakout-menu-back").addEventListener("click", close);
   el<HTMLButtonElement>("#breakout-restart").addEventListener("click", () => {
     state.progress.currentLevel = 1;
