@@ -184,6 +184,7 @@ button:focus-visible {
 
 .cribbage-menu-panel,
 .cribbage-options-panel,
+.cribbage-network-panel,
 .cribbage-board-panel,
 .cribbage-round-panel { width: min(100%, 800px); }
 
@@ -278,6 +279,17 @@ button:focus-visible {
 .cribbage-score.is-active { border-color: #ffbd5a; box-shadow: 0 0 16px rgba(255, 189, 90, .2); }
 .cribbage-score strong { color: #fff; font-size: 1.15rem; }
 .cribbage-status { min-height: 1.25em; margin: 0; color: #ffdc94; font-weight: 700; }
+
+.cribbage-connection-status { display: grid; width: 100%; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 6px; }
+.cribbage-connection-seat { display: flex; align-items: center; gap: 7px; padding: 6px 9px; border-radius: 7px; color: #bdccef; background: rgba(7, 13, 35, .38); font-size: .74rem; font-weight: 800; }
+.cribbage-connection-seat i { width: 9px; height: 9px; border-radius: 50%; background: #e05261; box-shadow: 0 0 8px rgba(224, 82, 97, .75); }
+.cribbage-connection-seat.is-connected i { background: #63e59a; box-shadow: 0 0 8px rgba(99, 229, 154, .75); }
+.cribbage-connection-seat.is-ai i { background: #a28cff; box-shadow: 0 0 8px rgba(162, 140, 255, .75); }
+.cribbage-network-list { display: grid; width: min(100%, 620px); max-height: 220px; overflow: auto; gap: 8px; }
+.cribbage-network-game { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border: 1px solid rgba(177, 202, 255, .24); border-radius: 8px; background: rgba(7, 13, 35, .5); }
+.cribbage-network-game div { display: grid; gap: 3px; text-align: left; }
+.cribbage-network-game small,
+.cribbage-network-status { color: #b7c7ed; font-size: .78rem; font-weight: 700; }
 
 .cribbage-table {
   display: grid;

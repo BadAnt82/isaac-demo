@@ -364,7 +364,12 @@
               </div>
             </div>
             <p id="cribbage-mode-note" class="cribbage-mode-note">Standard rules: choose the crib cards, peg to 31, then score each hand.</p>
-            <div class="menu-actions"><button id="cribbage-start" type="button">Deal game</button><button id="cribbage-resume" type="button" disabled>Resume saved match</button><button id="cribbage-options" type="button">How to play</button><button id="cribbage-menu-back" type="button">Back to games</button></div>
+            <div class="menu-actions"><button id="cribbage-start" type="button">Deal local game</button><button id="cribbage-resume" type="button" disabled>Resume saved match</button><button id="cribbage-multiplayer" type="button">Multiplayer</button><button id="cribbage-options" type="button">How to play</button><button id="cribbage-menu-back" type="button">Back to games</button></div>
+          </div>
+          <div id="cribbage-network-panel" class="overlay-panel cribbage-network-panel" hidden>
+            <h1>Cribbage Multiplayer</h1><p>Create a game and share its code, or join an open seat from another device. No account is required.</p>
+            <div class="menu-actions"><button id="cribbage-create-game" type="button">Create game with these settings</button><button id="cribbage-network-start" type="button" hidden>Start game</button><button id="cribbage-refresh-games" type="button">Refresh games</button><button id="cribbage-network-back" type="button">Back to setup</button></div>
+            <div id="cribbage-network-list" class="cribbage-network-list" aria-live="polite"></div><p id="cribbage-network-status" class="cribbage-network-status" aria-live="polite"></p>
           </div>
           <div id="cribbage-options-panel" class="overlay-panel options-panel cribbage-options-panel" hidden>
             <h1>Digital Cribbage</h1>
@@ -373,12 +378,12 @@
           </div>
           <div id="cribbage-board-panel" class="overlay-panel cribbage-board-panel" hidden>
             <div class="cribbage-board-header"><h1>Digital Cribbage</h1><span id="cribbage-round-label">Round 1 · Classic</span></div>
-            <div id="cribbage-scoreboard" class="cribbage-scoreboard" aria-label="Cribbage scoreboard"></div>
+            <div id="cribbage-scoreboard" class="cribbage-scoreboard" aria-label="Cribbage scoreboard"></div><div id="cribbage-connection-status" class="cribbage-connection-status" aria-label="Player connection status"></div>
             <p id="cribbage-status" class="cribbage-status" aria-live="polite"></p>
             <div class="cribbage-table"><div><span>Dealer</span><strong id="cribbage-dealer">Player 1</strong></div><div><span>Cut card</span><strong id="cribbage-cut-card">—</strong></div><div><span>Crib</span><strong id="cribbage-crib-count">0 cards</strong></div><div><span>Pegging total</span><strong id="cribbage-total">0 / 31</strong></div></div>
             <h2 id="cribbage-turn-label">Player 1: choose two cards for the crib</h2>
             <div id="cribbage-hand" class="cribbage-hand" aria-label="Current player's hand"></div>
-            <div class="menu-actions"><button id="cribbage-crib-action" type="button">Put 2 in crib</button><button id="cribbage-pass" type="button" hidden>Say go</button><button id="cribbage-board-exit" type="button">Exit game</button></div>
+            <div class="menu-actions"><button id="cribbage-crib-action" type="button">Put 2 in crib</button><button id="cribbage-pass" type="button" hidden>Say go</button><button id="cribbage-quit" type="button" hidden>Quit game</button><button id="cribbage-board-exit" type="button">Exit game</button></div>
           </div>
           <div id="cribbage-round-panel" class="overlay-panel cribbage-round-panel" hidden>
             <h1 id="cribbage-round-title">Round complete</h1><p id="cribbage-round-message">Scores updated.</p><div id="cribbage-round-scores" class="cribbage-round-scores"></div>

@@ -1649,6 +1649,85 @@ const server = createServer(async (request, response) => {
 
 const snakeServer = new WebSocketServer({ noServer: true });
 const pixelServer = new WebSocketServer({ noServer: true });
+const cribbageServer = new WebSocketServer({ noServer: true });
+const cribbageRooms = new Map();
+let nextCribbageRoomId = 1;
+
+function cribbageRoomId() {
+  return `crib-${String(nextCribbageRoomId++).padStart(4, "0")}`;
+}
+
+function cribbageToken() {
+  return `${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
+}
+
+function cribbagePublicRoom(room) {
+  return {
+    gameId: room.gameId,
+    variant: room.config.variant,
+    playerCount: room.config.playerCount,
+    format: room.config.format,
+    started: room.started,
+    seats: room.seats.map((seat, index) => ({ seat: index, name: seat.name, control: seat.control, team: seat.team, connected: Boolean(seat.socket), available: seat.control === "human" && !seat.sessionId })),
+  };
+}
+
+function cribbageSend(socket, payload) {
+  if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(payload));
+}
+
+function cribbageLobbyPayload() {
+  return { type: "cribbage-lobby-list", games: [...cribbageRooms.values()].filter((room) => !room.expired).map(cribbagePublicRoom) };
+}
+
+function broadcastCribbageLobby() {
+  const payload = cribbageLobbyPayload();
+  for (const room of cribbageRooms.values()) for (const seat of room.seats) cribbageSend(seat.socket, payload);
+}
+
+function cribbageConnectionPayload(room) {
+  return { type: "cribbage-connection", gameId: room.gameId, seats: room.seats.map((seat, index) => ({ seat: index, name: seat.name, control: seat.control, connected: Boolean(seat.socket), quit: Boolean(seat.quit) })) };
+}
+
+function cribbageViewFor(room, seatIndex) {
+  if (!room.snapshot) return null;
+  const snapshot = JSON.parse(JSON.stringify(room.snapshot));
+  snapshot.deck = [];
+  snapshot.crib = Array.from({ length: snapshot.crib?.length || 0 }, () => ({ hidden: true }));
+  snapshot.players = (snapshot.players || []).map((player, index) => ({
+    ...player,
+    hand: index === seatIndex ? player.hand : [],
+    scoringHand: index === seatIndex ? player.scoringHand : [],
+    handCount: player.hand?.length || 0,
+    scoringHandCount: player.scoringHand?.length || 0,
+  }));
+  return snapshot;
+}
+
+function cribbageBroadcastRoom(room) {
+  const connection = cribbageConnectionPayload(room);
+  for (const [index, seat] of room.seats.entries()) {
+    cribbageSend(seat.socket, connection);
+    const snapshot = cribbageViewFor(room, index);
+    if (snapshot) cribbageSend(seat.socket, { type: "cribbage-state", snapshot });
+  }
+  broadcastCribbageLobby();
+}
+
+function cribbageAllHumansConnected(room) {
+  return room.seats.every((seat) => seat.control === "ai" || Boolean(seat.socket));
+}
+
+function cribbageFindSeat(room, token) {
+  return room.seats.find((seat) => seat.sessionId && seat.sessionId === token);
+}
+
+function pruneCribbageRooms() {
+  const now = Date.now();
+  for (const [id, room] of cribbageRooms) {
+    if (now - room.updatedAt > 30 * 60 * 1000) cribbageRooms.delete(id);
+  }
+}
 
 server.on("upgrade", (request, socket, head) => {
   const url = new URL(request.url || "/", "http://localhost");
@@ -1661,6 +1740,12 @@ server.on("upgrade", (request, socket, head) => {
   if (url.pathname === "/pixel-wars") {
     pixelServer.handleUpgrade(request, socket, head, (ws) => {
       pixelServer.emit("connection", ws, request);
+    });
+    return;
+  }
+  if (url.pathname === "/cribbage") {
+    cribbageServer.handleUpgrade(request, socket, head, (ws) => {
+      cribbageServer.emit("connection", ws, request);
     });
     return;
   }
@@ -1722,6 +1807,58 @@ snakeServer.on("connection", (socket) => {
     snakePlayers.delete(id);
     broadcastSnakeState();
     stopSnakeRoomIfIdle();
+  });
+});
+
+cribbageServer.on("connection", (socket) => {
+  let room = null;
+  let seatIndex = -1;
+  cribbageSend(socket, cribbageLobbyPayload());
+  socket.on("message", (data) => {
+    let message;
+    try { message = JSON.parse(data.toString()); } catch { return; }
+    pruneCribbageRooms();
+    if (message.type === "cribbage-list") { cribbageSend(socket, cribbageLobbyPayload()); return; }
+    if (message.type === "cribbage-create") {
+      const config = message.config || {};
+      const count = Math.min(4, Math.max(2, Number(config.playerCount) || 2));
+      const sourceSeats = Array.isArray(config.seats) ? config.seats : [];
+      room = { gameId: cribbageRoomId(), config: { variant: config.variant === "crazy" ? "crazy" : "standard", playerCount: count, format: config.format === "team" && count === 4 ? "team" : "individual" }, seats: Array.from({ length: count }, (_, index) => { const source = sourceSeats[index] || {}; return { name: String(source.name || `Player ${index + 1}`).slice(0, 18), control: source.control === "ai" ? "ai" : "human", team: Number(source.team) === 2 ? 2 : 1, sessionId: null, socket: null, quit: false }; }), hostToken: cribbageToken(), snapshot: null, started: false, updatedAt: Date.now() };
+      const hostSeat = room.seats.findIndex((seat) => seat.control === "human");
+      if (hostSeat < 0) { cribbageSend(socket, { type: "cribbage-error", message: "At least one human seat is required." }); return; }
+      room.seats[hostSeat].sessionId = room.hostToken; room.seats[hostSeat].socket = socket; room.hostSeat = hostSeat; seatIndex = hostSeat; cribbageRooms.set(room.gameId, room);
+      cribbageSend(socket, { type: "cribbage-created", gameId: room.gameId, sessionId: room.hostToken, seat: hostSeat, host: true, config: room.config });
+      cribbageBroadcastRoom(room); if (cribbageAllHumansConnected(room)) { room.started = true; cribbageSend(socket, { type: "cribbage-ready", gameId: room.gameId }); } return;
+    }
+    if (message.type === "cribbage-join") {
+      const target = cribbageRooms.get(String(message.gameId || ""));
+      if (!target) { cribbageSend(socket, { type: "cribbage-error", message: "Game not found." }); return; }
+      room = target;
+      const token = typeof message.sessionId === "string" ? message.sessionId : "";
+      let index = cribbageFindSeat(room, token) ? room.seats.indexOf(cribbageFindSeat(room, token)) : -1;
+      if (index < 0) index = room.seats.findIndex((seat) => seat.control === "human" && !seat.sessionId);
+      if (index < 0) { cribbageSend(socket, { type: "cribbage-error", message: "No open human seat is available." }); room = null; return; }
+      seatIndex = index; room.seats[index].sessionId = token || cribbageToken(); room.seats[index].socket = socket; room.updatedAt = Date.now();
+      cribbageSend(socket, { type: "cribbage-joined", gameId: room.gameId, sessionId: room.seats[index].sessionId, seat: index, host: index === room.hostSeat, config: room.config });
+      cribbageBroadcastRoom(room); if (cribbageAllHumansConnected(room) && !room.started) { room.started = true; cribbageSend(room.seats[room.hostSeat].socket, { type: "cribbage-ready", gameId: room.gameId }); cribbageBroadcastRoom(room); } return;
+    }
+    if (!room || seatIndex < 0) return;
+    const seat = room.seats[seatIndex]; room.updatedAt = Date.now();
+    if (message.type === "cribbage-state" && seatIndex === room.hostSeat && message.snapshot) { room.snapshot = message.snapshot; room.started = true; cribbageBroadcastRoom(room); return; }
+    if (message.type === "cribbage-action" && seatIndex !== room.hostSeat) { cribbageSend(room.seats[room.hostSeat].socket, { type: "cribbage-remote-action", seat: seatIndex, action: message.action || {} }); return; }
+    if (message.type === "cribbage-quit") {
+      const wasHost = seatIndex === room.hostSeat;
+      seat.control = "ai"; seat.quit = true; seat.socket = null;
+      if (wasHost) {
+        const successor = room.seats.findIndex((candidate, index) => index !== seatIndex && candidate.socket && candidate.control === "human");
+        if (successor >= 0) { room.hostSeat = successor; cribbageSend(room.seats[successor].socket, { type: "cribbage-host-transfer", seat: successor, snapshot: room.snapshot }); }
+      } else cribbageSend(room.seats[room.hostSeat].socket, { type: "cribbage-player-quit", seat: seatIndex });
+      cribbageBroadcastRoom(room); return;
+    }
+  });
+  socket.on("close", () => {
+    if (!room || seatIndex < 0) return;
+    const seat = room.seats[seatIndex]; if (seat.socket === socket) seat.socket = null; room.updatedAt = Date.now(); cribbageBroadcastRoom(room);
   });
 });
 
