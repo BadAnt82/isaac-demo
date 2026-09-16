@@ -67,6 +67,8 @@ export function initBreakout() {
   const menuLevel = el<HTMLElement>("#breakout-menu-level");
   const menuHighest = el<HTMLElement>("#breakout-menu-highest");
   const menuLives = el<HTMLElement>("#breakout-menu-lives");
+  const startNewButton = el<HTMLButtonElement>("#breakout-start-new");
+  const resumeButton = el<HTMLButtonElement>("#breakout-resume");
   const nextLevel = el<HTMLElement>("#breakout-next-level");
   const tileLevel = el<HTMLElement>("#breakout-tile-level");
   const progressCopy = el<HTMLElement>("#breakout-progress-copy");
@@ -109,7 +111,10 @@ export function initBreakout() {
       menuHighest.textContent = `${state.progress.highestLevel}`;
       menuLives.textContent = `${state.progress.lives}`;
       tileLevel.textContent = `${state.progress.highestLevel}`;
-      progressCopy.textContent = state.progress.currentLevel > 1 ? `Resume at level ${state.progress.currentLevel} with ${state.progress.lives} ${state.progress.lives === 1 ? "life" : "lives"}.` : "Start at level 1. Keep the ball alive.";
+      const hasSavedRun = state.progress.currentLevel > 1;
+      resumeButton.disabled = !hasSavedRun;
+      resumeButton.textContent = hasSavedRun ? `Resume saved game (Level ${state.progress.currentLevel} · ${state.progress.lives} ${state.progress.lives === 1 ? "life" : "lives"})` : "Resume saved game";
+      progressCopy.textContent = hasSavedRun ? `Saved game: level ${state.progress.currentLevel} with ${state.progress.lives} ${state.progress.lives === 1 ? "life" : "lives"}. Choose where to start.` : "No saved game yet. Start at level 1.";
     }
     if (next === "running") canvas.focus();
   }
@@ -197,11 +202,18 @@ export function initBreakout() {
     state.raf = requestAnimationFrame(frame);
   }
 
-  function start() {
+  function startResume() {
     state.progress = readProgress();
     state.score = 0;
     state.lives = state.progress.lives;
     startLevel(state.progress.currentLevel);
+  }
+
+  function startNew() {
+    state.progress = readProgress();
+    state.score = 0;
+    state.lives = 3;
+    startLevel(1, true);
   }
 
   function postHighest() {
@@ -420,7 +432,8 @@ export function initBreakout() {
   function restoreAfterReport() { setPanels("options"); }
 
   el<HTMLButtonElement>("#select-breakout").addEventListener("click", open);
-  el<HTMLButtonElement>("#breakout-start").addEventListener("click", start);
+  startNewButton.addEventListener("click", startNew);
+  resumeButton.addEventListener("click", startResume);
   el<HTMLButtonElement>("#breakout-options").addEventListener("click", () => setPanels("options"));
   el<HTMLButtonElement>("#breakout-options-back").addEventListener("click", () => setPanels("menu"));
   el<HTMLButtonElement>("#breakout-save-continue").addEventListener("click", () => continueFromCheckpoint(true));
