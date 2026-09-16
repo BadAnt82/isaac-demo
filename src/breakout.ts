@@ -250,6 +250,41 @@ export function initBreakout() {
     return ball.x + ball.radius > brick.x && ball.x - ball.radius < brick.x + brick.width && ball.y + ball.radius > brick.y && ball.y - ball.radius < brick.y + brick.height;
   }
 
+  function resolveBrickImpact(ball: Ball, brick: Brick, previousX: number, previousY: number) {
+    const wasLeft = previousX + ball.radius <= brick.x;
+    const wasRight = previousX - ball.radius >= brick.x + brick.width;
+    const wasAbove = previousY + ball.radius <= brick.y;
+    const wasBelow = previousY - ball.radius >= brick.y + brick.height;
+    if (wasLeft || wasRight) {
+      ball.x = wasLeft ? brick.x - ball.radius - 0.5 : brick.x + brick.width + ball.radius + 0.5;
+      ball.vx = wasLeft ? -Math.abs(ball.vx) : Math.abs(ball.vx);
+      return;
+    }
+    if (wasAbove || wasBelow) {
+      ball.y = wasAbove ? brick.y - ball.radius - 0.5 : brick.y + brick.height + ball.radius + 0.5;
+      ball.vy = wasAbove ? -Math.abs(ball.vy) : Math.abs(ball.vy);
+      return;
+    }
+    const pushLeft = ball.x + ball.radius - brick.x;
+    const pushRight = brick.x + brick.width - (ball.x - ball.radius);
+    const pushUp = ball.y + ball.radius - brick.y;
+    const pushDown = brick.y + brick.height - (ball.y - ball.radius);
+    const smallestPush = Math.min(pushLeft, pushRight, pushUp, pushDown);
+    if (smallestPush === pushLeft) {
+      ball.x = brick.x - ball.radius - 0.5;
+      ball.vx = -Math.abs(ball.vx);
+    } else if (smallestPush === pushRight) {
+      ball.x = brick.x + brick.width + ball.radius + 0.5;
+      ball.vx = Math.abs(ball.vx);
+    } else if (smallestPush === pushUp) {
+      ball.y = brick.y - ball.radius - 0.5;
+      ball.vy = -Math.abs(ball.vy);
+    } else {
+      ball.y = brick.y + brick.height + ball.radius + 0.5;
+      ball.vy = Math.abs(ball.vy);
+    }
+  }
+
   function accelerateBall(ball: Ball) {
     ball.hits += 1;
     ball.speed = Math.min(1000, 310 + ball.hits * 0.69);
@@ -269,10 +304,11 @@ export function initBreakout() {
     if (state.paddleBoost === 0) state.paddleLevel = 1;
     if (state.levelPause > 0) { state.levelPause -= dt; return; }
     for (const ball of state.balls) {
-      const steps = Math.min(8, Math.max(1, Math.ceil((ball.speed * dt) / 7)));
+      const steps = Math.min(16, Math.max(1, Math.ceil((ball.speed * dt) / 4)));
       const stepDt = dt / steps;
       for (let step = 0; step < steps; step += 1) {
       const previousX = ball.x;
+      const previousY = ball.y;
       ball.x += ball.vx * stepDt;
       ball.y += ball.vy * stepDt;
       if (ball.x < ball.radius + 18) { ball.x = ball.radius + 18; ball.vx = Math.abs(ball.vx); }
@@ -292,8 +328,7 @@ export function initBreakout() {
         if (!intersects(ball, brick)) continue;
         accelerateBall(ball);
         brick.health -= 1;
-        const hitFromSide = previousX < brick.x || previousX > brick.x + brick.width;
-        if (hitFromSide) ball.vx *= -1; else ball.vy *= -1;
+        resolveBrickImpact(ball, brick, previousX, previousY);
         if (brick.health <= 0) {
           if (brick.power) state.drops.push({ x: brick.x + brick.width / 2, y: brick.y + brick.height / 2, vy: 105, type: brick.power });
           state.bricks.splice(state.bricks.indexOf(brick), 1);
