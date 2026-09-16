@@ -72,7 +72,7 @@ export function initBreakout() {
   const progressCopy = el<HTMLElement>("#breakout-progress-copy");
   const deadTitle = el<HTMLElement>("#breakout-dead-title");
   const deadMessage = el<HTMLElement>("#breakout-dead-message");
-  const state = { value: "closed" as BreakoutState, level: 1, lives: 3, score: 0, paddleX: WIDTH / 2, targetPaddleX: WIDTH / 2, paddleBoost: 0, paddleLevel: 1, balls: [] as Ball[], bricks: [] as Brick[], drops: [] as Drop[], lastTime: 0, raf: 0, levelPause: 0, keys: new Set<string>(), progress: readProgress() };
+  const state = { value: "closed" as BreakoutState, level: 1, lives: 3, score: 0, paddleX: WIDTH / 2, targetPaddleX: WIDTH / 2, paddleLevel: 1, multiLevel: 0, balls: [] as Ball[], bricks: [] as Brick[], drops: [] as Drop[], lastTime: 0, raf: 0, levelPause: 0, keys: new Set<string>(), progress: readProgress() };
   canvas.width = WIDTH;
   canvas.height = HEIGHT;
 
@@ -141,7 +141,6 @@ export function initBreakout() {
   }
 
   function paddleWidth() {
-    if (state.paddleBoost <= 0) return 124;
     return [124, 154, 184][state.paddleLevel - 1] ?? 124;
   }
 
@@ -187,8 +186,8 @@ export function initBreakout() {
     if (resetLives) state.lives = 3;
     state.paddleX = WIDTH / 2;
     state.targetPaddleX = WIDTH / 2;
-    state.paddleBoost = 0;
     state.paddleLevel = 1;
+    state.multiLevel = 0;
     state.bricks = buildLevel(level);
     state.drops = [];
     serveBall();
@@ -257,12 +256,13 @@ export function initBreakout() {
   function applyPower(type: PowerType) {
     if (type === "paddle") {
       state.paddleLevel = Math.min(3, state.paddleLevel + 1);
-      state.paddleBoost = 12;
     }
     if (type === "multi") {
       const source = state.balls[0] || { x: state.paddleX, y: 450, vx: 160, vy: -300, radius: 8, speed: 340, hits: 0 };
-      while (state.balls.length < 3) {
-        const angle = Math.atan2(source.vy, -source.vx + state.balls.length * 55);
+      state.multiLevel = Math.min(2, state.multiLevel + 1);
+      const targetBalls = state.multiLevel === 1 ? 3 : 6;
+      while (state.balls.length < targetBalls) {
+        const angle = Math.atan2(source.vy, source.vx) + (state.balls.length - 1) * 0.28;
         state.balls.push({ x: source.x, y: source.y, vx: Math.cos(angle) * source.speed, vy: Math.sin(angle) * source.speed, radius: 8, speed: source.speed, hits: source.hits });
       }
     }
@@ -323,8 +323,6 @@ export function initBreakout() {
     if (state.keys.has("ArrowRight")) state.targetPaddleX += paddleSpeed * dt;
     state.targetPaddleX = Math.max(paddleWidthValue / 2 + 20, Math.min(WIDTH - paddleWidthValue / 2 - 20, state.targetPaddleX));
     state.paddleX += (state.targetPaddleX - state.paddleX) * Math.min(1, dt * 18);
-    state.paddleBoost = Math.max(0, state.paddleBoost - dt);
-    if (state.paddleBoost === 0) state.paddleLevel = 1;
     if (state.levelPause > 0) { state.levelPause -= dt; return; }
     for (const ball of state.balls) {
       const steps = Math.min(16, Math.max(1, Math.ceil((ball.speed * dt) / 4)));
@@ -361,7 +359,10 @@ export function initBreakout() {
       }
       }
     }
+    const ballsBeforeDrop = state.balls.length;
     state.balls = state.balls.filter((ball) => ball.y < HEIGHT + 18);
+    const lostBalls = ballsBeforeDrop - state.balls.length;
+    if (lostBalls > 0) state.paddleLevel = Math.max(1, state.paddleLevel - lostBalls);
     for (const drop of state.drops) {
       drop.y += drop.vy * dt;
       const pw = paddleWidth();
@@ -389,7 +390,7 @@ export function initBreakout() {
     drawBackdrop();
     ctx.fillStyle = "#eaf7ff"; ctx.font = "700 16px Space Grotesk, sans-serif";
     ctx.fillText(`LEVEL ${state.level}`, 26, 28); ctx.fillText(`LIVES ${"*".repeat(Math.max(0, state.lives))}`, 150, 28); ctx.fillText(`BALLS ${state.balls.length}`, 330, 28); ctx.fillText(`SCORE ${state.score}`, 450, 28); ctx.fillText(`SPD ${Math.round(state.balls[0]?.speed ?? 0)}`, 575, 28);
-    if (state.paddleBoost > 0) { ctx.fillStyle = "#ffbd5a"; ctx.fillText(`WIDE ${state.paddleLevel}/3 ${Math.ceil(state.paddleBoost)}s`, 640, 28); }
+    if (state.paddleLevel > 1) { ctx.fillStyle = "#ffbd5a"; ctx.fillText(`WIDE ${state.paddleLevel}/3`, 640, 28); }
     for (const brick of state.bricks) {
       const color = colors[Math.min(colors.length - 1, brick.maxHealth - 1)];
       ctx.shadowBlur = 15; ctx.shadowColor = color; ctx.fillStyle = color; ctx.globalAlpha = 0.28 + brick.health / (brick.maxHealth * 1.8); ctx.fillRect(brick.x, brick.y, brick.width, brick.height); ctx.globalAlpha = 1; ctx.shadowBlur = 0;
