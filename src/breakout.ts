@@ -68,7 +68,7 @@ export function initBreakout() {
   const progressCopy = el<HTMLElement>("#breakout-progress-copy");
   const deadTitle = el<HTMLElement>("#breakout-dead-title");
   const deadMessage = el<HTMLElement>("#breakout-dead-message");
-  const state = { value: "closed" as BreakoutState, level: 1, lives: 3, score: 0, paddleX: WIDTH / 2, targetPaddleX: WIDTH / 2, paddleBoost: 0, balls: [] as Ball[], bricks: [] as Brick[], drops: [] as Drop[], lastTime: 0, raf: 0, levelPause: 0, keys: new Set<string>(), progress: readProgress() };
+  const state = { value: "closed" as BreakoutState, level: 1, lives: 3, score: 0, paddleX: WIDTH / 2, targetPaddleX: WIDTH / 2, paddleBoost: 0, paddleLevel: 1, balls: [] as Ball[], bricks: [] as Brick[], drops: [] as Drop[], lastTime: 0, raf: 0, levelPause: 0, keys: new Set<string>(), progress: readProgress() };
   canvas.width = WIDTH;
   canvas.height = HEIGHT;
 
@@ -87,7 +87,7 @@ export function initBreakout() {
       homeButton.hidden = true;
       return;
     }
-    overlay.hidden = false;
+    overlay.hidden = next === "running";
     overlay.classList.remove("is-platform");
     overlay.classList.add("is-breakout");
     platform.hidden = true;
@@ -132,6 +132,16 @@ export function initBreakout() {
     return Math.min(12, 1 + Math.floor((level - 1) / 3) + (random() > 0.62 ? 1 : 0));
   }
 
+  function paddleWidth() {
+    if (state.paddleBoost <= 0) return 124;
+    return [124, 154, 184][state.paddleLevel - 1] ?? 124;
+  }
+
+  function paddleTopAt(x: number) {
+    const offset = Math.max(-1, Math.min(1, (x - state.paddleX) / (paddleWidth() / 2)));
+    return 492 - 3 * (1 - offset * offset);
+  }
+
   function buildLevel(level: number) {
     const random = seeded(level);
     const cols = Math.min(13, 10 + Math.floor(level / 6));
@@ -170,6 +180,7 @@ export function initBreakout() {
     state.paddleX = WIDTH / 2;
     state.targetPaddleX = WIDTH / 2;
     state.paddleBoost = 0;
+    state.paddleLevel = 1;
     state.bricks = buildLevel(level);
     state.drops = [];
     serveBall();
@@ -214,7 +225,10 @@ export function initBreakout() {
   }
 
   function applyPower(type: PowerType) {
-    if (type === "paddle") state.paddleBoost = 12;
+    if (type === "paddle") {
+      state.paddleLevel = Math.min(3, state.paddleLevel + 1);
+      state.paddleBoost = 12;
+    }
     if (type === "multi") {
       const source = state.balls[0] || { x: state.paddleX, y: 450, vx: 160, vy: -300, radius: 8, speed: 340, hits: 0 };
       while (state.balls.length < 3) {
@@ -238,29 +252,34 @@ export function initBreakout() {
   }
 
   function update(dt: number) {
-    const paddleWidth = state.paddleBoost > 0 ? 184 : 124;
+    const paddleWidthValue = paddleWidth();
     const paddleSpeed = 580;
     if (state.keys.has("ArrowLeft")) state.targetPaddleX -= paddleSpeed * dt;
     if (state.keys.has("ArrowRight")) state.targetPaddleX += paddleSpeed * dt;
-    state.targetPaddleX = Math.max(paddleWidth / 2 + 20, Math.min(WIDTH - paddleWidth / 2 - 20, state.targetPaddleX));
+    state.targetPaddleX = Math.max(paddleWidthValue / 2 + 20, Math.min(WIDTH - paddleWidthValue / 2 - 20, state.targetPaddleX));
     state.paddleX += (state.targetPaddleX - state.paddleX) * Math.min(1, dt * 18);
     state.paddleBoost = Math.max(0, state.paddleBoost - dt);
+    if (state.paddleBoost === 0) state.paddleLevel = 1;
     if (state.levelPause > 0) { state.levelPause -= dt; return; }
     for (const ball of state.balls) {
+      const steps = Math.min(8, Math.max(1, Math.ceil((ball.speed * dt) / 7)));
+      const stepDt = dt / steps;
+      for (let step = 0; step < steps; step += 1) {
       const previousX = ball.x;
-      ball.x += ball.vx * dt;
-      ball.y += ball.vy * dt;
+      ball.x += ball.vx * stepDt;
+      ball.y += ball.vy * stepDt;
       if (ball.x < ball.radius + 18) { ball.x = ball.radius + 18; ball.vx = Math.abs(ball.vx); }
       if (ball.x > WIDTH - ball.radius - 18) { ball.x = WIDTH - ball.radius - 18; ball.vx = -Math.abs(ball.vx); }
       if (ball.y < ball.radius + 46) { ball.y = ball.radius + 46; ball.vy = Math.abs(ball.vy); }
-      const pw = state.paddleBoost > 0 ? 184 : 124;
+      const pw = paddleWidth();
       const py = 492;
-      if (ball.vy > 0 && ball.y + ball.radius >= py - 2 && ball.y - ball.radius <= py + 14 && Math.abs(ball.x - state.paddleX) <= pw / 2 + ball.radius) {
+      const paddleTop = paddleTopAt(ball.x);
+      if (ball.vy > 0 && ball.y + ball.radius >= paddleTop - 2 && ball.y - ball.radius <= py + 14 && Math.abs(ball.x - state.paddleX) <= pw / 2 + ball.radius) {
         const offset = (ball.x - state.paddleX) / (pw / 2);
         const speed = Math.min(1000, Math.max(310, ball.speed));
         ball.vx = offset * Math.min(420, speed * 0.78);
         ball.vy = -Math.sqrt(Math.max(120 * 120, speed * speed - ball.vx * ball.vx));
-        ball.y = py - ball.radius - 1;
+        ball.y = paddleTop - ball.radius - 1;
       }
       for (const brick of state.bricks) {
         if (!intersects(ball, brick)) continue;
@@ -275,11 +294,12 @@ export function initBreakout() {
         }
         break;
       }
+      }
     }
     state.balls = state.balls.filter((ball) => ball.y < HEIGHT + 18);
     for (const drop of state.drops) {
       drop.y += drop.vy * dt;
-      const pw = state.paddleBoost > 0 ? 184 : 124;
+      const pw = paddleWidth();
       if (drop.y > 478 && drop.y < 520 && Math.abs(drop.x - state.paddleX) < pw / 2 + 12) { applyPower(drop.type); drop.y = HEIGHT + 40; }
     }
     state.drops = state.drops.filter((drop) => drop.y < HEIGHT + 30);
@@ -307,7 +327,7 @@ export function initBreakout() {
     drawBackdrop();
     ctx.fillStyle = "#eaf7ff"; ctx.font = "700 16px Space Grotesk, sans-serif";
     ctx.fillText(`LEVEL ${state.level}`, 26, 28); ctx.fillText(`LIVES ${"*".repeat(Math.max(0, state.lives))}`, 150, 28); ctx.fillText(`BALLS ${state.balls.length}`, 330, 28); ctx.fillText(`SCORE ${state.score}`, 450, 28); ctx.fillText(`SPD ${Math.round(state.balls[0]?.speed ?? 0)}`, 575, 28);
-    if (state.paddleBoost > 0) { ctx.fillStyle = "#ffbd5a"; ctx.fillText(`WIDE ${Math.ceil(state.paddleBoost)}s`, 640, 28); }
+    if (state.paddleBoost > 0) { ctx.fillStyle = "#ffbd5a"; ctx.fillText(`WIDE ${state.paddleLevel}/3 ${Math.ceil(state.paddleBoost)}s`, 640, 28); }
     for (const brick of state.bricks) {
       const color = colors[Math.min(colors.length - 1, brick.maxHealth - 1)];
       ctx.shadowBlur = 15; ctx.shadowColor = color; ctx.fillStyle = color; ctx.globalAlpha = 0.28 + brick.health / (brick.maxHealth * 1.8); ctx.fillRect(brick.x, brick.y, brick.width, brick.height); ctx.globalAlpha = 1; ctx.shadowBlur = 0;
@@ -322,7 +342,7 @@ export function initBreakout() {
       }
     }
     for (const drop of state.drops) { ctx.fillStyle = drop.type === "paddle" ? "#ffbd5a" : drop.type === "multi" ? "#55e6ff" : "#8dff72"; ctx.shadowBlur = 12; ctx.shadowColor = ctx.fillStyle; ctx.beginPath(); ctx.roundRect(drop.x - 14, drop.y - 10, 28, 20, 7); ctx.fill(); ctx.shadowBlur = 0; ctx.fillStyle = "#091225"; ctx.font = "700 13px sans-serif"; ctx.textAlign = "center"; ctx.fillText(formatPower(drop.type), drop.x, drop.y + 5); ctx.textAlign = "left"; }
-    const pw = state.paddleBoost > 0 ? 184 : 124; const paddleGradient = ctx.createLinearGradient(state.paddleX - pw / 2, 0, state.paddleX + pw / 2, 0); paddleGradient.addColorStop(0, "#d7d3ff"); paddleGradient.addColorStop(0.5, "#ffffff"); paddleGradient.addColorStop(1, "#d7d3ff"); ctx.fillStyle = paddleGradient; ctx.shadowBlur = 22; ctx.shadowColor = "#9d7cff"; ctx.beginPath(); ctx.roundRect(state.paddleX - pw / 2, 492, pw, 14, 4); ctx.fill(); ctx.shadowBlur = 0;
+    const pw = paddleWidth(); const left = state.paddleX - pw / 2; const right = state.paddleX + pw / 2; const paddleGradient = ctx.createLinearGradient(left, 0, right, 0); paddleGradient.addColorStop(0, "#d7d3ff"); paddleGradient.addColorStop(0.5, "#ffffff"); paddleGradient.addColorStop(1, "#d7d3ff"); ctx.fillStyle = paddleGradient; ctx.shadowBlur = 22; ctx.shadowColor = "#9d7cff"; ctx.beginPath(); ctx.moveTo(left, 501); ctx.quadraticCurveTo(state.paddleX, 489, right, 501); ctx.lineTo(right, 503); ctx.quadraticCurveTo(state.paddleX, 508, left, 503); ctx.closePath(); ctx.fill(); ctx.shadowBlur = 0;
     for (const ball of state.balls) { ctx.fillStyle = "#ffffff"; ctx.shadowBlur = 18; ctx.shadowColor = "#55e6ff"; ctx.beginPath(); ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI * 2); ctx.fill(); ctx.shadowBlur = 0; }
     ctx.fillStyle = "rgba(234,247,255,.64)"; ctx.font = "600 11px Space Grotesk, sans-serif"; ctx.fillText("W  wide paddle    x  multi-ball    +  extra life", 26, 530);
   }
