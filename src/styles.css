@@ -103,6 +103,10 @@ button:focus-visible {
   outline: none;
 }
 
+#breakout-canvas[hidden] {
+  display: none;
+}
+
 .tile-breakout {
   position: relative;
   display: grid;
