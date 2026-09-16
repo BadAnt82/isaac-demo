@@ -1,4 +1,4 @@
-type BreakoutState = "closed" | "menu" | "options" | "running" | "dead";
+type BreakoutState = "closed" | "menu" | "options" | "running" | "checkpoint" | "dead";
 type PowerType = "paddle" | "multi" | "life";
 
 type Brick = { x: number; y: number; width: number; height: number; health: number; maxHealth: number; power?: PowerType };
@@ -62,10 +62,12 @@ export function initBreakout() {
   const homeButton = el<HTMLButtonElement>("#home");
   const menu = el<HTMLElement>("#breakout-menu-panel");
   const options = el<HTMLElement>("#breakout-options-panel");
+  const checkpoint = el<HTMLElement>("#breakout-checkpoint-panel");
   const dead = el<HTMLElement>("#breakout-dead-panel");
   const menuLevel = el<HTMLElement>("#breakout-menu-level");
   const menuHighest = el<HTMLElement>("#breakout-menu-highest");
   const menuLives = el<HTMLElement>("#breakout-menu-lives");
+  const nextLevel = el<HTMLElement>("#breakout-next-level");
   const tileLevel = el<HTMLElement>("#breakout-tile-level");
   const progressCopy = el<HTMLElement>("#breakout-progress-copy");
   const deadTitle = el<HTMLElement>("#breakout-dead-title");
@@ -81,6 +83,7 @@ export function initBreakout() {
       gameCanvas.hidden = false;
       menu.hidden = true;
       options.hidden = true;
+      checkpoint.hidden = true;
       dead.hidden = true;
       overlay.hidden = false;
       overlay.classList.add("is-platform");
@@ -95,6 +98,7 @@ export function initBreakout() {
     platform.hidden = true;
     menu.hidden = next !== "menu";
     options.hidden = next !== "options";
+    checkpoint.hidden = next !== "checkpoint";
     dead.hidden = next !== "dead";
     gameCanvas.hidden = true;
     homeButton.hidden = false;
@@ -122,6 +126,7 @@ export function initBreakout() {
     gameCanvas.hidden = false;
     menu.hidden = true;
     options.hidden = true;
+    checkpoint.hidden = true;
     dead.hidden = true;
     overlay.hidden = false;
     overlay.classList.add("is-platform");
@@ -204,13 +209,31 @@ export function initBreakout() {
     void fetch("/api/breakout-high-scores", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: "Anonymous pilot", score: state.progress.highestLevel }) }).catch(() => undefined);
   }
 
+  function showCheckpoint() {
+    cancelAnimationFrame(state.raf);
+    state.progress.highestLevel = Math.max(state.progress.highestLevel, state.level + 1);
+    nextLevel.textContent = `${state.level + 1}`;
+    setPanels("checkpoint");
+    draw();
+  }
+
+  function continueFromCheckpoint(save: boolean) {
+    const nextLevel = state.level + 1;
+    if (save) {
+      state.progress.currentLevel = nextLevel;
+      state.progress.lives = state.lives;
+      saveProgress(state.progress);
+    }
+    startLevel(nextLevel);
+  }
+
   function endGame() {
     cancelAnimationFrame(state.raf);
     state.value = "dead";
     canvas.hidden = true;
     dead.hidden = false;
-    deadTitle.textContent = `Level ${state.level} complete`; 
-    deadMessage.textContent = `You reached level ${state.level}. Your highest level is ${state.progress.highestLevel}.`;
+    deadTitle.textContent = "Game over";
+    deadMessage.textContent = `You reached level ${state.level}. Saved progress has been reset to level 1 with 3 lives.`;
     overlay.hidden = false;
     postHighest();
   }
@@ -347,13 +370,9 @@ export function initBreakout() {
     state.drops = state.drops.filter((drop) => drop.y < HEIGHT + 30);
     if (state.balls.length === 0) loseBall();
     if (state.bricks.length === 0) {
-      state.progress.currentLevel = state.level + 1;
-      state.progress.highestLevel = Math.max(state.progress.highestLevel, state.level + 1);
-      state.progress.lives = state.lives;
-      saveProgress(state.progress);
       tileLevel.textContent = `${state.progress.highestLevel}`;
       postHighest();
-      startLevel(state.level + 1);
+      showCheckpoint();
     }
   }
 
@@ -403,6 +422,9 @@ export function initBreakout() {
   el<HTMLButtonElement>("#breakout-start").addEventListener("click", start);
   el<HTMLButtonElement>("#breakout-options").addEventListener("click", () => setPanels("options"));
   el<HTMLButtonElement>("#breakout-options-back").addEventListener("click", () => setPanels("menu"));
+  el<HTMLButtonElement>("#breakout-save-continue").addEventListener("click", () => continueFromCheckpoint(true));
+  el<HTMLButtonElement>("#breakout-continue").addEventListener("click", () => continueFromCheckpoint(false));
+  el<HTMLButtonElement>("#breakout-checkpoint-exit").addEventListener("click", () => { state.progress = readProgress(); setPanels("menu"); });
   el<HTMLButtonElement>("#breakout-menu-back").addEventListener("click", close);
   el<HTMLButtonElement>("#breakout-restart").addEventListener("click", () => {
     state.progress.currentLevel = 1;

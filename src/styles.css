@@ -143,6 +143,7 @@ button:focus-visible {
 
 .breakout-menu-panel p,
 .breakout-options-panel p,
+.breakout-checkpoint-panel p,
 .breakout-dead-panel p { max-width: 32rem; }
 
 .hud {
