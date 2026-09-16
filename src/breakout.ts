@@ -94,7 +94,8 @@ export function initBreakout() {
     dead.hidden = next !== "dead";
     gameCanvas.hidden = true;
     homeButton.hidden = false;
-    canvas.hidden = next !== "running";
+    canvas.hidden = false;
+    drawBackdrop();
     if (next === "menu") {
       menuLevel.textContent = `${state.progress.currentLevel}`;
       menuHighest.textContent = `${state.progress.highestLevel}`;
@@ -290,13 +291,17 @@ export function initBreakout() {
     }
   }
 
-  function draw() {
+  function drawBackdrop() {
     ctx.clearRect(0, 0, WIDTH, HEIGHT);
     const gradient = ctx.createLinearGradient(0, 0, 0, HEIGHT);
     gradient.addColorStop(0, "#0b1230"); gradient.addColorStop(1, "#100b27");
     ctx.fillStyle = gradient; ctx.fillRect(0, 0, WIDTH, HEIGHT);
     ctx.fillStyle = "rgba(86, 227, 255, .08)";
     for (let i = 0; i < 24; i += 1) { const x = (i * 127) % WIDTH; const y = 45 + ((i * 73) % 430); ctx.fillRect(x, y, 2, 2); }
+  }
+
+  function draw() {
+    drawBackdrop();
     ctx.fillStyle = "#eaf7ff"; ctx.font = "700 16px Space Grotesk, sans-serif";
     ctx.fillText(`LEVEL ${state.level}`, 26, 28); ctx.fillText(`LIVES ${"*".repeat(Math.max(0, state.lives))}`, 150, 28); ctx.fillText(`BALLS ${state.balls.length}`, 330, 28); ctx.fillText(`SCORE ${state.score}`, 450, 28); ctx.fillText(`SPD ${Math.round(state.balls[0]?.speed ?? 0)}`, 575, 28);
     if (state.paddleBoost > 0) { ctx.fillStyle = "#ffbd5a"; ctx.fillText(`WIDE ${Math.ceil(state.paddleBoost)}s`, 640, 28); }

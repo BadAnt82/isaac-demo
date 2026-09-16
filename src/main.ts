@@ -4931,10 +4931,6 @@ function scoreNumber(value: unknown, fallback: number) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
-function isClaimableRecordName(name: string) {
-  return !name || name === "Unknown scorer";
-}
-
 function updateSoundButtons() {
   planeSoundToggle.textContent = planeSoundEnabled ? "Sound on" : "Sound off";
   planeSoundToggle.setAttribute("aria-pressed", `${planeSoundEnabled}`);
@@ -5335,12 +5331,7 @@ async function retryPendingServerBridgeScores() {
 }
 
 async function reconcileLocalHighScore() {
-  if (
-    localHighest > todayHighest ||
-    localHighest > serverHighest ||
-    (localHighest > 0 && localHighest === todayHighest && isClaimableRecordName(todayHighName)) ||
-    (localHighest > 0 && localHighest === serverHighest && isClaimableRecordName(serverHighName))
-  ) {
+  if (localHighest > todayHighest || localHighest > serverHighest) {
     await syncFinalScore(localHighest);
   }
 }
@@ -5350,12 +5341,7 @@ async function reconcileSnakeLocalHighScore() {
     return;
   }
 
-  if (
-    snakeLocalLongest > snakeTodayLongest ||
-    snakeLocalLongest > snakeServerLongest ||
-    (snakeLocalLongest > 3 && snakeLocalLongest === snakeTodayLongest && isClaimableRecordName(snakeTodayLongName)) ||
-    (snakeLocalLongest > 3 && snakeLocalLongest === snakeServerLongest && isClaimableRecordName(snakeServerLongName))
-  ) {
+  if (snakeLocalLongest > snakeTodayLongest || snakeLocalLongest > snakeServerLongest) {
     await syncFinalSnakeScore(snakeLocalLongest);
   }
 }
@@ -5363,14 +5349,10 @@ async function reconcileSnakeLocalHighScore() {
 async function reconcileBridgeLocalScores() {
   const tileRecord =
     bridgeLocalTiles > bridgeTodayTiles ||
-    bridgeLocalTiles > bridgeServerTiles ||
-    (bridgeLocalTiles > 0 && bridgeLocalTiles === bridgeTodayTiles && isClaimableRecordName(bridgeTodayTileName)) ||
-    (bridgeLocalTiles > 0 && bridgeLocalTiles === bridgeServerTiles && isClaimableRecordName(bridgeServerTileName));
+    bridgeLocalTiles > bridgeServerTiles;
   const pointRecord =
     bridgeLocalPoints > bridgeTodayPoints ||
-    bridgeLocalPoints > bridgeServerPoints ||
-    (bridgeLocalPoints > 0 && bridgeLocalPoints === bridgeTodayPoints && isClaimableRecordName(bridgeTodayPointName)) ||
-    (bridgeLocalPoints > 0 && bridgeLocalPoints === bridgeServerPoints && isClaimableRecordName(bridgeServerPointName));
+    bridgeLocalPoints > bridgeServerPoints;
   if (tileRecord || pointRecord) {
     await syncFinalBridgeScores(bridgeLocalTiles, bridgeLocalPoints);
   }
