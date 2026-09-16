@@ -306,6 +306,22 @@ button:focus-visible {
 .cribbage-table strong { color: #fff; }
 .cribbage-board-panel h2 { margin: 2px 0 0; color: #fff; font-size: 1.15rem; text-align: center; }
 
+.cribbage-peg-track { padding: 12px 14px 16px; border: 1px solid rgba(177, 202, 255, .28); border-radius: 10px; background: linear-gradient(180deg, rgba(12, 24, 57, .86), rgba(6, 12, 31, .86)); }
+.cribbage-peg-scale { display: flex; justify-content: space-between; color: #91a9d4; font-size: .68rem; font-weight: 800; }
+.cribbage-pegs { position: relative; height: 28px; margin-top: 8px; border-bottom: 2px solid #6d88bf; background: repeating-linear-gradient(90deg, transparent 0, transparent calc(25% - 1px), rgba(140, 169, 224, .3) 25%); }
+.cribbage-pegs::before { content: ""; position: absolute; inset: 8px 0 auto; border-top: 1px dashed rgba(140, 169, 224, .35); }
+.cribbage-peg { position: absolute; z-index: 1; top: 0; display: grid; width: 22px; height: 22px; transform: translateX(-50%); place-items: center; border: 2px solid #fff; border-radius: 50%; color: #071027; font-size: .67rem; font-weight: 900; transition: left .45s ease; box-shadow: 0 0 12px rgba(87, 221, 255, .65); }
+.cribbage-peg.peg-0 { background: #55e6ff; }
+.cribbage-peg.peg-1 { background: #ff78d1; }
+.cribbage-peg.peg-2 { background: #8eff9b; }
+.cribbage-peg.peg-3 { background: #ffd166; }
+.cribbage-played-cards { display: grid; gap: 6px; margin-top: 10px; }
+.cribbage-played-row { display: grid; grid-template-columns: minmax(110px, .35fr) 1fr; gap: 8px; align-items: center; min-height: 28px; padding: 5px 8px; border-radius: 7px; background: rgba(10, 19, 43, .65); }
+.cribbage-played-row strong { color: #dce8ff; font-size: .75rem; }
+.cribbage-played-list { display: flex; flex-wrap: wrap; gap: 4px; }
+.cribbage-played-card { padding: 3px 6px; border: 1px solid rgba(255, 255, 255, .26); border-radius: 4px; background: #edf4ff; color: #0b1732; font-size: .72rem; font-weight: 900; }
+.cribbage-played-card.red { color: #c32655; }
+
 .cribbage-hand {
   display: flex;
   min-height: 116px;
