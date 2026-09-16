@@ -156,6 +156,10 @@
                 <span class="tile-breakout" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><b></b></span>
                 <span class="tile-details"><strong>Tile Breaker</strong><dl class="tile-scores" aria-label="Tile Breaker progress"><div><dt>Highest level</dt><dd id="breakout-tile-level">1</dd></div><div><dt>Current</dt><dd>Endless</dd></div><div><dt>Power-ups</dt><dd>3 types</dd></div></dl></span>
               </button>
+              <button id="select-cribbage" class="game-tile cribbage-tile" type="button" aria-label="Open Digital Cribbage">
+                <span class="tile-cribbage" aria-hidden="true"><i>5</i><i>J</i><i>Q</i></span>
+                <span class="tile-details"><strong>Digital Cribbage</strong><dl class="tile-scores" aria-label="Digital Cribbage features"><div><dt>Players</dt><dd>2–4</dd></div><div><dt>Modes</dt><dd>Classic + more</dd></div><div><dt>High scores</dt><dd>None</dd></div></dl></span>
+              </button>
             </div>
           </div>
           <div id="game-menu-panel" class="overlay-panel game-menu-panel" hidden>
@@ -345,6 +349,40 @@
           <div id="breakout-options-panel" class="overlay-panel options-panel" hidden><h1>Tile Breaker Options</h1><p>Move with your mouse, touch, or arrow keys. Catch falling power-ups with the paddle.</p><button id="breakout-report-issue" type="button">Report issue</button><button id="breakout-options-back" type="button">Back</button></div>
           <div id="breakout-checkpoint-panel" class="overlay-panel breakout-checkpoint-panel" hidden><h1>Level complete</h1><p>Your next safe state is level <strong id="breakout-next-level">2</strong> with your remaining lives. Choose whether to save it.</p><div class="menu-actions"><button id="breakout-save-continue" type="button">Save progress &amp; continue</button><button id="breakout-continue" type="button">Continue without saving</button><button id="breakout-save-exit" type="button">Save progress &amp; exit</button><button id="breakout-exit-without-saving" type="button">Exit without saving</button></div></div>
           <div id="breakout-dead-panel" class="overlay-panel breakout-dead-panel" hidden><h1 id="breakout-dead-title">Game over</h1><p id="breakout-dead-message">The wall wins this round.</p><button id="breakout-restart" type="button">Try again</button><button id="breakout-dead-back" type="button">Back to games</button></div>
+          <div id="cribbage-menu-panel" class="overlay-panel cribbage-menu-panel" hidden>
+            <h1>Digital Cribbage</h1>
+            <p>Play a hot-seat cribbage match. Pass the device after each turn.</p>
+            <div class="cribbage-setup">
+              <label>Game mode<select id="cribbage-mode"><option value="classic">Classic cribbage (playable)</option><option value="tournament" disabled>Tournament mode (coming soon)</option><option value="cutthroat" disabled>Cutthroat (coming soon)</option><option value="partnership" disabled>Partnership (coming soon)</option></select></label>
+              <label>Players<select id="cribbage-player-count"><option value="2">2 players</option><option value="3">3 players</option><option value="4">4 players</option></select></label>
+              <div id="cribbage-player-names" class="cribbage-player-names">
+                <label data-player-slot="0">Player 1<input id="cribbage-player-1" type="text" maxlength="18" value="Player 1" /></label>
+                <label data-player-slot="1">Player 2<input id="cribbage-player-2" type="text" maxlength="18" value="Player 2" /></label>
+                <label data-player-slot="2" hidden>Player 3<input id="cribbage-player-3" type="text" maxlength="18" value="Player 3" /></label>
+                <label data-player-slot="3" hidden>Player 4<input id="cribbage-player-4" type="text" maxlength="18" value="Player 4" /></label>
+              </div>
+            </div>
+            <p class="cribbage-mode-note">More game modes are reserved here for future releases.</p>
+            <div class="menu-actions"><button id="cribbage-start" type="button">Deal game</button><button id="cribbage-options" type="button">How to play</button><button id="cribbage-menu-back" type="button">Back to games</button></div>
+          </div>
+          <div id="cribbage-options-panel" class="overlay-panel options-panel cribbage-options-panel" hidden>
+            <h1>Digital Cribbage</h1>
+            <p>Choose two cards for the crib, then take turns pegging without going over 31. Fifteen, pairs, runs, and 31 score points. The first player to 121 wins.</p>
+            <button id="cribbage-report-issue" type="button">Report issue</button><button id="cribbage-options-back" type="button">Back</button>
+          </div>
+          <div id="cribbage-board-panel" class="overlay-panel cribbage-board-panel" hidden>
+            <div class="cribbage-board-header"><h1>Digital Cribbage</h1><span id="cribbage-round-label">Round 1 · Classic</span></div>
+            <div id="cribbage-scoreboard" class="cribbage-scoreboard" aria-label="Cribbage scoreboard"></div>
+            <p id="cribbage-status" class="cribbage-status" aria-live="polite"></p>
+            <div class="cribbage-table"><div><span>Dealer</span><strong id="cribbage-dealer">Player 1</strong></div><div><span>Cut card</span><strong id="cribbage-cut-card">—</strong></div><div><span>Crib</span><strong id="cribbage-crib-count">0 cards</strong></div><div><span>Pegging total</span><strong id="cribbage-total">0 / 31</strong></div></div>
+            <h2 id="cribbage-turn-label">Player 1: choose two cards for the crib</h2>
+            <div id="cribbage-hand" class="cribbage-hand" aria-label="Current player's hand"></div>
+            <div class="menu-actions"><button id="cribbage-crib-action" type="button">Put 2 in crib</button><button id="cribbage-pass" type="button" hidden>Say go</button><button id="cribbage-board-exit" type="button">Exit game</button></div>
+          </div>
+          <div id="cribbage-round-panel" class="overlay-panel cribbage-round-panel" hidden>
+            <h1 id="cribbage-round-title">Round complete</h1><p id="cribbage-round-message">Scores updated.</p><div id="cribbage-round-scores" class="cribbage-round-scores"></div>
+            <div class="menu-actions"><button id="cribbage-next-round" type="button">Deal next round</button><button id="cribbage-round-exit" type="button">Exit to setup</button></div>
+          </div>
           <div id="report-panel" class="overlay-panel options-panel report-panel" hidden>
             <h1>Report Issue</h1>
             <form id="issue-form" class="issue-form">

@@ -19,6 +19,7 @@ const issueStorePaths = {
   "jumpy-plane": process.env.JUMPY_PLANE_ISSUE_STORE_PATH || resolve(__dirname, "data", "jumpy-plane-issues.json"),
   "pixel-wars": process.env.PIXEL_WARS_ISSUE_STORE_PATH || resolve(__dirname, "data", "pixel-wars-issues.json"),
   breakout: process.env.BREAKOUT_ISSUE_STORE_PATH || resolve(__dirname, "data", "breakout-issues.json"),
+  "digital-cribbage": process.env.DIGITAL_CRIBBAGE_ISSUE_STORE_PATH || resolve(__dirname, "data", "digital-cribbage-issues.json"),
   "shooting-snakes": process.env.SHOOTING_SNAKES_ISSUE_STORE_PATH || resolve(__dirname, "data", "shooting-snakes-issues.json"),
 };
 const bridgeJackpotSeed = 20;

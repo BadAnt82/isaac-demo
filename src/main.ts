@@ -1,5 +1,6 @@
 import "./styles.css";
 import { initBreakout } from "./breakout";
+import { initCribbage } from "./cribbage";
 
 type GameState =
   | "platform"
@@ -416,6 +417,7 @@ const selectPlaneButton = requireElement<HTMLButtonElement>("#select-plane");
 const selectSnakeButton = requireElement<HTMLButtonElement>("#select-snake");
 const selectBridgeButton = requireElement<HTMLButtonElement>("#select-bridge");
 const selectPixelButton = requireElement<HTMLButtonElement>("#select-pixel");
+const selectCribbageButton = requireElement<HTMLButtonElement>("#select-cribbage");
 const homeButton = requireElement<HTMLButtonElement>("#home");
 const fullscreenButton = requireElement<HTMLButtonElement>("#fullscreen");
 const rollButton = requireElement<HTMLElement>("#roll");
@@ -491,6 +493,7 @@ const recordMessage = requireElement<HTMLElement>("#record-message");
 const recordNameInput = requireElement<HTMLInputElement>("#record-name");
 const ctx = requireCanvasContext(canvas);
 const breakoutGame = initBreakout();
+const cribbageGame = initCribbage();
 
 const artUrls = [
   "/assets/girl-with-pearl-earring.jpg",
@@ -569,8 +572,8 @@ let snakeLastShotBank = 0;
 let snakeJoystickPointerId: number | null = null;
 let snakeJoystickPulseTimer = 0;
 let lastSnakeShootTime = 0;
-let reportGame: "jumpy-plane" | "shooting-snakes" | "glass-bridge" | "pixel-wars" | "breakout" = "jumpy-plane";
-let reportReturnState: "plane-options" | "snake-options" | "bridge-options" | "pixel-options" | "breakout-options" = "plane-options";
+let reportGame: "jumpy-plane" | "shooting-snakes" | "glass-bridge" | "pixel-wars" | "breakout" | "digital-cribbage" = "jumpy-plane";
+let reportReturnState: "plane-options" | "snake-options" | "bridge-options" | "pixel-options" | "breakout-options" | "cribbage-options" = "plane-options";
 let snakeLocalLongest = 3;
 let snakeTodayLongest = 0;
 let snakeServerLongest = 0;
@@ -2610,8 +2613,8 @@ function showBridgeOptions() {
 }
 
 function showReportIssue(
-  game: "jumpy-plane" | "shooting-snakes" | "glass-bridge" | "pixel-wars" | "breakout",
-  returnState: "plane-options" | "snake-options" | "bridge-options" | "pixel-options" | "breakout-options",
+  game: "jumpy-plane" | "shooting-snakes" | "glass-bridge" | "pixel-wars" | "breakout" | "digital-cribbage",
+  returnState: "plane-options" | "snake-options" | "bridge-options" | "pixel-options" | "breakout-options" | "cribbage-options",
 ) {
   reportGame = game;
   reportReturnState = returnState;
@@ -2648,6 +2651,9 @@ function returnFromReportIssue() {
   if (reportReturnState === "breakout-options") {
     reportPanel.hidden = true;
     window.dispatchEvent(new CustomEvent("breakout-restore-report"));
+  } else if (reportReturnState === "cribbage-options") {
+    reportPanel.hidden = true;
+    window.dispatchEvent(new CustomEvent("cribbage-restore-report"));
   } else if (reportReturnState === "pixel-options") {
     showPixelOptions();
   } else if (reportReturnState === "bridge-options") {
@@ -4958,7 +4964,7 @@ function setBridgeSound(enabled: boolean) {
   updateSoundButtons();
 }
 
-async function submitIssue(game: "jumpy-plane" | "shooting-snakes" | "glass-bridge" | "pixel-wars" | "breakout", message: string) {
+async function submitIssue(game: "jumpy-plane" | "shooting-snakes" | "glass-bridge" | "pixel-wars" | "breakout" | "digital-cribbage", message: string) {
   const response = await fetch(`/api/issues/${game}`, {
     body: JSON.stringify({
       message,
@@ -6927,6 +6933,7 @@ restartButton.addEventListener("click", () => {
 homeButton.addEventListener("click", () => {
   leaveSnakeRoom();
   leavePixelWarsNetwork();
+  cribbageGame.close();
   reset("platform");
 });
 selectPlaneButton.addEventListener("click", () => {
@@ -6943,6 +6950,11 @@ selectBridgeButton.addEventListener("click", () => {
   showBridgeMenu();
 });
 selectPixelButton.addEventListener("click", showPixelMenu);
+selectCribbageButton.addEventListener("click", () => {
+  leaveSnakeRoom();
+  leavePixelWarsNetwork();
+  cribbageGame.open();
+});
 snakeOptionsButton.addEventListener("click", showSnakeOptions);
 snakeMenuBackButton.addEventListener("click", () => reset("platform"));
 snakeOptionsBackButton.addEventListener("click", showSnakeMenu);
@@ -6969,6 +6981,10 @@ pixelReportIssueButton.addEventListener("click", () => showReportIssue("pixel-wa
 window.addEventListener("breakout-report-issue", () => {
   breakoutGame.prepareReport();
   showReportIssue("breakout", "breakout-options");
+});
+window.addEventListener("cribbage-report-issue", () => {
+  cribbageGame.prepareReport();
+  showReportIssue("digital-cribbage", "cribbage-options");
 });
 pixelRefreshLobbiesButton.addEventListener("click", () => void loadPixelLobbies());
 pixelCreateLobbyButton.addEventListener("click", () => void createPixelLobby());

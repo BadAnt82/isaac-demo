@@ -141,10 +141,177 @@ button:focus-visible {
   box-shadow: 0 0 10px rgba(141, 122, 255, .7);
 }
 
+.tile-cribbage {
+  position: relative;
+  display: flex;
+  width: 92px;
+  height: 52px;
+  align-items: center;
+  justify-content: center;
+}
+
+.tile-cribbage i {
+  display: grid;
+  width: 30px;
+  height: 42px;
+  place-items: center;
+  border: 1px solid #2a3e69;
+  border-radius: 4px;
+  color: #17315c;
+  background: #fff8e9;
+  box-shadow: 0 5px 8px rgba(2, 9, 22, .28);
+  font-size: 15px;
+  font-style: normal;
+  font-weight: 900;
+}
+
+.tile-cribbage i:nth-child(1) { transform: rotate(-12deg) translateX(10px); color: #be3d5d; }
+.tile-cribbage i:nth-child(2) { z-index: 1; transform: translateY(-2px); }
+.tile-cribbage i:nth-child(3) { transform: rotate(12deg) translateX(-10px); color: #be3d5d; }
+
 .breakout-menu-panel p,
 .breakout-options-panel p,
 .breakout-checkpoint-panel p,
 .breakout-dead-panel p { max-width: 32rem; }
+
+.overlay.is-cribbage {
+  color: #f4f2ff;
+  background:
+    radial-gradient(circle at 18% 16%, rgba(255, 189, 90, .2), transparent 30%),
+    radial-gradient(circle at 84% 82%, rgba(85, 230, 255, .16), transparent 34%),
+    linear-gradient(145deg, rgba(19, 24, 56, .96), rgba(36, 18, 49, .95));
+}
+
+.cribbage-menu-panel,
+.cribbage-options-panel,
+.cribbage-board-panel,
+.cribbage-round-panel { width: min(100%, 800px); }
+
+.cribbage-menu-panel > p,
+.cribbage-options-panel > p { max-width: 38rem; }
+
+.cribbage-setup {
+  display: grid;
+  width: min(100%, 620px);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  text-align: left;
+}
+
+.cribbage-setup label,
+.cribbage-player-names label {
+  display: grid;
+  gap: 6px;
+  color: #dce8ff;
+  font-size: .8rem;
+  font-weight: 800;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.cribbage-setup select,
+.cribbage-player-names input {
+  min-height: 42px;
+  padding: 0 11px;
+  border: 1px solid rgba(177, 202, 255, .45);
+  border-radius: 7px;
+  color: #f4f2ff;
+  background: rgba(7, 13, 35, .76);
+  font: inherit;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.cribbage-player-names {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.cribbage-mode-note { color: #b7c7ed; font-size: .82rem; }
+
+.cribbage-board-header {
+  display: flex;
+  width: 100%;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.cribbage-board-header h1 { margin: 0; }
+.cribbage-board-header span { color: #a9c8ff; font-size: .82rem; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
+
+.cribbage-scoreboard {
+  display: grid;
+  width: 100%;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 8px;
+}
+
+.cribbage-score,
+.cribbage-table > div,
+.cribbage-round-scores > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid rgba(177, 202, 255, .22);
+  border-radius: 8px;
+  color: #c6d8ff;
+  background: rgba(7, 13, 35, .55);
+}
+
+.cribbage-score.is-active { border-color: #ffbd5a; box-shadow: 0 0 16px rgba(255, 189, 90, .2); }
+.cribbage-score strong { color: #fff; font-size: 1.15rem; }
+.cribbage-status { min-height: 1.25em; margin: 0; color: #ffdc94; font-weight: 700; }
+
+.cribbage-table {
+  display: grid;
+  width: 100%;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.cribbage-table > div { display: grid; justify-items: start; gap: 4px; }
+.cribbage-table span { color: #93acd6; font-size: .7rem; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; }
+.cribbage-table strong { color: #fff; }
+.cribbage-board-panel h2 { margin: 2px 0 0; color: #fff; font-size: 1.15rem; text-align: center; }
+
+.cribbage-hand {
+  display: flex;
+  min-height: 116px;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 10px;
+}
+
+.cribbage-card {
+  display: grid;
+  width: 62px;
+  height: 92px;
+  min-height: 0;
+  grid-template-rows: 1fr auto;
+  place-items: center;
+  padding: 8px 6px;
+  border: 2px solid #d6d8e4;
+  border-radius: 9px;
+  color: #13264a;
+  background: linear-gradient(160deg, #fffdf4, #e6e9f4);
+  box-shadow: 0 9px 14px rgba(1, 5, 18, .3);
+  font-size: 1.45rem;
+  line-height: 1;
+}
+
+.cribbage-card b { font-size: 1.15rem; }
+.cribbage-card.red { color: #be3d5d; }
+.cribbage-card.is-selected { transform: translateY(-10px); border-color: #ffbd5a; box-shadow: 0 13px 18px rgba(255, 189, 90, .32); }
+.cribbage-card:disabled { opacity: .5; }
+
+.cribbage-round-scores { display: grid; width: min(100%, 420px); gap: 8px; }
+.cribbage-round-scores strong { color: #fff; }
 
 .hud {
   position: absolute;
@@ -1436,6 +1603,14 @@ body.fullscreen-fallback-active {
     transform: scale(0.44);
     transform-origin: center;
   }
+
+  .cribbage-setup,
+  .cribbage-player-names { grid-template-columns: 1fr; }
+
+  .cribbage-table { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .cribbage-board-header { align-items: start; flex-direction: column; gap: 2px; }
+  .cribbage-hand { gap: 5px; }
+  .cribbage-card { width: 54px; height: 82px; }
 
   .tile-scores {
     gap: 2px;
