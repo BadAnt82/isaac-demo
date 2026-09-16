@@ -82,12 +82,14 @@ export function initBreakout() {
       dead.hidden = true;
       overlay.hidden = false;
       overlay.classList.add("is-platform");
+      overlay.classList.remove("is-breakout");
       platform.hidden = false;
       homeButton.hidden = true;
       return;
     }
     overlay.hidden = false;
     overlay.classList.remove("is-platform");
+    overlay.classList.add("is-breakout");
     platform.hidden = true;
     menu.hidden = next !== "menu";
     options.hidden = next !== "options";
@@ -120,6 +122,7 @@ export function initBreakout() {
     dead.hidden = true;
     overlay.hidden = false;
     overlay.classList.add("is-platform");
+    overlay.classList.remove("is-breakout");
     platform.hidden = false;
     homeButton.hidden = true;
   }

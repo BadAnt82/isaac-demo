@@ -93,7 +93,7 @@ button:focus-visible {
 
 #breakout-canvas {
   position: absolute;
-  z-index: 4;
+  z-index: 0;
   inset: 0;
   display: block;
   width: 100%;
@@ -460,6 +460,11 @@ body.fullscreen-fallback-active {
     linear-gradient(90deg, rgba(83, 211, 255, 0.13) 1px, transparent 1px),
     linear-gradient(180deg, rgba(6, 17, 34, 0.96), rgba(13, 24, 48, 0.9));
   background-size: 36px 36px, 36px 36px, 100% 100%;
+}
+
+.overlay.is-breakout {
+  color: #edf7ff;
+  background: linear-gradient(180deg, rgba(8, 18, 48, 0.46), rgba(9, 10, 30, 0.66));
 }
 
 .overlay[hidden],
