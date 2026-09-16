@@ -1,4 +1,5 @@
 import "./styles.css";
+import { initBreakout } from "./breakout";
 
 type GameState =
   | "platform"
@@ -489,6 +490,7 @@ const recordForm = requireElement<HTMLFormElement>(".record-card");
 const recordMessage = requireElement<HTMLElement>("#record-message");
 const recordNameInput = requireElement<HTMLInputElement>("#record-name");
 const ctx = requireCanvasContext(canvas);
+const breakoutGame = initBreakout();
 
 const artUrls = [
   "/assets/girl-with-pearl-earring.jpg",
@@ -567,8 +569,8 @@ let snakeLastShotBank = 0;
 let snakeJoystickPointerId: number | null = null;
 let snakeJoystickPulseTimer = 0;
 let lastSnakeShootTime = 0;
-let reportGame: "jumpy-plane" | "shooting-snakes" | "glass-bridge" | "pixel-wars" = "jumpy-plane";
-let reportReturnState: "plane-options" | "snake-options" | "bridge-options" | "pixel-options" = "plane-options";
+let reportGame: "jumpy-plane" | "shooting-snakes" | "glass-bridge" | "pixel-wars" | "breakout" = "jumpy-plane";
+let reportReturnState: "plane-options" | "snake-options" | "bridge-options" | "pixel-options" | "breakout-options" = "plane-options";
 let snakeLocalLongest = 3;
 let snakeTodayLongest = 0;
 let snakeServerLongest = 0;
@@ -2608,8 +2610,8 @@ function showBridgeOptions() {
 }
 
 function showReportIssue(
-  game: "jumpy-plane" | "shooting-snakes" | "glass-bridge" | "pixel-wars",
-  returnState: "plane-options" | "snake-options" | "bridge-options" | "pixel-options",
+  game: "jumpy-plane" | "shooting-snakes" | "glass-bridge" | "pixel-wars" | "breakout",
+  returnState: "plane-options" | "snake-options" | "bridge-options" | "pixel-options" | "breakout-options",
 ) {
   reportGame = game;
   reportReturnState = returnState;
@@ -2643,7 +2645,10 @@ function showReportIssue(
 }
 
 function returnFromReportIssue() {
-  if (reportReturnState === "pixel-options") {
+  if (reportReturnState === "breakout-options") {
+    reportPanel.hidden = true;
+    window.dispatchEvent(new CustomEvent("breakout-restore-report"));
+  } else if (reportReturnState === "pixel-options") {
     showPixelOptions();
   } else if (reportReturnState === "bridge-options") {
     showBridgeOptions();
@@ -4957,11 +4962,18 @@ function setBridgeSound(enabled: boolean) {
   updateSoundButtons();
 }
 
-async function submitIssue(game: "jumpy-plane" | "shooting-snakes" | "glass-bridge" | "pixel-wars", message: string) {
+async function submitIssue(game: "jumpy-plane" | "shooting-snakes" | "glass-bridge" | "pixel-wars" | "breakout", message: string) {
   const response = await fetch(`/api/issues/${game}`, {
     body: JSON.stringify({
       message,
       page: window.location.href,
+      referrer: document.referrer,
+      screen: `${window.screen.width}x${window.screen.height}`,
+      viewport: `${window.innerWidth}x${window.innerHeight}`,
+      language: navigator.language,
+      platform: navigator.platform,
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      online: navigator.onLine,
       userAgent: navigator.userAgent,
     }),
     cache: "no-store",
@@ -6972,6 +6984,10 @@ pixelOptionsButton.addEventListener("click", showPixelOptions);
 pixelMenuBackButton.addEventListener("click", handlePixelMenuBack);
 pixelOptionsBackButton.addEventListener("click", showPixelMenu);
 pixelReportIssueButton.addEventListener("click", () => showReportIssue("pixel-wars", "pixel-options"));
+window.addEventListener("breakout-report-issue", () => {
+  breakoutGame.prepareReport();
+  showReportIssue("breakout", "breakout-options");
+});
 pixelRefreshLobbiesButton.addEventListener("click", () => void loadPixelLobbies());
 pixelCreateLobbyButton.addEventListener("click", () => void createPixelLobby());
 pixelBotsInput.addEventListener("input", syncPixelConfigFromInputs);

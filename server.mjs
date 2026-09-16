@@ -8,6 +8,7 @@ const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const distDir = resolve(__dirname, "dist");
 const storePath = process.env.SCORE_STORE_PATH || resolve(__dirname, "data", "high-scores.json");
 const snakeStorePath = process.env.SNAKE_SCORE_STORE_PATH || resolve(__dirname, "data", "snake-high-scores.json");
+const breakoutStorePath = process.env.BREAKOUT_SCORE_STORE_PATH || resolve(__dirname, "data", "breakout-high-scores.json");
 const bridgeTileStorePath = process.env.BRIDGE_TILE_SCORE_STORE_PATH || resolve(__dirname, "data", "glass-bridge-tile-scores.json");
 const bridgePointStorePath =
   process.env.BRIDGE_POINT_SCORE_STORE_PATH || resolve(__dirname, "data", "glass-bridge-point-scores.json");
@@ -17,6 +18,7 @@ const issueStorePaths = {
   "glass-bridge": process.env.GLASS_BRIDGE_ISSUE_STORE_PATH || resolve(__dirname, "data", "glass-bridge-issues.json"),
   "jumpy-plane": process.env.JUMPY_PLANE_ISSUE_STORE_PATH || resolve(__dirname, "data", "jumpy-plane-issues.json"),
   "pixel-wars": process.env.PIXEL_WARS_ISSUE_STORE_PATH || resolve(__dirname, "data", "pixel-wars-issues.json"),
+  breakout: process.env.BREAKOUT_ISSUE_STORE_PATH || resolve(__dirname, "data", "breakout-issues.json"),
   "shooting-snakes": process.env.SHOOTING_SNAKES_ISSUE_STORE_PATH || resolve(__dirname, "data", "shooting-snakes-issues.json"),
 };
 const bridgeJackpotSeed = 20;
@@ -1433,6 +1435,11 @@ async function handleApi(request, response) {
     return true;
   }
 
+  if (request.url === "/api/breakout-high-scores" && request.method === "GET") {
+    sendJson(response, 200, readScores(breakoutStorePath));
+    return true;
+  }
+
   if (request.url === "/api/glass-bridge-tile-scores" && request.method === "GET") {
     sendJson(response, 200, readScores(bridgeTileStorePath));
     return true;
@@ -1460,6 +1467,11 @@ async function handleApi(request, response) {
 
   if (request.url === "/api/snake-high-scores" && request.method === "POST") {
     await handleScorePost(request, response, snakeStorePath);
+    return true;
+  }
+
+  if (request.url === "/api/breakout-high-scores" && request.method === "POST") {
+    await handleScorePost(request, response, breakoutStorePath);
     return true;
   }
 
@@ -1552,9 +1564,16 @@ async function handleIssuePost(request, response, game) {
       createdAt: new Date().toISOString(),
       game,
       id: `${game}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+      language: cleanIssueText(body.language).slice(0, 32),
       message,
+      online: body.online === true,
       page: cleanIssueText(body.page).slice(0, 240),
+      platform: cleanIssueText(body.platform).slice(0, 80),
+      referrer: cleanIssueText(body.referrer).slice(0, 240),
+      screen: cleanIssueText(body.screen).slice(0, 32),
+      timezone: cleanIssueText(body.timezone).slice(0, 80),
       userAgent: cleanIssueText(body.userAgent).slice(0, 240),
+      viewport: cleanIssueText(body.viewport).slice(0, 32),
     };
     issues.push(issue);
     writeIssues(issues.slice(-500), path);

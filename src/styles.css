@@ -91,6 +91,56 @@ button:focus-visible {
   touch-action: none;
 }
 
+#breakout-canvas {
+  position: absolute;
+  z-index: 4;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: #0b1230;
+  touch-action: none;
+  outline: none;
+}
+
+.tile-breakout {
+  position: relative;
+  display: grid;
+  width: 92px;
+  height: 48px;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 4px;
+  align-items: center;
+  justify-items: center;
+}
+
+.tile-breakout i {
+  display: block;
+  width: 14px;
+  height: 10px;
+  border: 1px solid #1f4a8c;
+  border-radius: 3px;
+  background: linear-gradient(135deg, #55e6ff, #8d7aff);
+  box-shadow: 0 0 10px rgba(85, 230, 255, .55);
+}
+
+.tile-breakout i:nth-child(2n) { background: linear-gradient(135deg, #ff62c8, #ffbd5a); }
+.tile-breakout b {
+  position: absolute;
+  bottom: 1px;
+  left: 20px;
+  display: block;
+  width: 52px;
+  height: 6px;
+  border-radius: 6px;
+  background: #1e2f63;
+  box-shadow: 0 0 10px rgba(141, 122, 255, .7);
+}
+
+.breakout-menu-panel p,
+.breakout-options-panel p,
+.breakout-dead-panel p { max-width: 32rem; }
+
 .hud {
   position: absolute;
   z-index: 8;
