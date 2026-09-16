@@ -4,7 +4,7 @@ type PowerType = "paddle" | "multi" | "life";
 type Brick = { x: number; y: number; width: number; height: number; health: number; maxHealth: number; power?: PowerType };
 type Ball = { x: number; y: number; vx: number; vy: number; radius: number; speed: number; hits: number };
 type Drop = { x: number; y: number; vy: number; type: PowerType };
-type Progress = { currentLevel: number; highestLevel: number };
+type Progress = { currentLevel: number; highestLevel: number; lives: number };
 
 const WIDTH = 960;
 const HEIGHT = 540;
@@ -22,9 +22,10 @@ function readProgress(): Progress {
     const raw = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
     const currentLevel = Number.isFinite(raw.currentLevel) ? Math.max(1, Math.floor(raw.currentLevel)) : 1;
     const highestLevel = Number.isFinite(raw.highestLevel) ? Math.max(currentLevel, Math.floor(raw.highestLevel)) : currentLevel;
-    return { currentLevel, highestLevel };
+    const lives = Number.isFinite(raw.lives) ? Math.max(1, Math.min(5, Math.floor(raw.lives))) : 3;
+    return { currentLevel, highestLevel, lives };
   } catch {
-    return { currentLevel: 1, highestLevel: 1 };
+    return { currentLevel: 1, highestLevel: 1, lives: 3 };
   }
 }
 
@@ -64,6 +65,7 @@ export function initBreakout() {
   const dead = el<HTMLElement>("#breakout-dead-panel");
   const menuLevel = el<HTMLElement>("#breakout-menu-level");
   const menuHighest = el<HTMLElement>("#breakout-menu-highest");
+  const menuLives = el<HTMLElement>("#breakout-menu-lives");
   const tileLevel = el<HTMLElement>("#breakout-tile-level");
   const progressCopy = el<HTMLElement>("#breakout-progress-copy");
   const deadTitle = el<HTMLElement>("#breakout-dead-title");
@@ -101,8 +103,9 @@ export function initBreakout() {
     if (next === "menu") {
       menuLevel.textContent = `${state.progress.currentLevel}`;
       menuHighest.textContent = `${state.progress.highestLevel}`;
+      menuLives.textContent = `${state.progress.lives}`;
       tileLevel.textContent = `${state.progress.highestLevel}`;
-      progressCopy.textContent = state.progress.currentLevel > 1 ? `Resume at level ${state.progress.currentLevel}. Break the wall.` : "Break the wall. Keep the ball alive.";
+      progressCopy.textContent = state.progress.currentLevel > 1 ? `Resume at level ${state.progress.currentLevel} with ${state.progress.lives} ${state.progress.lives === 1 ? "life" : "lives"}.` : "Start at level 1. Keep the ball alive.";
     }
     if (next === "running") canvas.focus();
   }
@@ -193,7 +196,8 @@ export function initBreakout() {
   function start() {
     state.progress = readProgress();
     state.score = 0;
-    startLevel(state.progress.currentLevel, true);
+    state.lives = state.progress.lives;
+    startLevel(state.progress.currentLevel);
   }
 
   function postHighest() {
@@ -215,6 +219,9 @@ export function initBreakout() {
     state.balls = [];
     state.lives -= 1;
     if (state.lives <= 0) {
+      state.progress.currentLevel = 1;
+      state.progress.lives = 3;
+      saveProgress(state.progress);
       deadTitle.textContent = "Game over";
       deadMessage.textContent = `The wall wins this round. You reached level ${state.level}.`;
       endGame();
@@ -307,6 +314,7 @@ export function initBreakout() {
     if (state.bricks.length === 0) {
       state.progress.currentLevel = state.level + 1;
       state.progress.highestLevel = Math.max(state.progress.highestLevel, state.level + 1);
+      state.progress.lives = state.lives;
       saveProgress(state.progress);
       tileLevel.textContent = `${state.progress.highestLevel}`;
       postHighest();
@@ -361,7 +369,13 @@ export function initBreakout() {
   el<HTMLButtonElement>("#breakout-options").addEventListener("click", () => setPanels("options"));
   el<HTMLButtonElement>("#breakout-options-back").addEventListener("click", () => setPanels("menu"));
   el<HTMLButtonElement>("#breakout-menu-back").addEventListener("click", close);
-  el<HTMLButtonElement>("#breakout-restart").addEventListener("click", () => startLevel(state.level, true));
+  el<HTMLButtonElement>("#breakout-restart").addEventListener("click", () => {
+    state.progress.currentLevel = 1;
+    state.progress.lives = 3;
+    saveProgress(state.progress);
+    state.score = 0;
+    startLevel(1, true);
+  });
   el<HTMLButtonElement>("#breakout-dead-back").addEventListener("click", close);
   el<HTMLButtonElement>("#breakout-report-issue").addEventListener("click", () => window.dispatchEvent(new CustomEvent("breakout-report-issue")));
   homeButton.addEventListener("click", (event) => { if (state.value !== "closed") { event.stopImmediatePropagation(); close(); } });
