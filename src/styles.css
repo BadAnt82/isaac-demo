@@ -229,6 +229,18 @@ button:focus-visible {
   gap: 12px;
 }
 
+.cribbage-player-names > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(90px, .8fr) minmax(90px, .8fr);
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid rgba(177, 202, 255, .2);
+  border-radius: 8px;
+  background: rgba(7, 13, 35, .36);
+}
+
+.cribbage-player-names [data-team-slot][hidden] { display: none; }
+
 .cribbage-mode-note { color: #b7c7ed; font-size: .82rem; }
 
 .cribbage-board-header {
@@ -1606,6 +1618,9 @@ body.fullscreen-fallback-active {
 
   .cribbage-setup,
   .cribbage-player-names { grid-template-columns: 1fr; }
+
+  .cribbage-player-names > div { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .cribbage-player-names > div > label:first-child { grid-column: 1 / -1; }
 
   .cribbage-table { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .cribbage-board-header { align-items: start; flex-direction: column; gap: 2px; }

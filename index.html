@@ -353,21 +353,22 @@
             <h1>Digital Cribbage</h1>
             <p>Play a hot-seat cribbage match. Pass the device after each turn.</p>
             <div class="cribbage-setup">
-              <label>Game mode<select id="cribbage-mode"><option value="classic">Classic cribbage (playable)</option><option value="tournament" disabled>Tournament mode (coming soon)</option><option value="cutthroat" disabled>Cutthroat (coming soon)</option><option value="partnership" disabled>Partnership (coming soon)</option></select></label>
+              <label>Game variant<select id="cribbage-mode"><option value="standard">Standard Cribbage</option><option value="crazy">Crazy Cribbage</option></select></label>
               <label>Players<select id="cribbage-player-count"><option value="2">2 players</option><option value="3">3 players</option><option value="4">4 players</option></select></label>
+              <label>Play format<select id="cribbage-format"><option value="individual">Individual</option><option value="team" disabled>2 vs 2 teams (choose 4 players)</option></select></label>
               <div id="cribbage-player-names" class="cribbage-player-names">
-                <label data-player-slot="0">Player 1<input id="cribbage-player-1" type="text" maxlength="18" value="Player 1" /></label>
-                <label data-player-slot="1">Player 2<input id="cribbage-player-2" type="text" maxlength="18" value="Player 2" /></label>
-                <label data-player-slot="2" hidden>Player 3<input id="cribbage-player-3" type="text" maxlength="18" value="Player 3" /></label>
-                <label data-player-slot="3" hidden>Player 4<input id="cribbage-player-4" type="text" maxlength="18" value="Player 4" /></label>
+                <div data-player-slot="0"><label>Player 1<input id="cribbage-player-1" type="text" maxlength="18" value="Player 1" /></label><label>Control<select id="cribbage-control-1"><option value="human">Human</option><option value="ai">AI</option></select></label><label data-team-slot hidden>Team<select id="cribbage-team-1"><option value="1">Team 1</option><option value="2">Team 2</option></select></label></div>
+                <div data-player-slot="1"><label>Player 2<input id="cribbage-player-2" type="text" maxlength="18" value="Player 2" /></label><label>Control<select id="cribbage-control-2"><option value="human">Human</option><option value="ai">AI</option></select></label><label data-team-slot hidden>Team<select id="cribbage-team-2"><option value="1">Team 1</option><option value="2">Team 2</option></select></label></div>
+                <div data-player-slot="2" hidden><label>Player 3<input id="cribbage-player-3" type="text" maxlength="18" value="Player 3" /></label><label>Control<select id="cribbage-control-3"><option value="human">Human</option><option value="ai">AI</option></select></label><label data-team-slot hidden>Team<select id="cribbage-team-3"><option value="1">Team 1</option><option value="2">Team 2</option></select></label></div>
+                <div data-player-slot="3" hidden><label>Player 4<input id="cribbage-player-4" type="text" maxlength="18" value="Player 4" /></label><label>Control<select id="cribbage-control-4"><option value="human">Human</option><option value="ai">AI</option></select></label><label data-team-slot hidden>Team<select id="cribbage-team-4"><option value="1">Team 1</option><option value="2">Team 2</option></select></label></div>
               </div>
             </div>
-            <p class="cribbage-mode-note">More game modes are reserved here for future releases.</p>
-            <div class="menu-actions"><button id="cribbage-start" type="button">Deal game</button><button id="cribbage-options" type="button">How to play</button><button id="cribbage-menu-back" type="button">Back to games</button></div>
+            <p id="cribbage-mode-note" class="cribbage-mode-note">Standard rules: choose the crib cards, peg to 31, then score each hand.</p>
+            <div class="menu-actions"><button id="cribbage-start" type="button">Deal game</button><button id="cribbage-resume" type="button" disabled>Resume saved match</button><button id="cribbage-options" type="button">How to play</button><button id="cribbage-menu-back" type="button">Back to games</button></div>
           </div>
           <div id="cribbage-options-panel" class="overlay-panel options-panel cribbage-options-panel" hidden>
             <h1>Digital Cribbage</h1>
-            <p>Choose two cards for the crib, then take turns pegging without going over 31. Fifteen, pairs, runs, and 31 score points. The first player to 121 wins.</p>
+            <p>Standard and Crazy Cribbage both race to 121. Human seats only see their own hand when it is their turn; AI seats use the same rules and available information. Crazy Cribbage gives the dealer an eight-card pool to split into a four-card hand and four-card crib.</p>
             <button id="cribbage-report-issue" type="button">Report issue</button><button id="cribbage-options-back" type="button">Back</button>
           </div>
           <div id="cribbage-board-panel" class="overlay-panel cribbage-board-panel" hidden>
