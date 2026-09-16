@@ -138,6 +138,7 @@ export function initCribbage() {
   const networkStartButton = element<HTMLButtonElement>("#cribbage-network-start");
   const cancelGameButton = element<HTMLButtonElement>("#cribbage-cancel-game");
   const pegs = element<HTMLElement>("#cribbage-pegs");
+  const pegHoles = element<HTMLElement>("#cribbage-peg-holes");
   const playedCards = element<HTMLElement>("#cribbage-played-cards");
   const state = {
     view: "closed" as CribbageView,
@@ -263,7 +264,8 @@ export function initCribbage() {
   function discardCount(playerIndex: number) { const player = state.players[playerIndex]; if (state.variant === "crazy" && playerIndex === state.dealer) return 0; return Math.max(0, player.hand.length - 4); }
 
   function renderPegTrack() {
-    const entries = state.players.map((player, index) => { const peg = document.createElement("span"); peg.className = `cribbage-peg peg-${index}`; peg.style.left = `${Math.min(100, (playerScore(player) / 121) * 100)}%`; peg.textContent = `${index + 1}`; peg.title = `${player.name}: ${playerScore(player)} points`; return peg; });
+    if (!pegHoles.childElementCount) { for (let score = 0; score <= 121; score += 1) { const hole = document.createElement("span"); hole.className = "cribbage-peg-hole"; const row = score <= 60 ? 1 : 2; const column = score <= 60 ? score + 1 : 122 - score; hole.style.gridRow = String(row); hole.style.gridColumn = String(column); hole.title = `${score} points`; pegHoles.append(hole); } }
+    const entries = state.players.map((player, index) => { const peg = document.createElement("span"); const score = Math.max(0, Math.min(121, playerScore(player))); const row = score <= 60 ? 0 : 1; const column = score <= 60 ? score : 60 - (score - 61); peg.className = `cribbage-peg peg-${index}`; peg.style.left = `${(column / 60) * 100}%`; peg.style.top = `${row * 31 + 2}px`; peg.textContent = `${index + 1}`; peg.title = `${player.name}: ${score} points`; return peg; });
     pegs.replaceChildren(...entries);
     const groups = state.players.map((player, index) => { const row = document.createElement("div"); row.className = "cribbage-played-row"; const label = document.createElement("strong"); label.textContent = player.name; const cards = document.createElement("span"); cards.className = "cribbage-played-list"; const records = state.pegHistory.filter((record) => record.seat === index); cards.replaceChildren(...records.map((record) => { const card = document.createElement("span"); card.className = `cribbage-played-card ${SUIT_COLORS[record.card.suit]}`; card.textContent = cardName(record.card); return card; })); row.append(label, cards); return row; });
     playedCards.replaceChildren(...groups);
