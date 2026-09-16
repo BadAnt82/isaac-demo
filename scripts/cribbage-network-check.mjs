@@ -16,5 +16,7 @@ try {
   host.send(JSON.stringify({ type: "cribbage-state", snapshot: { players: [{ hand: [{ id: "h" }] }, { hand: [{ id: "g" }] }], crib: [{ id: "c" }], phase: "discard" } }));
   const state = await next(guest, "cribbage-state"); if (state.snapshot.players[0].hand.length !== 0 || state.snapshot.players[1].hand.length !== 1 || state.snapshot.crib[0].hidden !== true) throw new Error("Private hand redaction failed");
   guest.send(JSON.stringify({ type: "cribbage-quit" })); const quit = await next(host, "cribbage-player-quit"); if (quit.seat !== 1) throw new Error("Quit seat mismatch");
+  host.send(JSON.stringify({ type: "cribbage-create", config: { variant: "crazy", playerCount: 2, format: "individual", seats: [{ name: "Host", control: "human" }, { name: "Second", control: "human" }] } }));
+  const second = await next(host, "cribbage-created"); if (second.gameId === created.gameId) throw new Error("Creator could not create a second game");
   host.close(); guest.close(); console.log("Cribbage network protocol passed: lobby, join, private state, and quit takeover.");
 } finally { server.kill(); }
