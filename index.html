@@ -13,7 +13,7 @@
     <main class="shell" aria-label="Bad Ant Games arcade collection">
       <section class="game-frame">
         <canvas id="game" aria-label="Game canvas"></canvas>
-        <canvas id="breakout-canvas" aria-label="Breakout game canvas" hidden></canvas>
+        <canvas id="breakout-canvas" aria-label="Tile Breaker game canvas" hidden></canvas>
         <div class="hud" aria-live="polite">
           <div class="score-panel">
             <span class="label">Score</span>
@@ -152,9 +152,9 @@
                   </dl>
                 </span>
               </button>
-              <button id="select-breakout" class="game-tile breakout-tile" type="button" aria-label="Open Breakout">
+              <button id="select-breakout" class="game-tile breakout-tile" type="button" aria-label="Open Tile Breaker">
                 <span class="tile-breakout" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><b></b></span>
-                <span class="tile-details"><strong>Breakout</strong><dl class="tile-scores" aria-label="Breakout progress"><div><dt>Highest level</dt><dd id="breakout-tile-level">1</dd></div><div><dt>Current</dt><dd>Endless</dd></div><div><dt>Power-ups</dt><dd>3 types</dd></div></dl></span>
+                <span class="tile-details"><strong>Tile Breaker</strong><dl class="tile-scores" aria-label="Tile Breaker progress"><div><dt>Highest level</dt><dd id="breakout-tile-level">1</dd></div><div><dt>Current</dt><dd>Endless</dd></div><div><dt>Power-ups</dt><dd>3 types</dd></div></dl></span>
               </button>
             </div>
           </div>
@@ -338,11 +338,11 @@
             <button id="pixel-options-back" type="button">Back</button>
           </div>
           <div id="breakout-menu-panel" class="overlay-panel breakout-menu-panel" hidden>
-            <h1>Breakout</h1><p id="breakout-progress-copy">Break the wall. Keep the ball alive.</p>
-            <dl class="high-scores" aria-label="Breakout progress"><div><dt>Current level</dt><dd id="breakout-menu-level">1</dd></div><div><dt>Highest level</dt><dd id="breakout-menu-highest">1</dd></div><div><dt>Lives</dt><dd>3</dd></div></dl>
+            <h1>Tile Breaker</h1><p id="breakout-progress-copy">Break the wall. Keep the ball alive.</p>
+            <dl class="high-scores" aria-label="Tile Breaker progress"><div><dt>Current level</dt><dd id="breakout-menu-level">1</dd></div><div><dt>Highest level</dt><dd id="breakout-menu-highest">1</dd></div><div><dt>Lives</dt><dd>3</dd></div></dl>
             <div class="menu-actions"><button id="breakout-start" type="button">Start</button><button id="breakout-options" type="button">Options</button><button id="breakout-menu-back" type="button">Back to games</button></div>
           </div>
-          <div id="breakout-options-panel" class="overlay-panel options-panel" hidden><h1>Breakout Options</h1><p>Move with your mouse, touch, or arrow keys. Catch falling power-ups with the paddle.</p><button id="breakout-report-issue" type="button">Report issue</button><button id="breakout-options-back" type="button">Back</button></div>
+          <div id="breakout-options-panel" class="overlay-panel options-panel" hidden><h1>Tile Breaker Options</h1><p>Move with your mouse, touch, or arrow keys. Catch falling power-ups with the paddle.</p><button id="breakout-report-issue" type="button">Report issue</button><button id="breakout-options-back" type="button">Back</button></div>
           <div id="breakout-dead-panel" class="overlay-panel breakout-dead-panel" hidden><h1 id="breakout-dead-title">Game over</h1><p id="breakout-dead-message">The wall wins this round.</p><button id="breakout-restart" type="button">Try again</button><button id="breakout-dead-back" type="button">Back to games</button></div>
           <div id="report-panel" class="overlay-panel options-panel report-panel" hidden>
             <h1>Report Issue</h1>

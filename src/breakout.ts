@@ -13,7 +13,7 @@ const colors = ["#55e6ff", "#8d7aff", "#ff62c8", "#ffbd5a", "#8dff72", "#56a8ff"
 
 function el<T extends HTMLElement>(selector: string): T {
   const node = document.querySelector<T>(selector);
-  if (!node) throw new Error(`Missing Breakout element ${selector}`);
+  if (!node) throw new Error(`Missing Tile Breaker element ${selector}`);
   return node;
 }
 
@@ -54,7 +54,7 @@ export function initBreakout() {
   const gameCanvas = el<HTMLCanvasElement>("#game");
   const canvas = el<HTMLCanvasElement>("#breakout-canvas");
   const context = canvas.getContext("2d");
-  if (!context) throw new Error("Breakout canvas is unavailable");
+  if (!context) throw new Error("Tile Breaker canvas is unavailable");
   const ctx = context;
   const platform = el<HTMLElement>("#platform-panel");
   const overlay = el<HTMLElement>("#overlay");
