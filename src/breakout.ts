@@ -2,7 +2,7 @@ type BreakoutState = "closed" | "menu" | "options" | "running" | "dead";
 type PowerType = "paddle" | "multi" | "life";
 
 type Brick = { x: number; y: number; width: number; height: number; health: number; maxHealth: number; power?: PowerType };
-type Ball = { x: number; y: number; vx: number; vy: number; radius: number };
+type Ball = { x: number; y: number; vx: number; vy: number; radius: number; speed: number; hits: number };
 type Drop = { x: number; y: number; vy: number; type: PowerType };
 type Progress = { currentLevel: number; highestLevel: number };
 
@@ -43,7 +43,11 @@ function seeded(level: number) {
 }
 
 function formatPower(type: PowerType) {
-  return type === "paddle" ? "W" : type === "multi" ? "×" : "+";
+  return type === "paddle" ? "W" : type === "multi" ? "x" : "+";
+}
+
+function powerColor(type: PowerType) {
+  return type === "paddle" ? "#ffbd5a" : type === "multi" ? "#55e6ff" : "#8dff72";
 }
 
 export function initBreakout() {
@@ -151,7 +155,9 @@ export function initBreakout() {
   }
 
   function serveBall() {
-    state.balls = [{ x: state.paddleX, y: 462, vx: (Math.random() - 0.5) * 190, vy: -310, radius: 8 }];
+    const speed = 310;
+    const vx = (Math.random() - 0.5) * 190;
+    state.balls = [{ x: state.paddleX, y: 462, vx, vy: -Math.sqrt(speed * speed - vx * vx), radius: 8, speed, hits: 0 }];
   }
 
   function startLevel(level: number, resetLives = false) {
@@ -206,14 +212,25 @@ export function initBreakout() {
   function applyPower(type: PowerType) {
     if (type === "paddle") state.paddleBoost = 12;
     if (type === "multi") {
-      const source = state.balls[0] || { x: state.paddleX, y: 450, vx: 160, vy: -300, radius: 8 };
-      while (state.balls.length < 3) state.balls.push({ x: source.x, y: source.y, vx: -source.vx + (state.balls.length * 55), vy: source.vy, radius: 8 });
+      const source = state.balls[0] || { x: state.paddleX, y: 450, vx: 160, vy: -300, radius: 8, speed: 340, hits: 0 };
+      while (state.balls.length < 3) {
+        const angle = Math.atan2(source.vy, -source.vx + state.balls.length * 55);
+        state.balls.push({ x: source.x, y: source.y, vx: Math.cos(angle) * source.speed, vy: Math.sin(angle) * source.speed, radius: 8, speed: source.speed, hits: source.hits });
+      }
     }
     if (type === "life") state.lives = Math.min(5, state.lives + 1);
   }
 
   function intersects(ball: Ball, brick: Brick) {
     return ball.x + ball.radius > brick.x && ball.x - ball.radius < brick.x + brick.width && ball.y + ball.radius > brick.y && ball.y - ball.radius < brick.y + brick.height;
+  }
+
+  function accelerateBall(ball: Ball) {
+    ball.hits += 1;
+    ball.speed = Math.min(1000, 310 + ball.hits * 0.69);
+    const direction = Math.atan2(ball.vy, ball.vx);
+    ball.vx = Math.cos(direction) * ball.speed;
+    ball.vy = Math.sin(direction) * ball.speed;
   }
 
   function update(dt: number) {
@@ -236,13 +253,14 @@ export function initBreakout() {
       const py = 492;
       if (ball.vy > 0 && ball.y + ball.radius >= py - 2 && ball.y - ball.radius <= py + 14 && Math.abs(ball.x - state.paddleX) <= pw / 2 + ball.radius) {
         const offset = (ball.x - state.paddleX) / (pw / 2);
-        const speed = Math.min(560, Math.max(310, Math.hypot(ball.vx, ball.vy) * 1.015));
-        ball.vx = offset * 360;
-        ball.vy = -Math.sqrt(Math.max(160 * 160, speed * speed - ball.vx * ball.vx));
+        const speed = Math.min(1000, Math.max(310, ball.speed));
+        ball.vx = offset * Math.min(420, speed * 0.78);
+        ball.vy = -Math.sqrt(Math.max(120 * 120, speed * speed - ball.vx * ball.vx));
         ball.y = py - ball.radius - 1;
       }
       for (const brick of state.bricks) {
         if (!intersects(ball, brick)) continue;
+        accelerateBall(ball);
         brick.health -= 1;
         const hitFromSide = previousX < brick.x || previousX > brick.x + brick.width;
         if (hitFromSide) ball.vx *= -1; else ball.vy *= -1;
@@ -280,17 +298,25 @@ export function initBreakout() {
     ctx.fillStyle = "rgba(86, 227, 255, .08)";
     for (let i = 0; i < 24; i += 1) { const x = (i * 127) % WIDTH; const y = 45 + ((i * 73) % 430); ctx.fillRect(x, y, 2, 2); }
     ctx.fillStyle = "#eaf7ff"; ctx.font = "700 16px Space Grotesk, sans-serif";
-    ctx.fillText(`LEVEL ${state.level}`, 26, 28); ctx.fillText(`LIVES ${"◆".repeat(Math.max(0, state.lives))}`, 150, 28); ctx.fillText(`BALLS ${state.balls.length}`, 330, 28); ctx.fillText(`SCORE ${state.score}`, 450, 28);
+    ctx.fillText(`LEVEL ${state.level}`, 26, 28); ctx.fillText(`LIVES ${"*".repeat(Math.max(0, state.lives))}`, 150, 28); ctx.fillText(`BALLS ${state.balls.length}`, 330, 28); ctx.fillText(`SCORE ${state.score}`, 450, 28); ctx.fillText(`SPD ${Math.round(state.balls[0]?.speed ?? 0)}`, 575, 28);
     if (state.paddleBoost > 0) { ctx.fillStyle = "#ffbd5a"; ctx.fillText(`WIDE ${Math.ceil(state.paddleBoost)}s`, 640, 28); }
     for (const brick of state.bricks) {
       const color = colors[Math.min(colors.length - 1, brick.maxHealth - 1)];
       ctx.shadowBlur = 15; ctx.shadowColor = color; ctx.fillStyle = color; ctx.globalAlpha = 0.28 + brick.health / (brick.maxHealth * 1.8); ctx.fillRect(brick.x, brick.y, brick.width, brick.height); ctx.globalAlpha = 1; ctx.shadowBlur = 0;
       ctx.strokeStyle = color; ctx.strokeRect(brick.x + .5, brick.y + .5, brick.width - 1, brick.height - 1);
       ctx.fillStyle = "#06101f"; ctx.font = "700 13px Space Grotesk, sans-serif"; ctx.textAlign = "center"; ctx.fillText(`${brick.health}`, brick.x + brick.width / 2, brick.y + 16); ctx.textAlign = "left";
+      if (brick.power) {
+        const badgeColor = powerColor(brick.power);
+        const pulse = 0.45 + Math.sin(performance.now() / 180) * 0.25;
+        ctx.globalAlpha = pulse; ctx.strokeStyle = badgeColor; ctx.lineWidth = 2.5; ctx.strokeRect(brick.x + 1.5, brick.y + 1.5, brick.width - 3, brick.height - 3); ctx.globalAlpha = 1;
+        ctx.fillStyle = badgeColor; ctx.beginPath(); ctx.roundRect(brick.x + brick.width - 21, brick.y + 3, 17, 16, 4); ctx.fill();
+        ctx.fillStyle = "#06101f"; ctx.font = "700 11px Space Grotesk, sans-serif"; ctx.textAlign = "center"; ctx.fillText(formatPower(brick.power), brick.x + brick.width - 12.5, brick.y + 15); ctx.textAlign = "left";
+      }
     }
     for (const drop of state.drops) { ctx.fillStyle = drop.type === "paddle" ? "#ffbd5a" : drop.type === "multi" ? "#55e6ff" : "#8dff72"; ctx.shadowBlur = 12; ctx.shadowColor = ctx.fillStyle; ctx.beginPath(); ctx.roundRect(drop.x - 14, drop.y - 10, 28, 20, 7); ctx.fill(); ctx.shadowBlur = 0; ctx.fillStyle = "#091225"; ctx.font = "700 13px sans-serif"; ctx.textAlign = "center"; ctx.fillText(formatPower(drop.type), drop.x, drop.y + 5); ctx.textAlign = "left"; }
-    const pw = state.paddleBoost > 0 ? 184 : 124; ctx.fillStyle = "#f4f1ff"; ctx.shadowBlur = 22; ctx.shadowColor = "#9d7cff"; ctx.beginPath(); ctx.roundRect(state.paddleX - pw / 2, 492, pw, 14, 7); ctx.fill(); ctx.shadowBlur = 0;
+    const pw = state.paddleBoost > 0 ? 184 : 124; const paddleGradient = ctx.createLinearGradient(state.paddleX - pw / 2, 0, state.paddleX + pw / 2, 0); paddleGradient.addColorStop(0, "#d7d3ff"); paddleGradient.addColorStop(0.5, "#ffffff"); paddleGradient.addColorStop(1, "#d7d3ff"); ctx.fillStyle = paddleGradient; ctx.shadowBlur = 22; ctx.shadowColor = "#9d7cff"; ctx.beginPath(); ctx.roundRect(state.paddleX - pw / 2, 492, pw, 14, 4); ctx.fill(); ctx.shadowBlur = 0;
     for (const ball of state.balls) { ctx.fillStyle = "#ffffff"; ctx.shadowBlur = 18; ctx.shadowColor = "#55e6ff"; ctx.beginPath(); ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI * 2); ctx.fill(); ctx.shadowBlur = 0; }
+    ctx.fillStyle = "rgba(234,247,255,.64)"; ctx.font = "600 11px Space Grotesk, sans-serif"; ctx.fillText("W  wide paddle    x  multi-ball    +  extra life", 26, 530);
   }
 
   function frame(time: number) {
