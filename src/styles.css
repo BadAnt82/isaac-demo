@@ -368,6 +368,10 @@ button:focus-visible {
 
 .cribbage-round-scores { display: grid; width: min(100%, 420px); gap: 8px; }
 .cribbage-round-scores strong { color: #fff; }
+.cribbage-round-scores > div.is-winner { border-color: rgba(255, 189, 90, .8); box-shadow: 0 0 14px rgba(255, 189, 90, .18); }
+.cribbage-round-scores > div.is-loser { border-color: rgba(177, 202, 255, .18); }
+.cribbage-round-scores em { margin-left: auto; color: #ffdc94; font-size: .68rem; font-style: normal; font-weight: 900; letter-spacing: .06em; }
+.cribbage-round-scores > div.is-loser em { color: #9fb4dd; }
 .cribbage-round-results { display: grid; width: 100%; max-height: min(42vh, 430px); grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 9px; overflow: auto; padding: 2px; text-align: left; }
 .cribbage-result-card { display: grid; align-content: start; gap: 8px; padding: 11px; border: 1px solid rgba(177, 202, 255, .28); border-radius: 9px; background: rgba(7, 13, 35, .68); }
 .cribbage-result-card h3 { margin: 0; color: #fff; font-size: .95rem; }

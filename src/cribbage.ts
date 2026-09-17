@@ -477,7 +477,8 @@ export function initCribbage() {
       const lastPeggingSeat = state.pegHistory.at(-1)?.seat ?? state.active;
       award(lastPeggingSeat, 1);
       state.peggingCallouts = [...lines, { kind: "go", label: "Go", points: 1 }];
-      state.total = 0; state.pegged = []; state.active = state.players.findIndex((candidate) => candidate.hand.length > 0);
+      state.total = 0; state.pegged = []; state.active = nextPeggingSeat(lastPeggingSeat);
+      if (state.active < 0) state.active = state.players.findIndex((candidate) => candidate.hand.length > 0);
     } else state.active = next;
     renderBoard(); saveGame(); publishNetworkState();
   }
@@ -488,7 +489,8 @@ export function initCribbage() {
       const lastPeggingSeat = state.pegHistory.at(-1)?.seat ?? state.active;
       award(lastPeggingSeat, 1);
       state.peggingCallouts = [{ kind: "go", label: "Go", points: 1 }];
-      state.total = 0; state.pegged = []; state.active = state.players.findIndex((candidate) => candidate.hand.length > 0);
+      state.total = 0; state.pegged = []; state.active = nextPeggingSeat(lastPeggingSeat);
+      if (state.active < 0) state.active = state.players.findIndex((candidate) => candidate.hand.length > 0);
     } else state.active = next;
     renderBoard(); saveGame(); publishNetworkState();
   }
@@ -510,8 +512,18 @@ export function initCribbage() {
     const teamWinner = state.teamScores[1] >= 121 ? "Team 1" : state.teamScores[2] >= 121 ? "Team 2" : "";
     state.winner = state.format === "team" ? teamWinner : winner?.name || "";
     roundTitle.textContent = state.winner ? `${state.winner} wins the game!` : "Round complete";
-    roundMessage.textContent = state.winner ? "The winning seat or team reached 121 points first." : "Scores are updated. Rotate the deal for the next round.";
-    roundScores.replaceChildren(...state.players.map((player) => { const row = document.createElement("div"); row.innerHTML = `<span>${player.name}</span><strong>${playerScore(player)} points</strong>`; return row; }));
+    if (state.winner) {
+      const localPlayer = state.network.remote ? state.players[state.network.seat] : null;
+      const localWon = localPlayer && (state.format === "team" ? `Team ${localPlayer.team}` === state.winner : localPlayer.name === state.winner);
+      roundMessage.textContent = localPlayer ? (localWon ? "You win! The game is over." : "You lose. The game is over.") : `Game over. ${state.winner} won; the final result is marked below.`;
+    } else roundMessage.textContent = "Scores are updated. Rotate the deal for the next round.";
+    roundScores.replaceChildren(...state.players.map((player) => {
+      const isWinner = Boolean(state.winner) && (state.format === "team" ? `Team ${player.team}` === state.winner : player.name === state.winner);
+      const row = document.createElement("div");
+      row.className = isWinner ? "is-winner" : state.winner ? "is-loser" : "";
+      row.innerHTML = `<span>${player.name}</span><strong>${playerScore(player)} points</strong>${state.winner ? `<em>${isWinner ? "WINNER" : "LOST"}</em>` : ""}`;
+      return row;
+    }));
     renderRoundResults();
     nextRoundButton.hidden = Boolean(state.winner);
     if (state.winner) localStorage.removeItem(SAVE_KEY); else saveGame();
