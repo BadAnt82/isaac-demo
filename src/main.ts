@@ -499,6 +499,7 @@ const recordDialog = requireElement<HTMLElement>("#record-dialog");
 const recordForm = requireElement<HTMLFormElement>(".record-card");
 const recordMessage = requireElement<HTMLElement>("#record-message");
 const recordNameInput = requireElement<HTMLInputElement>("#record-name");
+const bridgePlayerNameEls = Array.from(document.querySelectorAll<HTMLElement>("[data-bridge-player-name]"));
 const ctx = requireCanvasContext(canvas);
 const breakoutGame = initBreakout();
 const cribbageGame = initCribbage();
@@ -5233,6 +5234,7 @@ function writeBridgeLocalScores(tiles: number, points: number) {
 }
 
 function renderBridgeHighScores() {
+  setText(bridgePlayerNameEls, localStorage.getItem(playerNameKey)?.trim() || "Player 1");
   setText(bridgeLocalTileEls, formatScore(bridgeLocalTiles));
   setText(bridgeTodayTileEls, formatScore(bridgeTodayTiles));
   setText(bridgeServerTileEls, formatScore(bridgeServerTiles));
@@ -5565,8 +5567,12 @@ async function reconcileBridgeLocalScores() {
 }
 
 function askForRecordName(finalScore: number, recordLabels: string[], unitLabel = "points") {
+  const savedName = localStorage.getItem(playerNameKey)?.trim();
+  if (savedName) {
+    return Promise.resolve(savedName);
+  }
   recordMessage.textContent = `You set ${recordLabels.join(" and ")} with ${formatScore(finalScore)} ${unitLabel}.`;
-  recordNameInput.value = localStorage.getItem(playerNameKey) || "";
+  recordNameInput.value = "Player 1";
   recordDialog.hidden = false;
   recordNameInput.focus();
 
@@ -5582,7 +5588,8 @@ async function syncFinalScore(finalScore: number) {
   planeScoreSyncActive = true;
   try {
     rememberPendingServerScore(finalScore);
-    const result = await submitServerHighScore(finalScore);
+    const savedName = localStorage.getItem(playerNameKey)?.trim() || "";
+    const result = await submitServerHighScore(finalScore, savedName);
     if (!result) {
       return;
     }
@@ -5599,8 +5606,10 @@ async function syncFinalScore(finalScore: number) {
       return;
     }
 
-    const name = await askForRecordName(finalScore, recordLabels);
-    await submitServerHighScore(finalScore, name);
+    if (!savedName) {
+      const name = await askForRecordName(finalScore, recordLabels);
+      await submitServerHighScore(finalScore, name);
+    }
   } finally {
     planeScoreSyncActive = false;
   }
@@ -5613,7 +5622,8 @@ async function syncFinalSnakeScore(finalScore: number) {
   snakeScoreSyncActive = true;
   try {
     rememberPendingServerSnakeScore(finalScore);
-    const result = await submitServerSnakeHighScore(finalScore);
+    const savedName = localStorage.getItem(playerNameKey)?.trim() || "";
+    const result = await submitServerSnakeHighScore(finalScore, savedName);
     if (!result) {
       return;
     }
@@ -5630,8 +5640,10 @@ async function syncFinalSnakeScore(finalScore: number) {
       return;
     }
 
-    const name = await askForRecordName(finalScore, recordLabels, "segments");
-    await submitServerSnakeHighScore(finalScore, name);
+    if (!savedName) {
+      const name = await askForRecordName(finalScore, recordLabels, "segments");
+      await submitServerSnakeHighScore(finalScore, name);
+    }
   } finally {
     snakeScoreSyncActive = false;
   }
@@ -5644,9 +5656,10 @@ async function syncFinalBridgeScores(finalTiles: number, finalPoints: number) {
   bridgeScoreSyncActive = true;
   try {
     rememberPendingServerBridgeScores(finalTiles, finalPoints);
+    const savedName = localStorage.getItem(playerNameKey)?.trim() || "";
     const [tileResult, pointResult] = await Promise.all([
-      submitServerBridgeTileScore(finalTiles),
-      submitServerBridgePointScore(finalPoints),
+      submitServerBridgeTileScore(finalTiles, savedName),
+      submitServerBridgePointScore(finalPoints, savedName),
     ]);
 
     const recordLabels: string[] = [];
@@ -5667,11 +5680,13 @@ async function syncFinalBridgeScores(finalTiles: number, finalPoints: number) {
       return;
     }
 
-    const name = await askForRecordName(Math.max(finalTiles, finalPoints), recordLabels, "best result");
-    await Promise.all([
-      submitServerBridgeTileScore(finalTiles, name),
-      submitServerBridgePointScore(finalPoints, name),
-    ]);
+    if (!savedName) {
+      const name = await askForRecordName(Math.max(finalTiles, finalPoints), recordLabels, "best result");
+      await Promise.all([
+        submitServerBridgeTileScore(finalTiles, name),
+        submitServerBridgePointScore(finalPoints, name),
+      ]);
+    }
   } finally {
     bridgeScoreSyncActive = false;
   }
@@ -7295,10 +7310,9 @@ rollButton.addEventListener("keydown", (event) => {
 });
 recordForm.addEventListener("submit", (event) => {
   event.preventDefault();
-  const name = recordNameInput.value.trim();
-  if (name) {
-    localStorage.setItem(playerNameKey, name);
-  }
+  const name = recordNameInput.value.trim() || "Player 1";
+  localStorage.setItem(playerNameKey, name);
+  setText(bridgePlayerNameEls, name);
   recordDialog.hidden = true;
   pendingRecordName?.(name);
   pendingRecordName = null;

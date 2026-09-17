@@ -1204,6 +1204,8 @@ body.fullscreen-fallback-active {
   width: 100%;
   margin-bottom: 4px;
 }
+.bridge-player-name { margin: -4px 0 4px; color: #b7c7ed; font-size: .82rem; font-weight: 700; }
+.bridge-player-name strong { color: #fff; }
 
 .bridge-menu-panel .high-scores div,
 .bridge-dead-panel .high-scores div {
