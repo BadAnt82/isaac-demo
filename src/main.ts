@@ -652,6 +652,7 @@ let pixelRunnerStumbleTimer = 0;
 let pixelRunnerPickupTimer = 0;
 let pixelRunnerObstacleTimer = 0;
 let pixelRunnerPickupId = 0;
+let pixelRunnerPickupLaneCursor = 0;
 let pixelRunnerPickups: PixelRunnerPickup[] = [];
 let pixelRunnerObstacles: PixelRunnerObstacle[] = [];
 let pixelRunnerSpecialSpins = 0;
@@ -1765,6 +1766,7 @@ function resetPixelRunner() {
   pixelRunnerObstacleTimer = 1.35;
   pixelRunnerPickups = [];
   pixelRunnerObstacles = [];
+  pixelRunnerPickupLaneCursor = 0;
   pixelRunnerSpecialSpins = 0;
   pixelRunnerMessage = "Tap turret to stop rotation";
   pixelRunnerMessageTimer = 2.8;
@@ -2193,7 +2195,12 @@ function pixelResolveReelMatch() {
 }
 
 function shuffledPixelRunnerLanes() {
-  return [...pixelRunnerLanes].sort(() => Math.random() - 0.5);
+  const lanes = [...pixelRunnerLanes];
+  for (let index = lanes.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(Math.random() * (index + 1));
+    [lanes[index], lanes[swapIndex]] = [lanes[swapIndex], lanes[index]];
+  }
+  return lanes;
 }
 
 function pixelObstacleAction(obstacle: Pick<PixelRunnerObstacle, "kind">): PixelRunnerAction {
@@ -2228,11 +2235,27 @@ function pixelChooseRunnerLane(y: number, action: PixelRunnerAction) {
   return shuffledPixelRunnerLanes().find((lane) => pixelRunnerLaneIsClear(lane, y, action)) ?? null;
 }
 
+function pixelChooseRunnerPickupLane(y: number, action: PixelRunnerAction) {
+  const availableLanes = pixelRunnerLanes.filter((lane) => pixelRunnerLaneIsClear(lane, y, action));
+  if (availableLanes.length === 0) {
+    return null;
+  }
+  for (let offset = 0; offset < pixelRunnerLanes.length; offset += 1) {
+    const index = (pixelRunnerPickupLaneCursor + offset) % pixelRunnerLanes.length;
+    const lane = pixelRunnerLanes[index];
+    if (availableLanes.includes(lane)) {
+      pixelRunnerPickupLaneCursor = (index + 1) % pixelRunnerLanes.length;
+      return lane;
+    }
+  }
+  return availableLanes[0] ?? null;
+}
+
 function pixelSpawnRunnerPickup(layout: PixelRunnerLayout) {
   const y = layout.trackY - 24;
   const actionRoll = Math.random();
   const action: PixelRunnerAction = actionRoll < 0.14 ? "jump" : actionRoll < 0.28 ? "duck" : "none";
-  const lane = pixelChooseRunnerLane(y, action);
+  const lane = pixelChooseRunnerPickupLane(y, action);
   if (!lane) {
     return false;
   }
