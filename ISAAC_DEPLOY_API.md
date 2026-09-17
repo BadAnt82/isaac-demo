@@ -1,4 +1,4 @@
-# Isaac deployment API
+﻿# Isaac deployment API
 
 This repository is wired to one Coolify application and one hostname:
 
@@ -8,11 +8,17 @@ This repository is wired to one Coolify application and one hostname:
 
 ## Authentication
 
-Create a separate Coolify API token in **Keys & Tokens → API Tokens** and
+Create a separate Coolify API token in **Keys & Tokens > API Tokens** and
 grant it **deploy** permission only. Give that token a name such as
 `isaac-deploy`. Do not use the infrastructure administrator token or put a
 token in source control. Coolify displays the token secret once; store it in
 Isaac's secret store as `ISAAC_DEPLOY_TOKEN`.
+
+Coolify tokens are scoped to a team, not to an individual application. For a
+hard guarantee that this credential cannot operate another app, put the Isaac
+application in a dedicated Coolify team that contains no other applications,
+then create the token while that team is active. The helper still hardcodes
+the Isaac application UUID as a second boundary.
 
 ## Deploy
 
@@ -31,9 +37,9 @@ Authorization: Bearer <ISAAC_DEPLOY_TOKEN>
 ```
 
 The UUID is compiled into the helper. It accepts no target URL or resource
-override, so it cannot request a deployment for Games or any other hostname.
-The token's deploy permission prevents configuration, source, DNS, and other
-resource changes.
+override, so the supported API cannot request a deployment for Games or any
+other hostname. A deploy-only token cannot change source, DNS, or resource
+configuration; keep it team-isolated as described above.
 
 ## Local repository workflow
 
