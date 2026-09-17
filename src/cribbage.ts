@@ -433,7 +433,26 @@ export function initCribbage() {
   }
 
   function peggingPoints(card: Card) { return peggingBreakdown(card).reduce((total, line) => total + line.points, 0); }
-  function chooseAiPegging() { const player = state.players[state.active]; const playable = player.hand.filter((card) => cardValue(card) + state.total <= 31); if (!playable.length) { passPegging(); return; } playable.sort((first, second) => peggingPoints(second) - peggingPoints(first) || cardValue(first) - cardValue(second)); playCard(playable[0]); }
+  function chooseAiPegging() {
+    const player = state.players[state.active];
+    const playable = player.hand.filter((card) => cardValue(card) + state.total <= 31);
+    if (!playable.length) { passPegging(); return; }
+    const scored = playable.filter((card) => peggingPoints(card) > 0);
+    const choices = scored.length ? scored : playable;
+    choices.sort((first, second) => {
+      const pointDifference = peggingPoints(second) - peggingPoints(first);
+      if (pointDifference) return pointDifference;
+      if (!scored.length) {
+        // When no card scores, shed a high card while avoiding common 5-point gifts.
+        const firstRisk = (cardValue(first) === 5 ? 2 : 0) + ([10, 21, 26].includes(state.total + cardValue(first)) ? 1 : 0);
+        const secondRisk = (cardValue(second) === 5 ? 2 : 0) + ([10, 21, 26].includes(state.total + cardValue(second)) ? 1 : 0);
+        if (firstRisk !== secondRisk) return firstRisk - secondRisk;
+        return cardValue(second) - cardValue(first);
+      }
+      return cardValue(first) - cardValue(second);
+    });
+    playCard(choices[0]);
+  }
   function queueAiTurn() { if (state.aiTimer || state.view !== "board" || state.players[state.active]?.control !== "ai") return; state.aiTimer = window.setTimeout(() => { state.aiTimer = 0; if (state.phase === "pegging") chooseAiPegging(); else chooseAiDiscard(); }, 650); }
 
   function nextPeggingSeat(from: number) { for (let offset = 1; offset <= state.players.length; offset += 1) { const index = (from + offset) % state.players.length; if (state.players[index].hand.length && state.players[index].hand.some((card) => cardValue(card) + state.total <= 31)) return index; } return -1; }
