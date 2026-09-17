@@ -7,6 +7,8 @@ type Card = { id: string; rank: number; suit: string };
 type Player = { name: string; control: Control; team: 1 | 2; score: number; hand: Card[]; scoringHand: Card[] };
 type NetworkSeat = { seat: number; name: string; control: Control; team: 1 | 2; connected: boolean; available?: boolean; quit?: boolean };
 type PegRecord = { seat: number; card: Card };
+type ScoreLine = { label: string; points: number; kind?: "fifteen" | "thirty-one" | "pair" | "trips" | "run" | "flush" | "nobs" | "go" | "last" };
+type RoundResult = { label: string; cards: Card[]; points: number; lines: ScoreLine[] };
 
 const SUITS = ["♠", "♥", "♦", "♣"];
 const SUIT_COLORS: Record<string, string> = { "♥": "red", "♦": "red", "♠": "black", "♣": "black" };
@@ -47,34 +49,66 @@ function combinationIndices(length: number, choose: number) {
   return combinations;
 }
 
-export function scoreHand(cards: Card[], crib = false) {
-  let score = 0;
+function rankLabel(rank: number) {
+  return rank === 1 ? "Ace" : rank === 11 ? "Jack" : rank === 12 ? "Queen" : rank === 13 ? "King" : `${rank}`;
+}
+
+export function scoreHandBreakdown(cards: Card[], crib = false): ScoreLine[] {
+  const lines: ScoreLine[] = [];
   for (let mask = 1; mask < (1 << cards.length); mask += 1) {
     let total = 0;
-    for (let index = 0; index < cards.length; index += 1) if (mask & (1 << index)) total += cardValue(cards[index]);
-    if (total === 15) score += 2;
+    const selected: Card[] = [];
+    for (let index = 0; index < cards.length; index += 1) {
+      if (mask & (1 << index)) {
+        total += cardValue(cards[index]);
+        selected.push(cards[index]);
+      }
+    }
+    if (total === 15) lines.push({ kind: "fifteen", label: `Fifteen: ${selected.map(cardName).join(" + ")}`, points: 2 });
   }
-  for (let first = 0; first < cards.length; first += 1) for (let second = first + 1; second < cards.length; second += 1) if (cards[first].rank === cards[second].rank) score += 2;
-  const counts = new Map<number, number>();
-  cards.forEach((card) => counts.set(card.rank, (counts.get(card.rank) || 0) + 1));
-  const unique = [...counts.keys()].sort((a, b) => a - b);
-  let bestRun = 1;
-  for (let start = 0; start < unique.length; start += 1) {
+
+  const byRank = new Map<number, Card[]>();
+  cards.forEach((card) => byRank.set(card.rank, [...(byRank.get(card.rank) || []), card]));
+  byRank.forEach((rankCards, rank) => {
+    if (rankCards.length === 2) lines.push({ kind: "pair", label: `Pair of ${rankLabel(rank)}s`, points: 2 });
+    if (rankCards.length === 3) lines.push({ kind: "trips", label: `Three ${rankLabel(rank)}s`, points: 6 });
+    if (rankCards.length === 4) lines.push({ kind: "trips", label: `Four ${rankLabel(rank)}s`, points: 12 });
+  });
+
+  const unique = [...byRank.keys()].sort((a, b) => a - b);
+  for (let start = 0; start < unique.length;) {
     let end = start + 1;
     while (end < unique.length && unique[end] === unique[end - 1] + 1) end += 1;
     if (end - start >= 3) {
       let multiplier = 1;
-      for (let index = start; index < end; index += 1) multiplier *= counts.get(unique[index]) || 1;
-      bestRun = Math.max(bestRun, (end - start) * multiplier);
+      for (let index = start; index < end; index += 1) multiplier *= byRank.get(unique[index])?.length || 1;
+      const ranks = unique.slice(start, end);
+      const points = ranks.length * multiplier;
+      const suffix = multiplier > 1 ? ` x${multiplier}` : "";
+      lines.push({ kind: "run", label: `Run ${ranks[0]}-${ranks.at(-1)}${suffix}`, points });
+    }
+    start = end;
+  }
+
+  if (cards.length >= 5) {
+    const handCards = cards.slice(0, -1);
+    const cut = cards.at(-1)!;
+    const handFlush = handCards.length === 4 && handCards.every((card) => card.suit === handCards[0].suit);
+    if (crib) {
+      if (cards.every((card) => card.suit === cards[0].suit)) lines.push({ kind: "flush", label: "Five-card flush in the crib", points: 5 });
+    } else {
+      if (handFlush) {
+        lines.push({ kind: "flush", label: "Four-card flush", points: 4 });
+        if (cut.suit === handCards[0].suit) lines.push({ kind: "flush", label: "Cut matches flush", points: 1 });
+      }
+      if (handCards.some((card) => card.rank === 11 && card.suit === cut.suit)) lines.push({ kind: "nobs", label: "His nobs", points: 1 });
     }
   }
-  score += bestRun > 1 ? bestRun : 0;
-  if (cards.length >= 5) {
-    const firstFour = cards.slice(0, 4).every((card) => card.suit === cards[0].suit);
-    if (firstFour) score += crib ? (cards.every((card) => card.suit === cards[0].suit) ? 5 : 0) : (cards[4].suit === cards[0].suit ? 5 : 4);
-    if (!crib && cards.some((card) => card.rank === 11 && card.suit === cards[4].suit)) score += 1;
-  }
-  return score;
+  return lines;
+}
+
+export function scoreHand(cards: Card[], crib = false) {
+  return scoreHandBreakdown(cards, crib).reduce((total, line) => total + line.points, 0);
 }
 
 export function dealCounts(variant: Variant, playerCount: number, dealer: number) {
@@ -125,6 +159,7 @@ export function initCribbage() {
   const roundTitle = element<HTMLElement>("#cribbage-round-title");
   const roundMessage = element<HTMLElement>("#cribbage-round-message");
   const roundScores = element<HTMLElement>("#cribbage-round-scores");
+  const roundResults = element<HTMLElement>("#cribbage-round-results");
   const nextRoundButton = element<HTMLButtonElement>("#cribbage-next-round");
   const networkPanel = element<HTMLElement>("#cribbage-network-panel");
   const networkList = element<HTMLElement>("#cribbage-network-list");
@@ -140,6 +175,7 @@ export function initCribbage() {
   const pegs = element<HTMLElement>("#cribbage-pegs");
   const pegHoles = element<HTMLElement>("#cribbage-peg-holes");
   const playedCards = element<HTMLElement>("#cribbage-played-cards");
+  const peggingScoring = element<HTMLElement>("#cribbage-pegging-scoring");
   const state = {
     view: "closed" as CribbageView,
     phase: "discard" as CribbagePhase,
@@ -149,12 +185,14 @@ export function initCribbage() {
     deck: [] as Card[],
     crib: [] as Card[],
     cut: null as Card | null,
+    roundResults: [] as RoundResult[],
     selected: new Set<string>(),
     dealer: 0,
     active: 0,
     total: 0,
     pegged: [] as Card[],
     pegHistory: [] as PegRecord[],
+    peggingCallouts: [] as ScoreLine[],
     discardedSeats: new Set<number>(),
     round: 1,
     winner: "",
@@ -226,7 +264,7 @@ export function initCribbage() {
   }
   function networkSnapshot() { return { ...state, selected: [...state.selected], discardedSeats: [...state.discardedSeats], network: undefined, aiTimer: 0 }; }
   function publishNetworkState() { if (state.network.remote && state.network.host) networkSend({ type: "cribbage-state", snapshot: networkSnapshot() }); }
-  function applyNetworkSnapshot(snapshot: any, full = false) { if (!snapshot) return; state.phase = snapshot.phase; state.variant = snapshot.variant; state.format = snapshot.format; state.players = snapshot.players || []; if (!full) state.players.forEach((player: Player, index: number) => { if (index !== state.network.seat) { player.hand = []; player.scoringHand = []; } }); state.deck = snapshot.deck || []; state.crib = snapshot.crib || []; state.cut = snapshot.cut || null; state.dealer = snapshot.dealer; state.active = snapshot.active; state.total = snapshot.total; state.pegged = snapshot.pegged || []; state.pegHistory = snapshot.pegHistory || []; state.round = snapshot.round; state.winner = snapshot.winner || ""; state.teamScores = snapshot.teamScores || { 1: 0, 2: 0 }; state.selected.clear(); nextRoundButton.hidden = Boolean(state.winner); setPanels(snapshot.view === "round-over" ? "round-over" : "board"); renderBoard(); }
+  function applyNetworkSnapshot(snapshot: any, full = false) { if (!snapshot) return; state.phase = snapshot.phase; state.variant = snapshot.variant; state.format = snapshot.format; state.players = snapshot.players || []; const revealRound = snapshot.view === "round-over"; if (!full && !revealRound) state.players.forEach((player: Player, index: number) => { if (index !== state.network.seat) { player.hand = []; player.scoringHand = []; } }); state.deck = snapshot.deck || []; state.crib = snapshot.crib || []; state.cut = snapshot.cut || null; state.roundResults = snapshot.roundResults || []; state.dealer = snapshot.dealer; state.active = snapshot.active; state.total = snapshot.total; state.pegged = snapshot.pegged || []; state.pegHistory = snapshot.pegHistory || []; state.peggingCallouts = snapshot.peggingCallouts || []; state.round = snapshot.round; state.winner = snapshot.winner || ""; state.teamScores = snapshot.teamScores || { 1: 0, 2: 0 }; state.selected.clear(); nextRoundButton.hidden = Boolean(state.winner); setPanels(revealRound ? "round-over" : "board"); renderBoard(); if (revealRound) renderRoundResults(); }
   function handleRemoteAction(seat: number, action: any) { if (seat !== state.active || state.players[seat]?.control !== "human") return; state.selected = new Set(action.selected || []); if (action.kind === "discard") applyDiscard(true); else if (action.kind === "play") { const card = state.players[seat].hand.find((candidate) => candidate.id === action.cardId); if (card) playCard(card, true); } else if (action.kind === "pass") passPegging(true); }
 
   function updateSetupUi() {
@@ -255,6 +293,67 @@ export function initCribbage() {
     scoreboard.replaceChildren(...rows);
   }
 
+  function renderPeggingScoring() {
+    peggingScoring.replaceChildren();
+    if (state.phase !== "pegging") return;
+    const points = state.peggingCallouts.reduce((total, line) => total + line.points, 0);
+    const heading = document.createElement("strong");
+    heading.textContent = state.peggingCallouts.length
+      ? `This play: ${points} pegging point${points === 1 ? "" : "s"}`
+      : "Pegging scoring appears here";
+    peggingScoring.append(heading);
+    if (!state.peggingCallouts.length) return;
+    const list = document.createElement("div");
+    list.className = "cribbage-pegging-callouts";
+    list.replaceChildren(...state.peggingCallouts.map((line) => {
+      const item = document.createElement("span");
+      item.className = `cribbage-pegging-callout ${line.kind ? `is-${line.kind}` : ""}`;
+      item.innerHTML = `<span>${line.label}</span><strong>+${line.points}</strong>`;
+      return item;
+    }));
+    peggingScoring.append(list);
+  }
+
+  function renderRoundResults() {
+    roundResults.replaceChildren();
+    state.roundResults.forEach((result) => {
+      const card = document.createElement("article");
+      card.className = "cribbage-result-card";
+      const heading = document.createElement("h3");
+      heading.textContent = result.label;
+      card.append(heading);
+      const cards = document.createElement("div");
+      cards.className = "cribbage-result-cards";
+      cards.replaceChildren(...result.cards.map((playedCard, index) => {
+        const item = document.createElement("span");
+        item.className = `cribbage-result-card-face ${SUIT_COLORS[playedCard.suit]}`;
+        item.textContent = `${cardName(playedCard)}${index === result.cards.length - 1 ? " · Cut" : ""}`;
+        return item;
+      }));
+      card.append(cards);
+      const list = document.createElement("ul");
+      list.className = "cribbage-result-breakdown";
+      if (result.lines.length) {
+        list.replaceChildren(...result.lines.map((line) => {
+          const item = document.createElement("li");
+          item.innerHTML = `<span>${line.label}</span><strong>${line.points}</strong>`;
+          return item;
+        }));
+      } else {
+        const item = document.createElement("li");
+        item.className = "is-empty";
+        item.textContent = "No qualifying points";
+        list.append(item);
+      }
+      card.append(list);
+      const total = document.createElement("p");
+      total.className = "cribbage-result-total";
+      total.innerHTML = `<span>Total</span><strong>${result.points} points</strong>`;
+      card.append(total);
+      roundResults.append(card);
+    });
+  }
+
   function renderCard(card: Card, selected: boolean, playable: boolean) {
     const button = document.createElement("button"); button.type = "button"; button.className = `cribbage-card ${SUIT_COLORS[card.suit]} ${selected ? "is-selected" : ""}`; button.disabled = !playable; button.setAttribute("aria-label", `${cardName(card)}${selected ? ", selected" : ""}`); button.innerHTML = `<span>${card.rank === 1 ? "A" : card.rank === 11 ? "J" : card.rank === 12 ? "Q" : card.rank === 13 ? "K" : card.rank}</span><b>${card.suit}</b>`;
     button.addEventListener("click", () => { if (state.network.remote && !state.network.host) { if (state.phase === "pegging") networkSend({ type: "cribbage-action", action: { kind: "play", cardId: card.id } }); else { if (state.selected.has(card.id)) state.selected.delete(card.id); else if (state.selected.size < (state.phase === "dealer-select" ? 4 : discardCount(state.network.seat))) state.selected.add(card.id); renderBoard(); } return; } if (state.phase === "pegging") playCard(card); else { if (state.selected.has(card.id)) state.selected.delete(card.id); else if (state.selected.size < (state.phase === "dealer-select" ? 4 : discardCount(state.active))) state.selected.add(card.id); renderBoard(); } });
@@ -273,7 +372,7 @@ export function initCribbage() {
 
   function renderBoard() {
     const activePlayer = state.players[state.active]; const player = state.network.remote ? state.players[state.network.seat] : activePlayer; if (!player) return;
-    roundLabel.textContent = `Round ${state.round} · ${state.variant === "crazy" ? "Crazy" : "Standard"}${state.format === "team" ? " · 2 vs 2" : ""}`; dealerLabel.textContent = state.players[state.dealer]?.name || "—"; cutLabel.textContent = state.cut ? cardName(state.cut) : "—"; cribCount.textContent = `${state.crib.length} card${state.crib.length === 1 ? "" : "s"}`; totalLabel.textContent = `${state.total} / 31`; renderScoreboard(); renderPegTrack();
+    roundLabel.textContent = `Round ${state.round} · ${state.variant === "crazy" ? "Crazy" : "Standard"}${state.format === "team" ? " · 2 vs 2" : ""}`; dealerLabel.textContent = state.players[state.dealer]?.name || "—"; cutLabel.textContent = state.cut ? cardName(state.cut) : "—"; cribCount.textContent = `${state.crib.length} card${state.crib.length === 1 ? "" : "s"}`; totalLabel.textContent = `${state.total} / 31`; renderScoreboard(); renderPegTrack(); renderPeggingScoring();
     if (activePlayer?.control === "ai") { hand.innerHTML = `<p class="cribbage-private">${activePlayer.name} (AI) is choosing from a private hand…</p>`; cribAction.hidden = true; passButton.hidden = true; turnLabel.textContent = `${activePlayer.name} is thinking`; status.textContent = "AI uses only the cards and count available to its seat."; if (state.network.host || !state.network.remote) queueAiTurn(); else status.textContent = `Waiting for ${activePlayer.name} to finish.`; renderConnections(); quitButton.hidden = !state.network.remote; return; }
     const dealerSelect = state.phase === "dealer-select"; const canAct = !state.network.remote || state.network.host || state.active === state.network.seat; const needed = dealerSelect ? 4 : discardCount(state.active); hand.replaceChildren(...player.hand.map((card) => renderCard(card, state.selected.has(card.id), canAct && (state.phase === "pegging" ? cardValue(card) + state.total <= 31 : true))));
     if (state.phase === "discard") { turnLabel.textContent = `${activePlayer?.name || player.name}: choose ${needed} card${needed === 1 ? "" : "s"} to ${state.variant === "crazy" ? "pass to the dealer" : "pass to the crib"}`; status.textContent = canAct ? `${state.crib.length} crib cards placed so far.` : `Waiting for ${activePlayer?.name || "the other player"} to choose cards.`; cribAction.hidden = !canAct; cribAction.disabled = !canAct || state.selected.size !== needed; cribAction.textContent = state.variant === "crazy" ? `Pass ${needed} cards` : `Discard ${needed} card${needed === 1 ? "" : "s"}`; passButton.hidden = true; }
@@ -285,7 +384,7 @@ export function initCribbage() {
   function nextDiscardSeat(from: number) { for (let offset = 1; offset <= state.players.length; offset += 1) { const index = (from + offset) % state.players.length; if (!state.discardedSeats.has(index) && discardCount(index) > 0 && (state.variant !== "crazy" || index !== state.dealer)) return index; } return -1; }
 
   function dealRound() {
-    state.deck = shuffle(makeDeck()); state.crib = []; state.cut = null; state.selected.clear(); state.phase = "discard"; state.total = 0; state.pegged = []; state.pegHistory = []; state.discardedSeats.clear(); state.players.forEach((player) => { player.hand = []; player.scoringHand = []; });
+    state.deck = shuffle(makeDeck()); state.crib = []; state.cut = null; state.selected.clear(); state.phase = "discard"; state.total = 0; state.pegged = []; state.pegHistory = []; state.peggingCallouts = []; state.roundResults = []; state.discardedSeats.clear(); state.players.forEach((player) => { player.hand = []; player.scoringHand = []; });
     const counts = dealCounts(state.variant, state.players.length, state.dealer); const maxCards = Math.max(...counts); for (let cardIndex = 0; cardIndex < maxCards; cardIndex += 1) state.players.forEach((player, index) => { if (cardIndex < counts[index]) player.hand.push(state.deck.pop()!); });
     state.active = state.variant === "crazy" ? (state.dealer + 1) % state.players.length : state.dealer; setPanels("board"); renderBoard(); saveGame(); publishNetworkState();
   }
@@ -305,23 +404,102 @@ export function initCribbage() {
     const passed = player.hand.filter((card) => state.selected.has(card.id)); player.hand = player.hand.filter((card) => !state.selected.has(card.id)); if (state.variant === "crazy") state.players[state.dealer].hand.push(...passed); else state.crib.push(...passed); state.discardedSeats.add(state.active); state.selected.clear(); const next = nextDiscardSeat(state.active); if (next < 0) { if (state.variant === "crazy") finishCrazyPasses(); else finishStandardDiscard(); } else { state.active = next; renderBoard(); saveGame(); publishNetworkState(); }
   }
 
-  function finishPegging() { state.players.forEach((player) => { if (!player.scoringHand.length) player.scoringHand = player.hand.slice(); }); state.cut = state.deck.pop() || null; state.phase = "pegging"; state.active = (state.dealer + 1) % state.players.length; state.total = 0; state.pegged = []; renderBoard(); saveGame(); publishNetworkState(); }
+  function finishPegging() { state.players.forEach((player) => { if (!player.scoringHand.length) player.scoringHand = player.hand.slice(); }); state.cut = state.deck.pop() || null; state.phase = "pegging"; state.active = (state.dealer + 1) % state.players.length; state.total = 0; state.pegged = []; state.peggingCallouts = []; renderBoard(); saveGame(); publishNetworkState(); }
 
   function chooseAiDiscard() {
     const player = state.players[state.active]; const keepCount = state.phase === "dealer-select" ? 4 : player.hand.length - discardCount(state.active); const keepIndices = chooseBestKeep(player.hand, keepCount, state.phase === "dealer-select"); state.selected = new Set(player.hand.filter((_, index) => state.phase === "dealer-select" ? keepIndices.includes(index) : !keepIndices.includes(index)).map((card) => card.id)); applyDiscard();
   }
 
-  function peggingPoints(card: Card) { const nextTotal = state.total + cardValue(card); let points = nextTotal === 15 || nextTotal === 31 ? 2 : 0; let matching = 0; for (let index = state.pegged.length - 1; index >= 0 && state.pegged[index].rank === card.rank; index -= 1) matching += 1; points += matching === 1 ? 2 : matching === 2 ? 6 : matching >= 3 ? 12 : 0; return points; }
+  function peggingBreakdown(card: Card): ScoreLine[] {
+    const lines: ScoreLine[] = [];
+    const nextTotal = state.total + cardValue(card);
+    if (nextTotal === 15) lines.push({ kind: "fifteen", label: "Fifteen", points: 2 });
+    if (nextTotal === 31) lines.push({ kind: "thirty-one", label: "Thirty-one", points: 2 });
+    let matching = 0;
+    for (let index = state.pegged.length - 1; index >= 0 && state.pegged[index].rank === card.rank; index -= 1) matching += 1;
+    if (matching === 1) lines.push({ kind: "pair", label: `Pair of ${rankLabel(card.rank)}s`, points: 2 });
+    if (matching === 2) lines.push({ kind: "trips", label: `Three ${rankLabel(card.rank)}s`, points: 6 });
+    if (matching >= 3) lines.push({ kind: "trips", label: `Four ${rankLabel(card.rank)}s`, points: 12 });
+    const sequence = [...state.pegged, card];
+    for (let length = sequence.length; length >= 3; length -= 1) {
+      const ranks = sequence.slice(-length).map((playedCard) => playedCard.rank).sort((first, second) => first - second);
+      if (new Set(ranks).size !== length) continue;
+      if (ranks.every((rank, index) => index === 0 || rank === ranks[index - 1] + 1)) {
+        lines.push({ kind: "run", label: `Run of ${length}`, points: length });
+        break;
+      }
+    }
+    return lines;
+  }
+
+  function peggingPoints(card: Card) { return peggingBreakdown(card).reduce((total, line) => total + line.points, 0); }
   function chooseAiPegging() { const player = state.players[state.active]; const playable = player.hand.filter((card) => cardValue(card) + state.total <= 31); if (!playable.length) { passPegging(); return; } playable.sort((first, second) => peggingPoints(second) - peggingPoints(first) || cardValue(first) - cardValue(second)); playCard(playable[0]); }
   function queueAiTurn() { if (state.aiTimer || state.view !== "board" || state.players[state.active]?.control !== "ai") return; state.aiTimer = window.setTimeout(() => { state.aiTimer = 0; if (state.phase === "pegging") chooseAiPegging(); else chooseAiDiscard(); }, 650); }
 
   function nextPeggingSeat(from: number) { for (let offset = 1; offset <= state.players.length; offset += 1) { const index = (from + offset) % state.players.length; if (state.players[index].hand.length && state.players[index].hand.some((card) => cardValue(card) + state.total <= 31)) return index; } return -1; }
-  function playCard(card: Card, fromNetwork = false) { if (state.network.remote && !state.network.host && !fromNetwork) { networkSend({ type: "cribbage-action", action: { kind: "play", cardId: card.id } }); return; } if (state.phase !== "pegging" || cardValue(card) + state.total > 31) return; const points = peggingPoints(card); const player = state.players[state.active]; state.pegHistory.push({ seat: state.active, card }); player.hand = player.hand.filter((candidate) => candidate.id !== card.id); state.pegged.push(card); state.total += cardValue(card); award(state.active, points); if (state.total === 31) { state.total = 0; state.pegged = []; } if (state.players.every((candidate) => candidate.hand.length === 0)) { finishRound(); return; } const next = nextPeggingSeat(state.active); if (next < 0) { award(state.active, 1); state.total = 0; state.pegged = []; state.active = state.players.findIndex((candidate) => candidate.hand.length > 0); } else state.active = next; renderBoard(); saveGame(); publishNetworkState(); }
-  function passPegging(fromNetwork = false) { if (state.network.remote && !state.network.host && !fromNetwork) { networkSend({ type: "cribbage-action", action: { kind: "pass" } }); return; } const next = nextPeggingSeat(state.active); if (next < 0) { award(state.active, 1); state.total = 0; state.pegged = []; state.active = state.players.findIndex((candidate) => candidate.hand.length > 0); } else state.active = next; renderBoard(); saveGame(); publishNetworkState(); }
+  function playCard(card: Card, fromNetwork = false) {
+    if (state.network.remote && !state.network.host && !fromNetwork) { networkSend({ type: "cribbage-action", action: { kind: "play", cardId: card.id } }); return; }
+    if (state.phase !== "pegging" || cardValue(card) + state.total > 31) return;
+    const lines = peggingBreakdown(card);
+    const player = state.players[state.active];
+    state.pegHistory.push({ seat: state.active, card });
+    player.hand = player.hand.filter((candidate) => candidate.id !== card.id);
+    state.pegged.push(card);
+    state.total += cardValue(card);
+    state.peggingCallouts = lines;
+    award(state.active, lines.reduce((total, line) => total + line.points, 0));
+    if (state.total === 31) { state.total = 0; state.pegged = []; }
+    if (state.players.every((candidate) => candidate.hand.length === 0)) {
+      if (state.total > 0) { award(state.active, 1); state.peggingCallouts = [...lines, { kind: "last", label: "Last card", points: 1 }]; }
+      finishRound(); return;
+    }
+    const next = nextPeggingSeat(state.active);
+    if (next < 0) {
+      const lastPeggingSeat = state.pegHistory.at(-1)?.seat ?? state.active;
+      award(lastPeggingSeat, 1);
+      state.peggingCallouts = [...lines, { kind: "go", label: "Go", points: 1 }];
+      state.total = 0; state.pegged = []; state.active = state.players.findIndex((candidate) => candidate.hand.length > 0);
+    } else state.active = next;
+    renderBoard(); saveGame(); publishNetworkState();
+  }
+  function passPegging(fromNetwork = false) {
+    if (state.network.remote && !state.network.host && !fromNetwork) { networkSend({ type: "cribbage-action", action: { kind: "pass" } }); return; }
+    const next = nextPeggingSeat(state.active);
+    if (next < 0) {
+      const lastPeggingSeat = state.pegHistory.at(-1)?.seat ?? state.active;
+      award(lastPeggingSeat, 1);
+      state.peggingCallouts = [{ kind: "go", label: "Go", points: 1 }];
+      state.total = 0; state.pegged = []; state.active = state.players.findIndex((candidate) => candidate.hand.length > 0);
+    } else state.active = next;
+    renderBoard(); saveGame(); publishNetworkState();
+  }
 
-  function finishRound() { const cut = state.cut ? [state.cut] : []; state.players.forEach((player, index) => award(index, scoreHand([...player.scoringHand, ...cut]))); award(state.dealer, scoreHand([...state.crib, ...cut], true)); const winner = state.players.find((player) => playerScore(player) >= 121); const teamWinner = state.teamScores[1] >= 121 ? "Team 1" : state.teamScores[2] >= 121 ? "Team 2" : ""; state.winner = state.format === "team" ? teamWinner : winner?.name || ""; roundTitle.textContent = state.winner ? `${state.winner} wins the game!` : "Round complete"; roundMessage.textContent = state.winner ? "The winning seat or team reached 121 points first." : "Scores are updated. Rotate the deal for the next round."; roundScores.replaceChildren(...state.players.map((player) => { const row = document.createElement("div"); row.innerHTML = `<span>${player.name}</span><strong>${playerScore(player)} points</strong>`; return row; })); nextRoundButton.hidden = Boolean(state.winner); if (state.winner) localStorage.removeItem(SAVE_KEY); else saveGame(); setPanels("round-over"); publishNetworkState(); }
+  function finishRound() {
+    const cut = state.cut ? [state.cut] : [];
+    state.roundResults = state.players.map((player, index) => {
+      const cards = [...player.scoringHand, ...cut];
+      const lines = scoreHandBreakdown(cards);
+      award(index, lines.reduce((total, line) => total + line.points, 0));
+      return { label: `${player.name}'s hand`, cards, lines, points: lines.reduce((total, line) => total + line.points, 0) };
+    });
+    const cribCards = [...state.crib, ...cut];
+    const cribLines = scoreHandBreakdown(cribCards, true);
+    const cribPoints = cribLines.reduce((total, line) => total + line.points, 0);
+    award(state.dealer, cribPoints);
+    state.roundResults.push({ label: `${state.players[state.dealer]?.name || "Dealer"}'s crib`, cards: cribCards, lines: cribLines, points: cribPoints });
+    const winner = state.players.find((player) => playerScore(player) >= 121);
+    const teamWinner = state.teamScores[1] >= 121 ? "Team 1" : state.teamScores[2] >= 121 ? "Team 2" : "";
+    state.winner = state.format === "team" ? teamWinner : winner?.name || "";
+    roundTitle.textContent = state.winner ? `${state.winner} wins the game!` : "Round complete";
+    roundMessage.textContent = state.winner ? "The winning seat or team reached 121 points first." : "Scores are updated. Rotate the deal for the next round.";
+    roundScores.replaceChildren(...state.players.map((player) => { const row = document.createElement("div"); row.innerHTML = `<span>${player.name}</span><strong>${playerScore(player)} points</strong>`; return row; }));
+    renderRoundResults();
+    nextRoundButton.hidden = Boolean(state.winner);
+    if (state.winner) localStorage.removeItem(SAVE_KEY); else saveGame();
+    setPanels("round-over"); publishNetworkState();
+  }
 
-  function restoreSaved() { const saved = readSaved(); if (!saved) return; state.phase = saved.phase; state.variant = saved.variant; state.format = saved.format; state.players = saved.players; state.deck = saved.deck; state.crib = saved.crib; state.cut = saved.cut; state.selected = new Set(saved.selected || []); state.discardedSeats = new Set(saved.discardedSeats || []); state.dealer = saved.dealer; state.active = saved.active; state.total = saved.total; state.pegged = saved.pegged; state.pegHistory = saved.pegHistory || []; state.round = saved.round; state.winner = saved.winner || ""; state.teamScores = saved.teamScores || { 1: 0, 2: 0 }; nextRoundButton.hidden = Boolean(state.winner); setPanels("board"); renderBoard(); }
+  function restoreSaved() { const saved = readSaved(); if (!saved) return; state.phase = saved.phase; state.variant = saved.variant; state.format = saved.format; state.players = saved.players; state.deck = saved.deck; state.crib = saved.crib; state.cut = saved.cut; state.roundResults = saved.roundResults || []; state.peggingCallouts = saved.peggingCallouts || []; state.selected = new Set(saved.selected || []); state.discardedSeats = new Set(saved.discardedSeats || []); state.dealer = saved.dealer; state.active = saved.active; state.total = saved.total; state.pegged = saved.pegged; state.pegHistory = saved.pegHistory || []; state.round = saved.round; state.winner = saved.winner || ""; state.teamScores = saved.teamScores || { 1: 0, 2: 0 }; nextRoundButton.hidden = Boolean(state.winner); setPanels("board"); renderBoard(); }
   function close() { window.clearTimeout(state.aiTimer); setPanels("closed"); }
   function prepareReport() { window.clearTimeout(state.aiTimer); state.aiTimer = 0; state.view = "closed"; menu.hidden = true; options.hidden = true; board.hidden = true; roundPanel.hidden = true; gameCanvas.hidden = false; }
   function restoreReport() { setPanels("options"); }

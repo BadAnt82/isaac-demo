@@ -381,6 +381,7 @@
             <div id="cribbage-scoreboard" class="cribbage-scoreboard" aria-label="Cribbage scoreboard"></div><div id="cribbage-connection-status" class="cribbage-connection-status" aria-label="Player connection status"></div>
             <p id="cribbage-status" class="cribbage-status" aria-live="polite"></p>
             <div class="cribbage-table"><div><span>Dealer</span><strong id="cribbage-dealer">Player 1</strong></div><div><span>Cut card</span><strong id="cribbage-cut-card">—</strong></div><div><span>Crib</span><strong id="cribbage-crib-count">0 cards</strong></div><div><span>Pegging total</span><strong id="cribbage-total">0 / 31</strong></div></div>
+            <section id="cribbage-pegging-scoring" class="cribbage-pegging-scoring" aria-live="polite"></section>
             <section id="cribbage-peg-track" class="cribbage-peg-track" aria-label="Cribbage scoring board"><div class="cribbage-peg-heading"><strong>Cribbage board</strong><span>121 holes · first to the finish wins</span></div><div id="cribbage-peg-board" class="cribbage-peg-board"><div id="cribbage-peg-holes" class="cribbage-peg-holes" aria-hidden="true"></div><div id="cribbage-pegs" class="cribbage-pegs"></div></div><div class="cribbage-peg-scale"><span>START · 0</span><span>30</span><span>60</span><span>90</span><span>FINISH · 121</span></div></section>
             <section id="cribbage-played-cards" class="cribbage-played-cards" aria-label="Cards played this round"></section>
             <h2 id="cribbage-turn-label">Player 1: choose two cards for the crib</h2>
@@ -388,7 +389,7 @@
             <div class="menu-actions"><button id="cribbage-crib-action" type="button">Put 2 in crib</button><button id="cribbage-pass" type="button" hidden>Say go</button><button id="cribbage-quit" type="button" hidden>Quit game</button><button id="cribbage-board-exit" type="button">Exit game</button></div>
           </div>
           <div id="cribbage-round-panel" class="overlay-panel cribbage-round-panel" hidden>
-            <h1 id="cribbage-round-title">Round complete</h1><p id="cribbage-round-message">Scores updated.</p><div id="cribbage-round-scores" class="cribbage-round-scores"></div>
+            <h1 id="cribbage-round-title">Round complete</h1><p id="cribbage-round-message">Scores updated.</p><div id="cribbage-round-scores" class="cribbage-round-scores"></div><section id="cribbage-round-results" class="cribbage-round-results" aria-label="Hand scoring results"></section>
             <div class="menu-actions"><button id="cribbage-next-round" type="button">Deal next round</button><button id="cribbage-round-exit" type="button">Exit to setup</button></div>
           </div>
           <div id="report-panel" class="overlay-panel options-panel report-panel" hidden>

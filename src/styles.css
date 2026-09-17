@@ -282,6 +282,15 @@ button:focus-visible {
 .cribbage-score.is-active { border-color: #ffbd5a; box-shadow: 0 0 16px rgba(255, 189, 90, .2); }
 .cribbage-score strong { color: #fff; font-size: 1.15rem; }
 .cribbage-status { min-height: 1.25em; margin: 0; color: #ffdc94; font-weight: 700; }
+.cribbage-pegging-scoring { display: grid; width: 100%; gap: 7px; min-height: 40px; padding: 9px 11px; border: 1px solid rgba(255, 189, 90, .3); border-radius: 8px; color: #ffe3a7; background: rgba(35, 24, 51, .58); text-align: left; }
+.cribbage-pegging-callouts { display: flex; flex-wrap: wrap; gap: 6px; }
+.cribbage-pegging-callout { display: inline-flex; align-items: center; gap: 8px; padding: 5px 8px; border: 1px solid rgba(177, 202, 255, .3); border-radius: 999px; color: #dce8ff; background: rgba(11, 23, 50, .8); font-size: .76rem; font-weight: 800; }
+.cribbage-pegging-callout strong { color: #fff; }
+.cribbage-pegging-callout.is-pair,
+.cribbage-pegging-callout.is-trips { border-color: rgba(255, 120, 209, .62); color: #ffc4ea; box-shadow: 0 0 12px rgba(255, 120, 209, .15); }
+.cribbage-pegging-callout.is-run { border-color: rgba(142, 255, 155, .62); color: #c8ffd0; box-shadow: 0 0 12px rgba(142, 255, 155, .12); }
+.cribbage-pegging-callout.is-fifteen,
+.cribbage-pegging-callout.is-thirty-one { border-color: rgba(255, 209, 102, .62); color: #ffe6a9; }
 
 .cribbage-connection-status { display: grid; width: 100%; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 6px; }
 .cribbage-connection-seat { display: flex; align-items: center; gap: 7px; padding: 6px 9px; border-radius: 7px; color: #bdccef; background: rgba(7, 13, 35, .38); font-size: .74rem; font-weight: 800; }
@@ -359,6 +368,19 @@ button:focus-visible {
 
 .cribbage-round-scores { display: grid; width: min(100%, 420px); gap: 8px; }
 .cribbage-round-scores strong { color: #fff; }
+.cribbage-round-results { display: grid; width: 100%; max-height: min(42vh, 430px); grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 9px; overflow: auto; padding: 2px; text-align: left; }
+.cribbage-result-card { display: grid; align-content: start; gap: 8px; padding: 11px; border: 1px solid rgba(177, 202, 255, .28); border-radius: 9px; background: rgba(7, 13, 35, .68); }
+.cribbage-result-card h3 { margin: 0; color: #fff; font-size: .95rem; }
+.cribbage-result-cards { display: flex; flex-wrap: wrap; gap: 5px; }
+.cribbage-result-card-face { padding: 4px 7px; border: 1px solid rgba(255, 255, 255, .3); border-radius: 5px; color: #122044; background: #edf4ff; font-size: .75rem; font-weight: 900; }
+.cribbage-result-card-face.red { color: #c32655; }
+.cribbage-result-breakdown { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.cribbage-result-breakdown li,
+.cribbage-result-total { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin: 0; color: #c6d8ff; font-size: .74rem; font-weight: 700; }
+.cribbage-result-breakdown li strong { color: #ffe3a7; }
+.cribbage-result-breakdown li.is-empty { color: #91a9d4; font-style: italic; }
+.cribbage-result-total { padding-top: 7px; border-top: 1px solid rgba(177, 202, 255, .2); color: #fff; font-size: .82rem; }
+.cribbage-result-total strong { color: #ffdc94; }
 
 .hud {
   position: absolute;

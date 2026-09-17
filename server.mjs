@@ -1714,11 +1714,12 @@ function cribbageViewFor(room, seatIndex) {
   if (!room.snapshot) return null;
   const snapshot = JSON.parse(JSON.stringify(room.snapshot));
   snapshot.deck = [];
-  snapshot.crib = Array.from({ length: snapshot.crib?.length || 0 }, () => ({ hidden: true }));
+  const revealRound = snapshot.view === "round-over";
+  if (!revealRound) snapshot.crib = Array.from({ length: snapshot.crib?.length || 0 }, () => ({ hidden: true }));
   snapshot.players = (snapshot.players || []).map((player, index) => ({
     ...player,
-    hand: index === seatIndex ? player.hand : [],
-    scoringHand: index === seatIndex ? player.scoringHand : [],
+    hand: revealRound || index === seatIndex ? player.hand : [],
+    scoringHand: revealRound || index === seatIndex ? player.scoringHand : [],
     handCount: player.hand?.length || 0,
     scoringHandCount: player.scoringHand?.length || 0,
   }));
