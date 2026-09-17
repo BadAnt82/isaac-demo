@@ -290,7 +290,8 @@ button:focus-visible {
 .cribbage-pegging-callout.is-trips { border-color: rgba(255, 120, 209, .62); color: #ffc4ea; box-shadow: 0 0 12px rgba(255, 120, 209, .15); }
 .cribbage-pegging-callout.is-run { border-color: rgba(142, 255, 155, .62); color: #c8ffd0; box-shadow: 0 0 12px rgba(142, 255, 155, .12); }
 .cribbage-pegging-callout.is-fifteen,
-.cribbage-pegging-callout.is-thirty-one { border-color: rgba(255, 209, 102, .62); color: #ffe6a9; }
+.cribbage-pegging-callout.is-thirty-one,
+.cribbage-pegging-callout.is-heels { border-color: rgba(255, 209, 102, .62); color: #ffe6a9; }
 
 .cribbage-connection-status { display: grid; width: 100%; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 6px; }
 .cribbage-connection-seat { display: flex; align-items: center; gap: 7px; padding: 6px 9px; border-radius: 7px; color: #bdccef; background: rgba(7, 13, 35, .38); font-size: .74rem; font-weight: 800; }

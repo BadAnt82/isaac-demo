@@ -7,7 +7,7 @@ type Card = { id: string; rank: number; suit: string };
 type Player = { name: string; control: Control; team: 1 | 2; score: number; hand: Card[]; scoringHand: Card[] };
 type NetworkSeat = { seat: number; name: string; control: Control; team: 1 | 2; connected: boolean; available?: boolean; quit?: boolean };
 type PegRecord = { seat: number; card: Card };
-type ScoreLine = { label: string; points: number; kind?: "fifteen" | "thirty-one" | "pair" | "trips" | "run" | "flush" | "nobs" | "go" | "last" };
+type ScoreLine = { label: string; points: number; kind?: "fifteen" | "thirty-one" | "pair" | "trips" | "run" | "flush" | "nobs" | "heels" | "go" | "last" };
 type RoundResult = { label: string; cards: Card[]; points: number; lines: ScoreLine[] };
 
 const SUITS = ["♠", "♥", "♦", "♣"];
@@ -187,6 +187,7 @@ export function initCribbage() {
     deck: [] as Card[],
     crib: [] as Card[],
     cut: null as Card | null,
+    cutBonus: 0,
     roundResults: [] as RoundResult[],
     selected: new Set<string>(),
     dealer: 0,
@@ -266,7 +267,7 @@ export function initCribbage() {
   }
   function networkSnapshot() { return { ...state, selected: [...state.selected], discardedSeats: [...state.discardedSeats], network: undefined, aiTimer: 0 }; }
   function publishNetworkState() { if (state.network.remote && state.network.host) networkSend({ type: "cribbage-state", snapshot: networkSnapshot() }); }
-  function applyNetworkSnapshot(snapshot: any, full = false) { if (!snapshot) return; state.phase = snapshot.phase; state.variant = snapshot.variant; state.format = snapshot.format; state.players = snapshot.players || []; const revealRound = snapshot.view === "round-over"; if (!full && !revealRound) state.players.forEach((player: Player, index: number) => { if (index !== state.network.seat) { player.hand = []; player.scoringHand = []; } }); state.deck = snapshot.deck || []; state.crib = snapshot.crib || []; state.cut = snapshot.cut || null; state.roundResults = snapshot.roundResults || []; state.dealer = snapshot.dealer; state.active = snapshot.active; state.total = snapshot.total; state.pegged = snapshot.pegged || []; state.pegHistory = snapshot.pegHistory || []; state.peggingCallouts = snapshot.peggingCallouts || []; state.round = snapshot.round; state.winner = snapshot.winner || ""; state.teamScores = snapshot.teamScores || { 1: 0, 2: 0 }; state.selected.clear(); nextRoundButton.hidden = Boolean(state.winner); setPanels(revealRound ? "round-over" : "board"); renderBoard(); if (revealRound) renderRoundResults(); }
+  function applyNetworkSnapshot(snapshot: any, full = false) { if (!snapshot) return; state.phase = snapshot.phase; state.variant = snapshot.variant; state.format = snapshot.format; state.players = snapshot.players || []; const revealRound = snapshot.view === "round-over"; if (!full && !revealRound) state.players.forEach((player: Player, index: number) => { if (index !== state.network.seat) { player.hand = []; player.scoringHand = []; } }); state.deck = snapshot.deck || []; state.crib = snapshot.crib || []; state.cut = snapshot.cut || null; state.cutBonus = snapshot.cutBonus || 0; state.roundResults = snapshot.roundResults || []; state.dealer = snapshot.dealer; state.active = snapshot.active; state.total = snapshot.total; state.pegged = snapshot.pegged || []; state.pegHistory = snapshot.pegHistory || []; state.peggingCallouts = snapshot.peggingCallouts || []; state.round = snapshot.round; state.winner = snapshot.winner || ""; state.teamScores = snapshot.teamScores || { 1: 0, 2: 0 }; state.selected.clear(); nextRoundButton.hidden = Boolean(state.winner); setPanels(revealRound ? "round-over" : "board"); renderBoard(); if (revealRound) renderRoundResults(); }
   function handleRemoteAction(seat: number, action: any) { if (seat !== state.active || state.players[seat]?.control !== "human") return; state.selected = new Set(action.selected || []); if (action.kind === "discard") applyDiscard(true); else if (action.kind === "play") { const card = state.players[seat].hand.find((candidate) => candidate.id === action.cardId); if (card) playCard(card, true); } else if (action.kind === "pass") passPegging(true); }
 
   function updateSetupUi() {
@@ -391,7 +392,7 @@ export function initCribbage() {
   function nextDiscardSeat(from: number) { for (let offset = 1; offset <= state.players.length; offset += 1) { const index = (from + offset) % state.players.length; if (!state.discardedSeats.has(index) && discardCount(index) > 0 && (state.variant !== "crazy" || index !== state.dealer)) return index; } return -1; }
 
   function dealRound() {
-    state.deck = shuffle(makeDeck()); state.crib = []; state.cut = null; state.selected.clear(); state.phase = "discard"; state.total = 0; state.pegged = []; state.pegHistory = []; state.peggingCallouts = []; state.roundResults = []; state.discardedSeats.clear(); state.players.forEach((player) => { player.hand = []; player.scoringHand = []; });
+    state.deck = shuffle(makeDeck()); state.crib = []; state.cut = null; state.cutBonus = 0; state.selected.clear(); state.phase = "discard"; state.total = 0; state.pegged = []; state.pegHistory = []; state.peggingCallouts = []; state.roundResults = []; state.discardedSeats.clear(); state.players.forEach((player) => { player.hand = []; player.scoringHand = []; });
     const counts = dealCounts(state.variant, state.players.length, state.dealer); const maxCards = Math.max(...counts); for (let cardIndex = 0; cardIndex < maxCards; cardIndex += 1) state.players.forEach((player, index) => { if (cardIndex < counts[index]) player.hand.push(state.deck.pop()!); });
     state.active = state.variant === "crazy" ? (state.dealer + 1) % state.players.length : state.dealer; setPanels("board"); renderBoard(); saveGame(); publishNetworkState();
   }
@@ -411,7 +412,7 @@ export function initCribbage() {
     const passed = player.hand.filter((card) => state.selected.has(card.id)); player.hand = player.hand.filter((card) => !state.selected.has(card.id)); if (state.variant === "crazy") state.players[state.dealer].hand.push(...passed); else state.crib.push(...passed); state.discardedSeats.add(state.active); state.selected.clear(); const next = nextDiscardSeat(state.active); if (next < 0) { if (state.variant === "crazy") finishCrazyPasses(); else finishStandardDiscard(); } else { state.active = next; renderBoard(); saveGame(); publishNetworkState(); }
   }
 
-  function finishPegging() { state.players.forEach((player) => { if (!player.scoringHand.length) player.scoringHand = player.hand.slice(); }); state.cut = state.deck.pop() || null; state.phase = "pegging"; state.active = (state.dealer + 1) % state.players.length; state.total = 0; state.pegged = []; state.peggingCallouts = []; renderBoard(); saveGame(); publishNetworkState(); }
+  function finishPegging() { state.players.forEach((player) => { if (!player.scoringHand.length) player.scoringHand = player.hand.slice(); }); state.cut = state.deck.pop() || null; state.cutBonus = state.cut?.rank === 11 ? 2 : 0; state.phase = "pegging"; state.active = (state.dealer + 1) % state.players.length; state.total = 0; state.pegged = []; state.peggingCallouts = state.cutBonus ? [{ kind: "heels", label: "His heels: Jack cut", points: state.cutBonus }] : []; award(state.dealer, state.cutBonus); if (winnerLabel()) { finishPeggingWin(); return; } renderBoard(); saveGame(); publishNetworkState(); }
 
   function chooseAiDiscard() {
     const player = state.players[state.active]; const keepCount = state.phase === "dealer-select" ? 4 : player.hand.length - discardCount(state.active); const keepIndices = chooseBestKeep(player.hand, keepCount, state.phase === "dealer-select"); state.selected = new Set(player.hand.filter((_, index) => state.phase === "dealer-select" ? keepIndices.includes(index) : !keepIndices.includes(index)).map((card) => card.id)); applyDiscard();
@@ -533,9 +534,10 @@ export function initCribbage() {
       const player = state.players[index];
       const cards = [...player.scoringHand, ...cut];
       const lines = scoreHandBreakdown(cards);
+      const displayLines = index === state.dealer && state.cutBonus ? [...lines, { kind: "heels" as const, label: "His heels: Jack cut", points: state.cutBonus }] : lines;
       const points = lines.reduce((total, line) => total + line.points, 0);
       award(index, points);
-      state.roundResults.push({ label: `${player.name}'s hand`, cards, lines, points });
+      state.roundResults.push({ label: `${player.name}'s hand`, cards, lines: displayLines, points: displayLines.reduce((total, line) => total + line.points, 0) });
       if (winnerLabel()) break;
     }
     if (!winnerLabel()) {
@@ -566,7 +568,7 @@ export function initCribbage() {
     setPanels("round-over"); publishNetworkState();
   }
 
-  function restoreSaved() { const saved = readSaved(); if (!saved) return; state.phase = saved.phase; state.variant = saved.variant; state.format = saved.format; state.players = saved.players; state.deck = saved.deck; state.crib = saved.crib; state.cut = saved.cut; state.roundResults = saved.roundResults || []; state.peggingCallouts = saved.peggingCallouts || []; state.selected = new Set(saved.selected || []); state.discardedSeats = new Set(saved.discardedSeats || []); state.dealer = saved.dealer; state.active = saved.active; state.total = saved.total; state.pegged = saved.pegged; state.pegHistory = saved.pegHistory || []; state.round = saved.round; state.winner = saved.winner || ""; state.teamScores = saved.teamScores || { 1: 0, 2: 0 }; nextRoundButton.hidden = Boolean(state.winner); setPanels("board"); renderBoard(); }
+  function restoreSaved() { const saved = readSaved(); if (!saved) return; state.phase = saved.phase; state.variant = saved.variant; state.format = saved.format; state.players = saved.players; state.deck = saved.deck; state.crib = saved.crib; state.cut = saved.cut; state.cutBonus = saved.cutBonus || 0; state.roundResults = saved.roundResults || []; state.peggingCallouts = saved.peggingCallouts || []; state.selected = new Set(saved.selected || []); state.discardedSeats = new Set(saved.discardedSeats || []); state.dealer = saved.dealer; state.active = saved.active; state.total = saved.total; state.pegged = saved.pegged; state.pegHistory = saved.pegHistory || []; state.round = saved.round; state.winner = saved.winner || ""; state.teamScores = saved.teamScores || { 1: 0, 2: 0 }; nextRoundButton.hidden = Boolean(state.winner); setPanels("board"); renderBoard(); }
   function close() { window.clearTimeout(state.aiTimer); setPanels("closed"); }
   function prepareReport() { window.clearTimeout(state.aiTimer); state.aiTimer = 0; state.view = "closed"; menu.hidden = true; options.hidden = true; board.hidden = true; roundPanel.hidden = true; gameCanvas.hidden = false; }
   function restoreReport() { setPanels("options"); }
