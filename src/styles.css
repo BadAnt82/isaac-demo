@@ -1688,8 +1688,12 @@ body.fullscreen-fallback-active {
 
   .cribbage-table { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .cribbage-board-header { align-items: start; flex-direction: column; gap: 2px; }
-  .cribbage-hand { gap: 5px; }
-  .cribbage-card { width: 54px; height: 82px; }
+  .overlay.is-cribbage { align-content: start; overflow-y: auto; padding: 12px 10px max(12px, env(safe-area-inset-bottom)); }
+  .overlay.is-cribbage .overlay-panel { width: 100%; }
+  .cribbage-hand { width: 100%; justify-content: flex-start; gap: 5px; overflow-x: auto; padding: 8px 4px 12px; overscroll-behavior-x: contain; }
+  .cribbage-card { flex: 0 0 46px; width: 46px; height: 70px; padding: 6px 4px; font-size: 1.15rem; }
+  .cribbage-card b { font-size: .95rem; }
+  .cribbage-round-results { max-height: none; grid-template-columns: 1fr; }
 
   .tile-scores {
     gap: 2px;
