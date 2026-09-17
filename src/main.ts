@@ -213,7 +213,7 @@ type PixelOwner = "neutral" | "player" | `bot-${number}` | `human-${number}`;
 
 type PixelLane = "left" | "center" | "right";
 
-type PixelPrize = "blank" | "bomb" | "clock" | "turret";
+type PixelPrize = "blank" | "bomb" | "bounce" | "clock" | "turret";
 
 type PixelRunnerAction = "duck" | "jump" | "none";
 
@@ -222,6 +222,7 @@ type PixelTurret = {
   angle: number;
   autoRotate: boolean;
   bombShots: number;
+  bouncePower: number;
   arc: number;
   color: string;
   eliminated: boolean;
@@ -244,6 +245,7 @@ type PixelTurret = {
 };
 
 type PixelShot = {
+  bouncesRemaining: number;
   color: string;
   kind: "bomb" | "normal";
   lastCell: number;
@@ -328,6 +330,7 @@ type PixelRemoteTurret = {
   angle: number;
   autoRotate?: boolean;
   bombShots: number;
+  bouncePower?: number;
   color: string;
   eliminated: boolean;
   fireSpeedBoosts: number;
@@ -1228,6 +1231,7 @@ function applyPixelSnapshot(snapshot: PixelWarsSnapshot) {
       autoRotate: remoteTurret.autoRotate ?? false,
       arc: remoteTurret.isBot ? Math.PI * 0.44 : Math.PI * 0.85,
       bombShots: remoteTurret.bombShots,
+      bouncePower: remoteTurret.bouncePower ?? 0,
       color: remoteTurret.color,
       eliminated: remoteTurret.eliminated,
       fireCooldown: 0,
@@ -1249,6 +1253,7 @@ function applyPixelSnapshot(snapshot: PixelWarsSnapshot) {
     };
   });
   pixelShots = snapshot.shots.map((shot) => ({
+    bouncesRemaining: 0,
     color: shot.color,
     kind: shot.kind,
     lastCell: -1,
@@ -1774,6 +1779,7 @@ function createPixelTurret(id: PixelOwner, isPlayer: boolean): PixelTurret {
     angle: isPlayer ? -Math.PI / 2 : Math.PI / 2,
     autoRotate: true,
     bombShots: 0,
+    bouncePower: 0,
     arc: isPlayer ? Math.PI * 0.85 : Math.PI * 0.44,
     color,
     eliminated: false,
@@ -1863,6 +1869,7 @@ function addPixelPlayerTurret() {
     return false;
   }
   const turret = createPixelTurret("player", true);
+  turret.bouncePower = Math.max(0, ...pixelTurrets.filter((ownedTurret) => ownedTurret.isPlayer).map((ownedTurret) => ownedTurret.bouncePower));
   turret.respawnPending = true;
   turret.shieldHealth = 0;
   turret.fireCooldown = pixelBaseFireInterval;
@@ -2062,7 +2069,10 @@ function pixelRandomPrize(): PixelPrize {
   if (roll < 94) {
     return "bomb";
   }
-  return "turret";
+  if (roll < 97) {
+    return "turret";
+  }
+  return "bounce";
 }
 
 function pixelLaneIndex(lane: PixelLane) {
@@ -2134,7 +2144,15 @@ function pixelApplySlotPrize(prize: PixelPrize) {
   if (pixelMode === "multi") {
     sendPixelMessage({ prize, type: "pixel-prize" });
     pixelRunnerMessage =
-      prize === "clock" ? "Speed sent" : prize === "bomb" ? "Bomb sent" : prize === "turret" ? "Turret sent" : "Dud match";
+      prize === "clock"
+        ? "Speed sent"
+        : prize === "bomb"
+          ? "Bomb sent"
+          : prize === "turret"
+            ? "Turret sent"
+            : prize === "bounce"
+              ? "Bounce sent"
+              : "Dud match";
     pixelRunnerMessageTimer = 1.6;
     return;
   }
@@ -2150,6 +2168,11 @@ function pixelApplySlotPrize(prize: PixelPrize) {
     pixelRunnerMessage = `Bomb shots +${pixelBombShotAward}`;
   } else if (prize === "turret") {
     addPixelPlayerTurret();
+  } else if (prize === "bounce") {
+    playerTurrets.forEach((turret) => {
+      turret.bouncePower += 2;
+    });
+    pixelRunnerMessage = `Bounce +${Math.floor(Math.max(...playerTurrets.map((turret) => turret.bouncePower)) / 2)}`;
   } else {
     pixelRunnerMessage = "Dud match";
   }
@@ -3573,6 +3596,7 @@ function firePixelShot(turret: PixelTurret) {
     turret.bombShots -= 1;
   }
   pixelShots.push({
+    bouncesRemaining: Math.floor(turret.bouncePower / 2),
     color: turret.color,
     kind: isBomb ? "bomb" : "normal",
     lastCell: -1,
@@ -3603,6 +3627,22 @@ function pixelShotShieldHit(shot: PixelShot) {
   }
 
   return false;
+}
+
+function bouncePixelShot(shot: PixelShot, previousX: number, previousY: number, cellIndex: number) {
+  const column = cellIndex % pixelColumns;
+  const row = Math.floor(cellIndex / pixelColumns);
+  const crossedX = Math.floor(previousX) !== column;
+  const crossedY = Math.floor(previousY) !== row;
+  if (crossedX && !crossedY) {
+    shot.vx *= -1;
+  } else if (crossedY && !crossedX) {
+    shot.vy *= -1;
+  } else if (Math.abs(shot.vx) >= Math.abs(shot.vy)) {
+    shot.vx *= -1;
+  } else {
+    shot.vy *= -1;
+  }
 }
 
 function steerPixelTurret(turret: PixelTurret, dt: number) {
@@ -3679,6 +3719,8 @@ function updatePixelWars(dt: number) {
     const distance = Math.hypot(shot.vx * dt, shot.vy * dt);
     const steps = Math.max(1, Math.ceil(distance / Math.max(2, Math.min(layout.cellW, layout.cellH) * 0.45)));
     for (let step = 0; step < steps && !hit; step += 1) {
+      const previousX = shot.x;
+      const previousY = shot.y;
       shot.x += (shot.vx * dt) / steps;
       shot.y += (shot.vy * dt) / steps;
       if (pixelShotShieldHit(shot)) { hit = true; break; }
@@ -3688,7 +3730,12 @@ function updatePixelWars(dt: number) {
         if (pixelCells[cellIndex] !== shot.owner) {
           if (shot.kind === "bomb") explodePixelCells(cellIndex, shot.owner);
           else paintPixelCell(cellIndex, shot.owner);
-          hit = true;
+          if (shot.bouncesRemaining > 0) {
+            shot.bouncesRemaining -= 1;
+            bouncePixelShot(shot, previousX, previousY, cellIndex);
+          } else {
+            hit = true;
+          }
         }
       }
     }
@@ -3946,6 +3993,9 @@ function pixelPrizeLabel(prize: PixelPrize) {
   if (prize === "turret") {
     return "Jackpot";
   }
+  if (prize === "bounce") {
+    return "Bounce";
+  }
   return "Blank";
 }
 
@@ -3958,6 +4008,9 @@ function pixelPrizeColor(prize: PixelPrize) {
   }
   if (prize === "turret") {
     return "#ffd84f";
+  }
+  if (prize === "bounce") {
+    return "#b78cff";
   }
   return "#9aa3b5";
 }
@@ -4010,6 +4063,19 @@ function drawPixelPrizeIcon(prize: PixelPrize, x: number, y: number, size: numbe
     ctx.beginPath();
     ctx.arc(-size * 0.08, size * 0.02, size * 0.1, 0, Math.PI * 2);
     ctx.fill();
+  } else if (prize === "bounce") {
+    ctx.lineCap = "round";
+    ctx.lineWidth = Math.max(3, size * 0.1);
+    ctx.beginPath();
+    ctx.moveTo(-size * 0.38, -size * 0.28);
+    ctx.lineTo(size * 0.08, 0);
+    ctx.lineTo(-size * 0.38, size * 0.28);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(-size * 0.02, -size * 0.28);
+    ctx.lineTo(size * 0.44, 0);
+    ctx.lineTo(-size * 0.02, size * 0.28);
+    ctx.stroke();
   } else {
     ctx.shadowBlur = 0;
     ctx.strokeStyle = "rgba(255, 255, 255, 0.34)";
@@ -4091,10 +4157,11 @@ function drawPixelSlot(runner: PixelRunnerLayout, time: number) {
   const playerTurrets = pixelTurrets.filter((turret) => turret.isPlayer && !turret.eliminated);
   const fireBoost = Math.max(0, ...playerTurrets.map((turret) => turret.fireSpeedBoosts));
   const bombShots = playerTurrets.reduce((total, turret) => total + turret.bombShots, 0);
+  const bounceCount = Math.max(0, ...playerTurrets.map((turret) => Math.floor(turret.bouncePower / 2)));
   const message =
     pixelRunnerMessageTimer > 0
       ? pixelRunnerMessage
-      : `Speed +${fireBoost}  Bomb ${bombShots}  Turrets ${playerTurrets.length}/${pixelMaxTurretsPerOwner}`;
+      : `Speed +${fireBoost}  Bomb ${bombShots}  Bounce ${bounceCount}  Turrets ${playerTurrets.length}/${pixelMaxTurretsPerOwner}`;
   ctx.fillText(message, runner.slotX, runner.slotY + runner.slotH + 30);
   ctx.restore();
 }
