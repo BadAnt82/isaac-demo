@@ -220,6 +220,7 @@ type PixelRunnerAction = "duck" | "jump" | "none";
 type PixelTurret = {
   aiTargetTimer: number;
   angle: number;
+  autoRotate: boolean;
   bombShots: number;
   arc: number;
   color: string;
@@ -325,6 +326,7 @@ type PixelLobby = {
 
 type PixelRemoteTurret = {
   angle: number;
+  autoRotate?: boolean;
   bombShots: number;
   color: string;
   eliminated: boolean;
@@ -631,6 +633,7 @@ let pixelTurrets: PixelTurret[] = [];
 let pixelShots: PixelShot[] = [];
 let pixelAimActive = false;
 let pixelAimPointerId: number | null = null;
+let pixelSelectedTurretIndex = 0;
 let pixelAimX = 0;
 let pixelAimY = 0;
 let pixelTerritory = 0;
@@ -1222,6 +1225,7 @@ function applyPixelSnapshot(snapshot: PixelWarsSnapshot) {
     return {
       aiTargetTimer: 0,
       angle: remoteTurret.angle,
+      autoRotate: remoteTurret.autoRotate ?? false,
       arc: remoteTurret.isBot ? Math.PI * 0.44 : Math.PI * 0.85,
       bombShots: remoteTurret.bombShots,
       color: remoteTurret.color,
@@ -1577,6 +1581,40 @@ function clampPixelTurretAngle(turret: PixelTurret, angle: number) {
   return normalizeAngle(turret.homeAngle + delta);
 }
 
+function playerPixelTurrets() {
+  return pixelTurrets.filter((turret) => turret.isPlayer && !turret.eliminated);
+}
+
+function activePlayerPixelTurret() {
+  const turrets = playerPixelTurrets();
+  return pixelTurretIsActive(turrets[pixelSelectedTurretIndex]) ? turrets[pixelSelectedTurretIndex] : turrets.find((turret) => pixelTurretIsActive(turret));
+}
+
+function pixelTurretAtPoint(x: number, y: number) {
+  const hitRadius = Math.max(16, pixelShieldRadius * 1.45);
+  return playerPixelTurrets().find((turret) => {
+    if (!pixelTurretIsActive(turret)) {
+      return false;
+    }
+    const dx = x - turret.x;
+    const dy = y - turret.y;
+    return dx * dx + dy * dy <= hitRadius * hitRadius;
+  }) || null;
+}
+
+function togglePixelTurretRotation(turret: PixelTurret) {
+  turret.autoRotate = !turret.autoRotate;
+  pixelSelectedTurretIndex = Math.max(0, playerPixelTurrets().indexOf(turret));
+  pixelAimActive = false;
+  pixelAimPointerId = null;
+  if (pixelMode === "multi") {
+    const turretIndex = playerPixelTurrets().indexOf(turret);
+    sendPixelMessage({ autoRotate: turret.autoRotate, turretIndex, type: "pixel-rotation" });
+  }
+  pixelRunnerMessage = turret.autoRotate ? "Turret auto-rotation on" : "Turret stopped — aim it";
+  pixelRunnerMessageTimer = 1.6;
+}
+
 function pointInsidePixelBoard(x: number, y: number, layout: PixelBoardLayout) {
   return x >= layout.x && x <= layout.x + layout.boardW && y >= layout.y && y <= layout.y + layout.boardH;
 }
@@ -1723,8 +1761,8 @@ function resetPixelRunner() {
   pixelRunnerPickups = [];
   pixelRunnerObstacles = [];
   pixelRunnerSpecialSpins = 0;
-  pixelRunnerMessage = "Collect lane sparks";
-  pixelRunnerMessageTimer = 1.8;
+  pixelRunnerMessage = "Tap turret to stop rotation";
+  pixelRunnerMessageTimer = 2.8;
   pixelReelMatchReady = false;
   pixelReels = createPixelReels();
 }
@@ -1734,6 +1772,7 @@ function createPixelTurret(id: PixelOwner, isPlayer: boolean): PixelTurret {
   return {
     aiTargetTimer: 0,
     angle: isPlayer ? -Math.PI / 2 : Math.PI / 2,
+    autoRotate: true,
     bombShots: 0,
     arc: isPlayer ? Math.PI * 0.85 : Math.PI * 0.44,
     color,
@@ -1764,6 +1803,7 @@ function resetPixelWars() {
   resetPixelRunner();
   pixelAimActive = false;
   pixelAimPointerId = null;
+  pixelSelectedTurretIndex = 0;
   pixelTerritory = 0;
   pixelMatchOver = false;
   pixelMatchMessage = "";
@@ -3567,10 +3607,13 @@ function pixelShotShieldHit(shot: PixelShot) {
 
 function steerPixelTurret(turret: PixelTurret, dt: number) {
   if (turret.isPlayer) {
-    if (pixelAimActive) {
+    if (pixelAimActive && turret === activePlayerPixelTurret()) {
       turret.angle = clampPixelTurretAngle(turret, Math.atan2(pixelAimY - turret.y, pixelAimX - turret.x));
+      return;
     }
-    return;
+    if (!turret.autoRotate) {
+      return;
+    }
   }
 
   turret.angle = clampPixelTurretAngle(turret, turret.angle + turret.rotateDirection * turret.rotateSpeed * dt);
@@ -3591,7 +3634,7 @@ function updatePixelWars(dt: number) {
       updatePixelReels(dt);
       return;
     }
-    const playerTurret = pixelTurrets.find((turret) => turret.isPlayer && pixelTurretIsActive(turret));
+    const playerTurret = activePlayerPixelTurret();
     if (playerTurret) {
       updatePixelRunner(dt);
     } else {
@@ -3620,7 +3663,7 @@ function updatePixelWars(dt: number) {
       turret.fireCooldown = pixelEffectiveFireInterval(turret) * (0.82 + Math.random() * 0.36);
     }
   });
-  const playerTurret = pixelTurrets.find((turret) => turret.isPlayer && pixelTurretIsActive(turret));
+  const playerTurret = activePlayerPixelTurret();
   if (playerTurret) {
     updatePixelRunner(dt);
   } else {
@@ -3884,6 +3927,12 @@ function drawPixelTurret(turret: PixelTurret, layout: PixelBoardLayout, time: nu
   ctx.beginPath();
   ctx.arc(0, 0, radius * 0.42, 0, Math.PI * 2);
   ctx.fill();
+  ctx.strokeStyle = turret.autoRotate ? "rgba(255, 216, 79, .95)" : "rgba(255, 255, 255, .95)";
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash(turret.autoRotate ? [3, 3] : []);
+  ctx.beginPath();
+  ctx.arc(0, 0, radius + 4, 0, Math.PI * 2);
+  ctx.stroke();
   ctx.restore();
 }
 
@@ -4173,15 +4222,15 @@ function drawPixelRunnerObstacle(obstacle: PixelRunnerObstacle, runner: PixelRun
   ctx.restore();
 }
 
-function drawPixelRunnerStickFigure(jumpOffset: number, sliding: boolean, time: number) {
+function drawPixelRunnerStickFigure(jumpOffset: number, sliding: boolean, time: number, color: string) {
   const stride = Math.sin(time * 13) * 4;
   ctx.save();
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
   ctx.shadowBlur = 16;
-  ctx.shadowColor = "#35d7ff";
+  ctx.shadowColor = color;
   ctx.strokeStyle = "#dff9ff";
-  ctx.fillStyle = "#35d7ff";
+  ctx.fillStyle = color;
   ctx.lineWidth = 3;
 
   if (sliding) {
@@ -4203,10 +4252,12 @@ function drawPixelRunnerStickFigure(jumpOffset: number, sliding: boolean, time: 
     ctx.moveTo(9, -1);
     ctx.lineTo(21, 9);
     ctx.stroke();
-    ctx.fillStyle = "rgba(53, 215, 255, 0.24)";
+    ctx.globalAlpha = 0.24;
+    ctx.fillStyle = color;
     ctx.beginPath();
     ctx.ellipse(8, 12, 27, 5, 0, 0, Math.PI * 2);
     ctx.fill();
+    ctx.globalAlpha = 1;
     ctx.restore();
     return;
   }
@@ -4241,10 +4292,12 @@ function drawPixelRunnerStickFigure(jumpOffset: number, sliding: boolean, time: 
     ctx.lineTo(8, 11 - stride);
   }
   ctx.stroke();
-  ctx.fillStyle = "rgba(53, 215, 255, 0.18)";
+  ctx.globalAlpha = 0.18;
+  ctx.fillStyle = color;
   ctx.beginPath();
   ctx.ellipse(0, 16, 18, 4, 0, 0, Math.PI * 2);
   ctx.fill();
+  ctx.globalAlpha = 1;
   ctx.restore();
 }
 
@@ -4297,7 +4350,8 @@ function drawPixelRunner(runner: PixelRunnerLayout, time: number) {
   const jumpOffset = pixelRunnerJumpTimer > 0 ? Math.sin((pixelRunnerJumpTimer / pixelRunnerJumpDuration) * Math.PI) * 28 : 0;
   ctx.translate(playerX, playerProjection.y - jumpOffset);
   ctx.globalAlpha = pixelRunnerStumbleTimer > 0 ? 0.56 + Math.sin(time * 40) * 0.24 : 1;
-  drawPixelRunnerStickFigure(jumpOffset, pixelRunnerDuckTimer > 0, time);
+  const playerTurret = activePlayerPixelTurret();
+  drawPixelRunnerStickFigure(jumpOffset, pixelRunnerDuckTimer > 0, time, playerTurret?.color ?? pixelOwnerColor("player"));
   ctx.restore();
   ctx.restore();
 
@@ -6666,13 +6720,14 @@ function updatePixelAimFromPointer(event: PointerEvent) {
   pixelAimX = point.x;
   pixelAimY = point.y;
   if (pixelMode === "multi") {
-    const playerTurret = pixelTurrets.find((turret) => turret.isPlayer && pixelTurretIsActive(turret));
+    const playerTurret = activePlayerPixelTurret();
     if (playerTurret) {
       const layout = pixelLayout();
       sendPixelMessage({
         angle: Math.atan2(pixelAimY - playerTurret.y, pixelAimX - playerTurret.x),
         targetXRatio: clampNumber((pixelAimX - layout.x) / layout.boardW, 0, 1),
         targetYRatio: clampNumber((pixelAimY - layout.y) / layout.boardH, 0, 1),
+        turretIndex: playerPixelTurrets().indexOf(playerTurret),
         type: "pixel-aim",
       });
     }
@@ -6704,7 +6759,7 @@ window.addEventListener("orientationchange", () => {
 window.visualViewport?.addEventListener("resize", resize);
 window.addEventListener("keydown", (event) => {
   if (state === "pixel-running") {
-    const playerTurret = pixelTurrets.find((turret) => turret.isPlayer && pixelTurretIsActive(turret));
+    const playerTurret = activePlayerPixelTurret();
     if (pixelMatchOver && (event.code === "Enter" || event.code === "Space")) {
       event.preventDefault();
       startPixelWars();
@@ -6765,7 +6820,7 @@ window.addEventListener("keydown", (event) => {
       pixelAimActive = false;
       playerTurret.angle = clampPixelTurretAngle(playerTurret, playerTurret.angle - 0.12);
       if (pixelMode === "multi") {
-        sendPixelMessage({ angle: playerTurret.angle, type: "pixel-aim" });
+        sendPixelMessage({ angle: playerTurret.angle, turretIndex: playerPixelTurrets().indexOf(playerTurret), type: "pixel-aim" });
       }
       return;
     }
@@ -6774,7 +6829,7 @@ window.addEventListener("keydown", (event) => {
       pixelAimActive = false;
       playerTurret.angle = clampPixelTurretAngle(playerTurret, playerTurret.angle + 0.12);
       if (pixelMode === "multi") {
-        sendPixelMessage({ angle: playerTurret.angle, type: "pixel-aim" });
+        sendPixelMessage({ angle: playerTurret.angle, turretIndex: playerPixelTurrets().indexOf(playerTurret), type: "pixel-aim" });
       }
       return;
     }
@@ -6850,12 +6905,19 @@ canvas.addEventListener("pointerdown", (event) => {
       unlockAudio();
       return;
     }
+    const tappedTurret = pixelTurretAtPoint(point.x, point.y);
+    if (tappedTurret) {
+      event.preventDefault();
+      unlockAudio();
+      togglePixelTurretRotation(tappedTurret);
+      return;
+    }
     if (startPixelRunnerPointer(event, point.x, point.y)) {
       event.preventDefault();
       unlockAudio();
       return;
     }
-    const playerTurret = pixelTurrets.find((turret) => turret.isPlayer && pixelTurretIsActive(turret));
+    const playerTurret = activePlayerPixelTurret();
     if (!playerTurret) {
       event.preventDefault();
       return;

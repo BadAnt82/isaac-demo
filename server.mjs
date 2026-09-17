@@ -745,6 +745,7 @@ function createPixelTurret(id, index, isBot = false, options = {}) {
   const homeAngle = pixelHomeAngleForPoint(x, y);
   return {
     angle: homeAngle,
+    autoRotate: true,
     arc: isBot ? Math.PI * 0.44 : Math.PI * 0.85,
     bombShots: 0,
     color: pixelOwnerColors[id] || "#ffffff",
@@ -1049,7 +1050,7 @@ function updatePixelRespawns(match, dt) {
 }
 
 function updatePixelTurretAim(turret, dt) {
-  if (!turret.isBot) {
+  if (!turret.isBot && !turret.autoRotate) {
     return;
   }
   turret.angle = clampPixelAngle(turret, turret.angle + turret.rotateDirection * turret.rotateSpeed * dt);
@@ -1140,6 +1141,7 @@ function pixelMatchSnapshot(match) {
     })),
     turrets: match.turrets.map((turret) => ({
       angle: turret.angle,
+      autoRotate: turret.autoRotate,
       bombShots: turret.bombShots,
       color: turret.color,
       eliminated: turret.eliminated,
@@ -1908,16 +1910,24 @@ pixelServer.on("connection", (socket) => {
     if (message.type === "pixel-aim" && Number.isFinite(message.angle)) {
       const targetX = Number(message.targetXRatio) * pixelBoard.columns;
       const targetY = Number(message.targetYRatio) * pixelBoard.rows;
-      pixelOwnerTurrets(match, turret.id).forEach((ownedTurret) => {
-        if (!pixelTurretIsActive(ownedTurret)) {
-          return;
-        }
+      const ownedTurrets = pixelOwnerTurrets(match, turret.id).filter((ownedTurret) => !ownedTurret.isBot);
+      const targetIndex = Math.max(0, Math.min(ownedTurrets.length - 1, Math.round(Number(message.turretIndex) || 0)));
+      const targetTurret = ownedTurrets[targetIndex];
+      if (targetTurret && pixelTurretIsActive(targetTurret)) {
         const angle =
           Number.isFinite(targetX) && Number.isFinite(targetY)
-            ? Math.atan2(targetY - ownedTurret.y, targetX - ownedTurret.x)
+            ? Math.atan2(targetY - targetTurret.y, targetX - targetTurret.x)
             : Number(message.angle);
-        ownedTurret.angle = clampPixelAngle(ownedTurret, angle);
-      });
+        targetTurret.angle = clampPixelAngle(targetTurret, angle);
+      }
+      return;
+    }
+
+    if (message.type === "pixel-rotation" && typeof message.autoRotate === "boolean") {
+      const ownedTurrets = pixelOwnerTurrets(match, turret.id).filter((ownedTurret) => !ownedTurret.isBot);
+      const target = ownedTurrets[Math.max(0, Math.min(ownedTurrets.length - 1, Math.round(Number(message.turretIndex) || 0)))];
+      if (target) target.autoRotate = message.autoRotate;
+      broadcastPixelMatch(match);
       return;
     }
 
