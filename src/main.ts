@@ -259,7 +259,10 @@ type PixelShot = {
 
 type PixelReel = {
   finalPrize: PixelPrize;
+  nextPrize: PixelPrize;
   prize: PixelPrize;
+  spinDuration: number;
+  spinPhase: number;
   spinTimer: number;
 };
 
@@ -669,9 +672,9 @@ let pixelRemoteSnapshot: PixelWarsSnapshot | null = null;
 let pixelConnected = false;
 let pixelReelMatchReady = false;
 let pixelReels: Record<PixelLane, PixelReel> = {
-  center: { finalPrize: "blank", prize: "blank", spinTimer: 0 },
-  left: { finalPrize: "blank", prize: "blank", spinTimer: 0 },
-  right: { finalPrize: "blank", prize: "blank", spinTimer: 0 },
+  center: { finalPrize: "blank", nextPrize: "blank", prize: "blank", spinDuration: 0, spinPhase: 0, spinTimer: 0 },
+  left: { finalPrize: "blank", nextPrize: "blank", prize: "blank", spinDuration: 0, spinPhase: 0, spinTimer: 0 },
+  right: { finalPrize: "blank", nextPrize: "blank", prize: "blank", spinDuration: 0, spinPhase: 0, spinTimer: 0 },
 };
 
 const localHighScoreKey = "badant-games-jumpy-plane-high-score";
@@ -771,7 +774,8 @@ const pixelRunnerJumpDuration = 0.46;
 const pixelRunnerDuckDuration = 0.44;
 const pixelRunnerSameLaneClearance = pixelRunnerSpeed * 0.58;
 const pixelRunnerActionConflictClearance = pixelRunnerSpeed * 0.9;
-const pixelReelSpinDuration = 0.72;
+const pixelReelSpinDuration = 0.95;
+const pixelReelStopStagger = 0.24;
 const pixelBombShotAward = 4;
 const pixelOwnerColors: Partial<Record<PixelOwner, string>> & { neutral: string; player: string } = {
   neutral: "#606773",
@@ -1748,10 +1752,14 @@ function seedPixelTurretStart(turret: PixelTurret, layout = pixelLayout(), seedC
 }
 
 function createPixelReels(): Record<PixelLane, PixelReel> {
+  const createReel = (): PixelReel => {
+    const prize = pixelRandomPrize();
+    return { finalPrize: "blank", nextPrize: pixelRandomPrize(), prize, spinDuration: 0, spinPhase: 0, spinTimer: 0 };
+  };
   return {
-    center: { finalPrize: "blank", prize: pixelRandomPrize(), spinTimer: 0 },
-    left: { finalPrize: "blank", prize: pixelRandomPrize(), spinTimer: 0 },
-    right: { finalPrize: "blank", prize: pixelRandomPrize(), spinTimer: 0 },
+    center: createReel(),
+    left: createReel(),
+    right: createReel(),
   };
 }
 
@@ -2119,11 +2127,18 @@ function pixelRunnerLayout(layout: PixelBoardLayout): PixelRunnerLayout {
   };
 }
 
-function pixelSpinReel(lane: PixelLane) {
+function pixelSpinReel(lane: PixelLane, duration = pixelReelSpinDuration) {
   const reel = pixelReels[lane];
+  if (reel.spinTimer > 0) {
+    return false;
+  }
   reel.finalPrize = pixelRandomPrize();
-  reel.spinTimer = pixelReelSpinDuration;
+  reel.nextPrize = pixelRandomPrize();
+  reel.spinDuration = duration;
+  reel.spinPhase = 0;
+  reel.spinTimer = duration;
   pixelReelMatchReady = true;
+  return true;
 }
 
 function pixelSpinAllReels(freeSpin = false) {
@@ -2133,9 +2148,14 @@ function pixelSpinAllReels(freeSpin = false) {
       pixelRunnerMessageTimer = 1;
       return;
     }
+    if (pixelRunnerLanes.some((lane) => pixelReels[lane].spinTimer > 0)) {
+      pixelRunnerMessage = "Reels still spinning";
+      pixelRunnerMessageTimer = 1.2;
+      return;
+    }
     pixelRunnerSpecialSpins -= 1;
   }
-  pixelRunnerLanes.forEach(pixelSpinReel);
+  pixelRunnerLanes.forEach((lane, index) => pixelSpinReel(lane, pixelReelSpinDuration + index * pixelReelStopStagger));
 }
 
 function pixelApplySlotPrize(prize: PixelPrize) {
@@ -2236,7 +2256,9 @@ function pixelChooseRunnerLane(y: number, action: PixelRunnerAction) {
 }
 
 function pixelChooseRunnerPickupLane(y: number, action: PixelRunnerAction) {
-  const availableLanes = pixelRunnerLanes.filter((lane) => pixelRunnerLaneIsClear(lane, y, action));
+  const availableLanes = pixelRunnerLanes.filter(
+    (lane) => pixelReels[lane].spinTimer <= 0 && pixelRunnerLaneIsClear(lane, y, action),
+  );
   if (availableLanes.length === 0) {
     return null;
   }
@@ -2305,7 +2327,9 @@ function collectPixelRunnerPickup(pickup: PixelRunnerPickup) {
     pixelRunnerSpecialSpins += 1;
     pixelRunnerMessage = "All-spin banked";
   } else {
-    pixelSpinReel(pickup.lane);
+    if (!pixelSpinReel(pickup.lane)) {
+      return false;
+    }
     pixelRunnerMessage = `${pickup.lane} reel`;
   }
   pixelRunnerMessageTimer = 1;
@@ -2319,7 +2343,21 @@ function updatePixelReels(dt: number) {
       return;
     }
     reel.spinTimer = Math.max(0, reel.spinTimer - dt);
-    reel.prize = reel.spinTimer === 0 ? reel.finalPrize : pixelRandomPrize();
+    if (reel.spinTimer > 0) {
+      const progress = reel.spinDuration > 0 ? 1 - reel.spinTimer / reel.spinDuration : 1;
+      const spinRate = 5.5 + (1 - Math.min(1, progress)) * 8;
+      reel.spinPhase += dt * spinRate;
+      while (reel.spinPhase >= 1) {
+        reel.spinPhase -= 1;
+        reel.prize = reel.nextPrize;
+        reel.nextPrize = pixelRandomPrize();
+      }
+    } else {
+      reel.prize = reel.finalPrize;
+      reel.nextPrize = reel.finalPrize;
+      reel.spinDuration = 0;
+      reel.spinPhase = 0;
+    }
   });
   pixelResolveReelMatch();
 }
@@ -4165,7 +4203,23 @@ function drawPixelSlot(runner: PixelRunnerLayout, time: number) {
     roundedRectPath(x, reelY, reelW, reelH, 7);
     ctx.fill();
     ctx.stroke();
-    drawPixelPrizeIcon(reel.prize, x + reelW / 2, reelY + reelH * 0.48 + shake, Math.min(reelW, reelH) * 0.72);
+    const symbolX = x + reelW / 2;
+    const symbolY = reelY + reelH * 0.48 + shake;
+    const symbolSize = Math.min(reelW, reelH) * 0.72;
+    ctx.save();
+    ctx.beginPath();
+    roundedRectPath(x + 1, reelY + 1, reelW - 2, reelH - 2, 6);
+    ctx.clip();
+    if (reel.spinTimer > 0) {
+      const travel = reel.spinPhase * reelH;
+      drawPixelPrizeIcon(reel.prize, symbolX, symbolY - travel, symbolSize);
+      drawPixelPrizeIcon(reel.nextPrize, symbolX, symbolY + reelH - travel, symbolSize);
+    } else {
+      drawPixelPrizeIcon(reel.prize, symbolX, symbolY, symbolSize);
+    }
+    ctx.restore();
+    ctx.fillStyle = "rgba(255, 255, 255, 0.1)";
+    ctx.fillRect(x + 2, symbolY - 1, reelW - 4, 2);
     ctx.fillStyle = "rgba(255, 255, 255, 0.74)";
     ctx.font = "800 10px Inter, sans-serif";
     ctx.textAlign = "center";
@@ -4173,7 +4227,8 @@ function drawPixelSlot(runner: PixelRunnerLayout, time: number) {
     ctx.fillText(lane.toUpperCase(), x + reelW / 2, reelY + reelH - 8);
   });
 
-  drawPixelButton(runner.spinButton, `ALL x${pixelRunnerSpecialSpins}`, pixelRunnerSpecialSpins > 0);
+  const reelsIdle = pixelRunnerLanes.every((lane) => pixelReels[lane].spinTimer <= 0);
+  drawPixelButton(runner.spinButton, `ALL x${pixelRunnerSpecialSpins}`, pixelRunnerSpecialSpins > 0 && reelsIdle);
   ctx.font = "800 12px Inter, sans-serif";
   ctx.fillStyle = "rgba(255, 255, 255, 0.62)";
   ctx.textAlign = "left";
