@@ -1222,7 +1222,7 @@ function applyPixelSnapshot(snapshot: PixelWarsSnapshot) {
     return {
       aiTargetTimer: 0,
       angle: remoteTurret.angle,
-      arc: Math.PI * 0.5,
+      arc: remoteTurret.isBot ? Math.PI * 0.44 : Math.PI * 0.85,
       bombShots: remoteTurret.bombShots,
       color: remoteTurret.color,
       eliminated: remoteTurret.eliminated,
@@ -1735,7 +1735,7 @@ function createPixelTurret(id: PixelOwner, isPlayer: boolean): PixelTurret {
     aiTargetTimer: 0,
     angle: isPlayer ? -Math.PI / 2 : Math.PI / 2,
     bombShots: 0,
-    arc: Math.PI * 0.4,
+    arc: isPlayer ? Math.PI * 0.85 : Math.PI * 0.44,
     color,
     eliminated: false,
     fireCooldown: Math.random() * pixelBaseFireInterval,
@@ -3566,8 +3566,10 @@ function pixelShotShieldHit(shot: PixelShot) {
 }
 
 function steerPixelTurret(turret: PixelTurret, dt: number) {
-  if (turret.isPlayer && pixelAimActive) {
-    turret.angle = clampPixelTurretAngle(turret, Math.atan2(pixelAimY - turret.y, pixelAimX - turret.x));
+  if (turret.isPlayer) {
+    if (pixelAimActive) {
+      turret.angle = clampPixelTurretAngle(turret, Math.atan2(pixelAimY - turret.y, pixelAimX - turret.x));
+    }
     return;
   }
 
@@ -3629,26 +3631,25 @@ function updatePixelWars(dt: number) {
   const layout = pixelLayout();
   for (let index = pixelShots.length - 1; index >= 0; index -= 1) {
     const shot = pixelShots[index];
-    shot.x += shot.vx * dt;
-    shot.y += shot.vy * dt;
     shot.life -= dt;
-    if (pixelShotShieldHit(shot)) {
-      pixelShots.splice(index, 1);
-      continue;
-    }
-    const cellIndex = pixelCellIndexAt(shot.x, shot.y, layout);
-    if (cellIndex !== -1 && cellIndex !== shot.lastCell) {
-      shot.lastCell = cellIndex;
-      if (pixelCells[cellIndex] !== shot.owner) {
-        if (shot.kind === "bomb") {
-          explodePixelCells(cellIndex, shot.owner);
-        } else {
-          paintPixelCell(cellIndex, shot.owner);
+    let hit = false;
+    const distance = Math.hypot(shot.vx * dt, shot.vy * dt);
+    const steps = Math.max(1, Math.ceil(distance / Math.max(2, Math.min(layout.cellW, layout.cellH) * 0.45)));
+    for (let step = 0; step < steps && !hit; step += 1) {
+      shot.x += (shot.vx * dt) / steps;
+      shot.y += (shot.vy * dt) / steps;
+      if (pixelShotShieldHit(shot)) { hit = true; break; }
+      const cellIndex = pixelCellIndexAt(shot.x, shot.y, layout);
+      if (cellIndex !== -1 && cellIndex !== shot.lastCell) {
+        shot.lastCell = cellIndex;
+        if (pixelCells[cellIndex] !== shot.owner) {
+          if (shot.kind === "bomb") explodePixelCells(cellIndex, shot.owner);
+          else paintPixelCell(cellIndex, shot.owner);
+          hit = true;
         }
-        pixelShots.splice(index, 1);
-        continue;
       }
     }
+    if (hit) { pixelShots.splice(index, 1); continue; }
     const outside =
       shot.x < layout.x ||
       shot.x > layout.x + layout.boardW ||

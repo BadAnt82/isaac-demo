@@ -745,7 +745,7 @@ function createPixelTurret(id, index, isBot = false, options = {}) {
   const homeAngle = pixelHomeAngleForPoint(x, y);
   return {
     angle: homeAngle,
-    arc: Math.PI * 0.44,
+    arc: isBot ? Math.PI * 0.44 : Math.PI * 0.85,
     bombShots: 0,
     color: pixelOwnerColors[id] || "#ffffff",
     eliminated: false,
@@ -960,8 +960,8 @@ function knockOutPixelTurret(match, turret) {
     return;
   }
   turret.shieldHealth = 0;
-  turret.respawnPending = true;
-  turret.respawnTimer = 0;
+  turret.respawnPending = turret.isBot ? false : true;
+  turret.respawnTimer = turret.isBot ? 1.2 : 0;
   turret.fireCooldown = pixelBaseFireInterval;
 }
 
@@ -1068,44 +1068,35 @@ function updatePixelTurretAim(turret, dt) {
 function updatePixelShots(match, dt) {
   for (let index = match.shots.length - 1; index >= 0; index -= 1) {
     const shot = match.shots[index];
-    shot.x += shot.vx * dt;
-    shot.y += shot.vy * dt;
     shot.life -= dt;
-
     let hit = false;
-    for (const turret of match.turrets) {
-      if (turret.id === shot.owner || !pixelTurretIsActive(turret)) {
-        continue;
-      }
-      const dx = shot.x - turret.x;
-      const dy = shot.y - turret.y;
-      if (dx * dx + dy * dy <= pixelShieldRadiusCells * pixelShieldRadiusCells) {
-        turret.shieldHealth = Math.max(0, turret.shieldHealth - (shot.kind === "bomb" ? pixelShieldDamage * 3 : pixelShieldDamage));
-        if (turret.shieldHealth <= 0) {
-          knockOutPixelTurret(match, turret);
+    const distance = Math.hypot(shot.vx * dt, shot.vy * dt);
+    const steps = Math.max(1, Math.ceil(distance / 0.35));
+    for (let step = 0; step < steps && !hit; step += 1) {
+      shot.x += (shot.vx * dt) / steps;
+      shot.y += (shot.vy * dt) / steps;
+      for (const turret of match.turrets) {
+        if (turret.id === shot.owner || !pixelTurretIsActive(turret)) continue;
+        const dx = shot.x - turret.x;
+        const dy = shot.y - turret.y;
+        if (dx * dx + dy * dy <= pixelShieldRadiusCells * pixelShieldRadiusCells) {
+          turret.shieldHealth = Math.max(0, turret.shieldHealth - (shot.kind === "bomb" ? pixelShieldDamage * 3 : pixelShieldDamage));
+          if (turret.shieldHealth <= 0) knockOutPixelTurret(match, turret);
+          hit = true;
+          break;
         }
-        hit = true;
-        break;
       }
-    }
-    if (hit) {
-      match.shots.splice(index, 1);
-      continue;
-    }
-
-    const cellIndex = pixelCellIndexAt(shot.x, shot.y);
-    if (cellIndex !== -1 && cellIndex !== shot.lastCell) {
-      shot.lastCell = cellIndex;
-      if (match.cells[cellIndex] !== shot.owner) {
-        if (shot.kind === "bomb") {
-          pixelExplodeCells(match, cellIndex, shot.owner);
-        } else {
-          pixelPaintCell(match, cellIndex, shot.owner);
+      const cellIndex = pixelCellIndexAt(shot.x, shot.y);
+      if (!hit && cellIndex !== -1 && cellIndex !== shot.lastCell) {
+        shot.lastCell = cellIndex;
+        if (match.cells[cellIndex] !== shot.owner) {
+          if (shot.kind === "bomb") pixelExplodeCells(match, cellIndex, shot.owner);
+          else pixelPaintCell(match, cellIndex, shot.owner);
+          hit = true;
         }
-        match.shots.splice(index, 1);
-        continue;
       }
     }
+    if (hit) { match.shots.splice(index, 1); continue; }
 
     const outside = shot.x < 0 || shot.x > pixelBoard.columns || shot.y < 0 || shot.y > pixelBoard.rows;
     if (shot.life <= 0 || outside) {
