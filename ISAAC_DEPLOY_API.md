@@ -4,7 +4,7 @@ This repository is wired to one Coolify application and one hostname:
 
 - Repository: `BadAnt82/Isaac-Demo`, branch `master`
 - Live URL: <https://isaac.badantproductions.com>
-- Coolify application UUID: `afcmgbwczypcqtxcugqpein8`
+- Coolify application UUID: `kppoaz3lnxhlxm5otlobgyqq`
 
 ## Authentication
 
@@ -32,7 +32,7 @@ node scripts/deploy-isaac.mjs
 The helper calls this fixed endpoint:
 
 ```text
-POST http://65.108.216.96:8000/api/v1/deploy?uuid=afcmgbwczypcqtxcugqpein8&force=false
+POST http://65.108.216.96:8000/api/v1/deploy?uuid=kppoaz3lnxhlxm5otlobgyqq&force=false
 Authorization: Bearer <ISAAC_DEPLOY_TOKEN>
 ```
 

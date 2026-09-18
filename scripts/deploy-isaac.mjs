@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+﻿#!/usr/bin/env node
 
 /**
  * Deploy the Isaac-Demo repository to its one permitted Coolify application.
@@ -11,7 +11,7 @@
  * command-line target, domain, or resource override.
  */
 
-const appUuid = "afcmgbwczypcqtxcugqpein8";
+const appUuid = "kppoaz3lnxhlxm5otlobgyqq";
 const coolifyUrl = (process.env.COOLIFY_URL || "http://65.108.216.96:8000").replace(/\/$/, "");
 const token = process.env.ISAAC_DEPLOY_TOKEN;
 
